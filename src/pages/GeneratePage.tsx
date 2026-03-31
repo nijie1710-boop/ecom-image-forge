@@ -151,7 +151,7 @@ const GeneratePage = () => {
     }
   }, [activeJob, uploadedImages.length]);
 
-  // 图片压缩：更小更快，确保 base64 < 100KB
+  // 图片压缩：200px，质量 0.3
   const compressImage = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -160,29 +160,23 @@ const GeneratePage = () => {
         const img = new Image();
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          // 固定 200px 宽度，质量 0.3
           const TARGET_WIDTH = 200;
           const quality = 0.3;
-
           let width = TARGET_WIDTH;
           let height = Math.round((img.height * TARGET_WIDTH) / img.width);
-
           canvas.width = width;
           canvas.height = height;
           const ctx = canvas.getContext('2d')!;
           ctx.drawImage(img, 0, 0, width, height);
-
           try {
             const compressed = canvas.toDataURL('image/jpeg', quality);
-            const sizeKB = (compressed.length * 0.75) / 1024;
-            console.log(`Scene: ${img.width}x${img.height}→${width}x${height}, ~${sizeKB.toFixed(0)}KB`);
             resolve(compressed);
           } catch(err) {
             console.error('Compression error:', err);
-            resolve(dataUrl);
+            resolve(''); // 失败时返回空字符串，避免发送大图片
           }
         };
-        img.onerror = () => resolve(dataUrl);
+        img.onerror = () => resolve(''); // 图片加载失败返回空
         img.src = dataUrl;
       };
       reader.onerror = () => reject(new Error('文件读取失败'));
@@ -193,7 +187,7 @@ const GeneratePage = () => {
   const handleFile = async (file: File) => {
     if (!file.type.match(/image\/(jpeg|png|webp)/)) return;
 
-    // 压缩图片（如果太大）
+    // 压缩图片
     const dataUrl = await compressImage(file);
 
     if (isBatchMode) {
