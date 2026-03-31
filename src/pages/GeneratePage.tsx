@@ -151,7 +151,7 @@ const GeneratePage = () => {
     }
   }, [activeJob, uploadedImages.length]);
 
-  // 图片压缩：200px，质量 0.3
+  // 图片压缩：400px，质量 0.6（用于场景识别，需要更高质量）
   const compressImage = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -160,8 +160,8 @@ const GeneratePage = () => {
         const img = new Image();
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          const TARGET_WIDTH = 200;
-          const quality = 0.3;
+          const TARGET_WIDTH = 400;  // 提高到 400px
+          const quality = 0.6;        // 提高质量到 0.6
           let width = TARGET_WIDTH;
           let height = Math.round((img.height * TARGET_WIDTH) / img.width);
           canvas.width = width;
@@ -173,7 +173,7 @@ const GeneratePage = () => {
             resolve(compressed);
           } catch(err) {
             console.error('Compression error:', err);
-            resolve(''); // 失败时返回空字符串，避免发送大图片
+            resolve(''); // 失败时返回空字符串
           }
         };
         img.onerror = () => resolve(''); // 图片加载失败返回空

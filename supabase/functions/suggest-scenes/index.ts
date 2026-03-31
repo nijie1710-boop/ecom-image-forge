@@ -127,27 +127,39 @@ Requirements:
 
     console.error("suggest-scenes: AI response:", text.substring(0, 200));
 
-    let suggestions: any[];
+    // 解析 JSON
+    let analysis: any = { product_summary: "", visible_text: "NONE", suggestions: [] };
     try {
-      const jsonMatch = text.match(/\[[\s\S]*\]/);
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
-        suggestions = JSON.parse(jsonMatch[0]);
+        analysis = JSON.parse(jsonMatch[0]);
       } else {
-        suggestions = JSON.parse(text);
+        analysis = JSON.parse(text);
       }
-    } catch {
-      suggestions = [
-        { scene: "现代简约风", description: "纯白背景，专业棚拍，展示产品全貌和细节" },
-        { scene: "生活场景图", description: "温馨室内环境，自然光线，融入真实生活场景" },
-      ];
+    } catch (parseErr: any) {
+      console.error("Parse error:", parseErr.message, "text:", text.substring(0, 200));
+      // 解析失败时使用默认
+      analysis = {
+        product_summary: "产品分析失败",
+        visible_text: "NONE",
+        suggestions: [
+          { scene: "现代简约风", description: "纯白背景，专业棚拍，展示产品全貌和细节" },
+          { scene: "生活场景图", description: "温馨室内环境，自然光线，融入真实生活场景" },
+          { scene: "创意展示图", description: "艺术感布景，戏剧性灯光，突出产品设计感" },
+        ]
+      };
     }
 
-    suggestions = suggestions.slice(0, 2).map((s: any) => ({
+    const suggestions = (analysis.suggestions || []).slice(0, 3).map((s: any) => ({
       scene: String(s.scene || "场景"),
       description: String(s.description || ""),
     }));
 
-    return new Response(JSON.stringify({ suggestions }), {
+    return new Response(JSON.stringify({
+      product_summary: analysis.product_summary || "",
+      visible_text: analysis.visible_text || "NONE",
+      suggestions,
+    }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
 
