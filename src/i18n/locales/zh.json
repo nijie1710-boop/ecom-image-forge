@@ -1,0 +1,213 @@
+{
+  "nav": {
+    "features": "功能",
+    "gallery": "案例展示",
+    "pricing": "价格",
+    "openStudio": "进入工作台"
+  },
+  "brand": {
+    "name": "Picspark AI"
+  },
+  "hero": {
+    "badge": "AI 驱动的电商摄影",
+    "title1": "AI 秒级生成",
+    "title2": "电商产品图 - 测试版",
+    "subtitle": "只需上传一张产品图，即可无限生成专业商品主图、买家秀、场景图，适用于淘宝、天猫、京东、拼多多、小红书等平台。",
+    "cta": "开始生成",
+    "viewGallery": "查看案例"
+  },
+  "features": {
+    "sectionTitle": "电商图片生成，一站搞定",
+    "sectionSubtitle": "从自动抠图到逼真买家秀，全流程 AI 处理。",
+    "items": [
+      { "title": "一键上传", "desc": "上传一张产品图 — 支持 JPG、PNG、WEBP 格式。" },
+      { "title": "AI 自动抠图", "desc": "智能去除背景，生成透明底图。" },
+      { "title": "智能裁剪", "desc": "自动适配淘宝、抖音、小红书等平台尺寸。" },
+      { "title": "多场景生成", "desc": "生成客厅、厨房、户外等 10+ 热门场景。" },
+      { "title": "批量生成", "desc": "一次上传 10 张，批量生成海量图片。" },
+      { "title": "AI 文案", "desc": "自动生成产品标题、描述、Tags。" },
+      { "title": "高清下载", "desc": "所有图片支持高清下载（1024–2048px）。" },
+      { "title": "会员权益", "desc": "免费版每天 5 张，付费版无限生成。" }
+    ]
+  },
+  "gallery": {
+    "sectionTitle": "一图上传，多风格输出",
+    "sectionSubtitle": "看看 AI 如何把一张产品图变成多种电商图片。",
+    "labels": ["白底图", "场景图", "买家秀", "品牌质感", "办公场景"]
+  },
+  "pricing": {
+    "sectionTitle": "简单透明的定价",
+    "sectionSubtitle": "免费开始，按需升级。",
+    "mostPopular": "最受欢迎",
+    "plans": [
+      {
+        "name": "免费版",
+        "price": "¥0",
+        "features": ["每天 5 张图片", "基础风格", "标准分辨率", "带水印"],
+        "cta": "免费开始"
+      },
+      {
+        "name": "专业版",
+        "price": "¥99",
+        "features": ["每月 200 张图片", "全部风格和场景", "高清分辨率", "无水印", "买家秀图片", "优先生成"],
+        "cta": "开始专业版试用"
+      },
+      {
+        "name": "企业版",
+        "price": "¥299",
+        "features": ["无限生成", "所有专业版功能", "批量生成", "API 接口", "自定义模板", "优先客服支持"],
+        "cta": "联系销售"
+      }
+    ],
+    "period": "/月"
+  },
+  "footer": {
+    "rights": "© 2026 Picspark AI. 保留所有权利。"
+  },
+  "sidebar": {
+    "dashboard": "仪表盘",
+    "generate": "生成图片",
+    "translate": "图片翻译",
+    "myImages": "我的图片",
+    "templates": "模板",
+    "pricing": "价格",
+    "account": "账户"
+  },
+  "dashboard": {
+    "welcome": "欢迎回来",
+    "welcomeSub": "开始用 AI 生成专业产品图片。",
+    "imagesGenerated": "已生成图片",
+    "creditsRemaining": "剩余额度",
+    "avgGeneration": "平均生成时间",
+    "generateNew": "生成新图片",
+    "generateNewSub": "上传产品图，AI 秒级生成专业电商图片。",
+    "startGenerating": "开始生成",
+    "sampleGallery": "示例画廊",
+    "styles": {
+      "lifestyle": "场景图",
+      "buyerShow": "买家秀",
+      "premium": "品牌质感",
+      "office": "办公场景"
+    }
+  },
+  "generate": {
+    "title": "生成图片",
+    "uploadDrag": "拖拽上传产品图片",
+    "uploadFormats": "JPG, PNG, WEBP",
+    "browseFiles": "浏览文件",
+    "imageType": "图片类型",
+    "style": "风格",
+    "scene": "场景",
+    "model": "模特",
+    "aspectRatio": "图片比例",
+    "generateBtn": "生成图片",
+    "generating": "生成中...",
+    "results": "生成结果",
+    "downloadAll": "全部下载",
+    "download": "下载",
+    "readyTitle": "准备就绪",
+    "readySub": "上传产品图并配置选项，开始生成 AI 电商图片。",
+    "imageTypes": ["电商主图", "产品详情图", "场景图", "买家秀图", "社交媒体产品图"],
+    "styles": ["纯白背景", "品牌质感", "小红书风格", "直播带货", "极简产品摄影", "户外冒险风", "圣诞节日风", "新春中国风", "情人节浪漫", "万圣节风", "夏日清新", "复古胶片", "赛博朋克", "日式和风", "工业风", "田园森系"],
+    "scenes": ["客厅", "厨房", "办公桌", "户外露营", "咖啡馆", "健身房", "卧室", "阳台", "浴室", "餐厅", "沙滩海边", "森林草地", "城市街道", "花店", "书店", "儿童房", "玄关", "衣帽间", "庭院花园"],
+    "models": ["亚洲女模特", "亚洲男模特", "欧美女模特", "欧美男模特", "无模特"],
+    "ratios": ["1:1（淘宝主图）", "3:4（小红书）", "4:5", "9:16（短视频封面）", "16:9（YouTube封面）", "2:3（微信朋友圈）"],
+    "platforms": ["淘宝/天猫", "京东", "拼多多", "小红书", "抖音/快手", "微信朋友圈", "微博"],
+    "batchMode": "批量生成",
+    "batchLimit": "一次最多10张",
+    "aiCopy": "AI 文案",
+    "generateCopy": "生成文案",
+    "copyTitle": "产品标题",
+    "copyDesc": "产品描述",
+    "copyTags": "Tags标签",
+    "copyLoading": "生成中...",
+    "copyResult": "生成的文案",
+    "membership": "会员中心",
+    "vip": "VIP会员",
+    "free": "免费版",
+    "pro": "专业版",
+    "enterprise": "企业版",
+    "daily": "每天",
+    "monthly": "每月",
+    "unlimited": "无限",
+    "images": "张",
+    "features": {
+      "smartCrop": "智能裁剪",
+      "smartCropDesc": "自动适配不同平台尺寸",
+      "moreScenes": "更多场景",
+      "moreScenesDesc": "客厅、厨房、户外等热门场景",
+      "aiCopy": "AI 文案",
+      "aiCopyDesc": "自动生成产品标题和描述",
+      "batch": "批量处理",
+      "batchDesc": "一次生成多张图片",
+      "hd": "高清下载",
+      "hdDesc": "1024-2048px高清画质"
+    }
+  },
+  "lang": {
+    "zh": "中文",
+    "en": "English",
+    "ja": "日本語",
+    "ko": "한국어"
+  },
+  "auth": {
+    "login": "登录",
+    "signup": "注册",
+    "logout": "退出登录",
+    "email": "邮箱",
+    "password": "密码",
+    "displayName": "显示名称",
+    "displayNamePlaceholder": "输入你的名字",
+    "loginSubtitle": "登录你的 Picspark AI 账户",
+    "signupSubtitle": "创建账户，开始生成 AI 电商图片",
+    "signupSuccess": "注册成功",
+    "checkEmail": "请查看你的邮箱完成验证。",
+    "error": "错误",
+    "noAccount": "还没有账户？",
+    "hasAccount": "已有账户？",
+    "forgotPassword": "忘记密码？",
+    "forgotTitle": "重置密码",
+    "forgotDesc": "输入您的注册邮箱，我们将发送密码重置链接。",
+    "sendResetLink": "发送重置链接",
+    "backToLogin": "返回登录",
+    "resetSent": "重置邮件已发送",
+    "resetSentDesc": "请检查您的邮箱，点击链接重置密码。",
+    "setNewPassword": "设置新密码",
+    "setNewPasswordDesc": "请输入您的新密码。",
+    "newPassword": "新密码",
+    "confirmPassword": "确认密码",
+    "passwordMismatch": "两次输入的密码不一致",
+    "passwordTooShort": "密码至少需要6个字符",
+    "resetPassword": "重置密码",
+    "resetSuccess": "密码重置成功",
+    "redirecting": "正在跳转到仪表盘..."
+  },
+  "myImages": {
+    "title": "我的图片",
+    "subtitle": "管理你生成的所有图片。",
+    "empty": "还没有生成图片，去生成一些吧！",
+    "deleted": "图片已删除"
+  },
+  "templates": {
+    "title": "模板",
+    "subtitle": "使用预设模板快速生成专业图片。",
+    "useTemplate": "使用模板",
+    "items": {
+      "whiteBackground": "纯白背景",
+      "lifestyle": "生活场景",
+      "buyerShow": "买家秀",
+      "premiumBrand": "品牌质感"
+    }
+  },
+  "account": {
+    "title": "账户设置",
+    "subtitle": "管理你的个人信息和订阅计划。",
+    "profile": "个人资料",
+    "name": "姓名",
+    "email": "邮箱",
+    "currentPlan": "当前套餐",
+    "freePlan": "免费版",
+    "freeDesc": "每天 5 张图片",
+    "upgrade": "升级套餐"
+  }
+}

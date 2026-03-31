@@ -1,0 +1,300 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 210 40% 98%;
+    --foreground: 222 84% 5%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 84% 5%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 84% 5%;
+
+    --primary: 239 84% 67%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 214 32% 91%;
+    --secondary-foreground: 222 47% 11%;
+
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 25% 40%;
+
+    --accent: 160 84% 39%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 239 84% 67%;
+
+    --radius: 0.75rem;
+
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 215 25% 40%;
+    --sidebar-primary: 239 84% 67%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 210 40% 96%;
+    --sidebar-accent-foreground: 222 47% 11%;
+    --sidebar-border: 214 32% 91%;
+    --sidebar-ring: 239 84% 67%;
+
+    /* Custom tokens */
+    --hero-bg: 222 84% 5%;
+    --hero-foreground: 210 40% 98%;
+    --success: 160 84% 39%;
+    --success-foreground: 0 0% 100%;
+    --shimmer-from: 214 32% 91%;
+    --shimmer-to: 210 40% 96%;
+
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+
+  /* Dark mode */
+  .dark {
+    --background: 222 84% 5%;
+    --foreground: 210 40% 98%;
+
+    --card: 222 84% 8%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222 84% 8%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 239 84% 67%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 217 33% 17%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20% 65%;
+
+    --accent: 160 84% 39%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 62% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 217 33% 17%;
+    --input: 217 33% 17%;
+    --ring: 239 84% 67%;
+
+    --sidebar-background: 222 84% 8%;
+    --sidebar-foreground: 215 20% 65%;
+    --sidebar-primary: 239 84% 67%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 217 33% 17%;
+    --sidebar-accent-foreground: 210 40% 98%;
+    --sidebar-border: 217 33% 17%;
+    --sidebar-ring: 239 84% 67%;
+
+    /* Custom tokens */
+    --hero-bg: 210 40% 98%;
+    --hero-foreground: 222 84% 5%;
+    --success: 160 84% 39%;
+    --success-foreground: 0 0% 100%;
+    --shimmer-from: 217 33% 17%;
+    --shimmer-to: 217 33% 25%;
+  }
+
+  /* Ocean theme */
+  .ocean {
+    --background: 200 30% 8%;
+    --foreground: 200 20% 95%;
+    --card: 200 30% 12%;
+    --card-foreground: 200 20% 95%;
+    --popover: 200 30% 12%;
+    --popover-foreground: 200 20% 95%;
+    --primary: 190 80% 50%;
+    --primary-foreground: 200 30% 8%;
+    --secondary: 200 25% 18%;
+    --secondary-foreground: 200 20% 95%;
+    --muted: 200 25% 18%;
+    --muted-foreground: 200 15% 60%;
+    --accent: 170 70% 45%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 62% 50%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 200 25% 20%;
+    --input: 200 25% 20%;
+    --ring: 190 80% 50%;
+    --sidebar-background: 200 30% 10%;
+    --sidebar-foreground: 200 15% 60%;
+    --sidebar-primary: 190 80% 50%;
+    --sidebar-primary-foreground: 200 30% 8%;
+    --sidebar-accent: 200 25% 18%;
+    --sidebar-accent-foreground: 200 20% 95%;
+    --sidebar-border: 200 25% 20%;
+    --sidebar-ring: 190 80% 50%;
+    --hero-bg: 200 30% 8%;
+    --hero-foreground: 200 20% 95%;
+    --success: 170 70% 45%;
+    --success-foreground: 0 0% 100%;
+    --shimmer-from: 200 25% 18%;
+    --shimmer-to: 200 25% 25%;
+  }
+
+  /* Sunset theme */
+  .sunset {
+    --background: 20 30% 97%;
+    --foreground: 20 50% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 20 50% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 20 50% 10%;
+    --primary: 15 85% 55%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 25 40% 90%;
+    --secondary-foreground: 20 50% 10%;
+    --muted: 25 30% 93%;
+    --muted-foreground: 20 20% 45%;
+    --accent: 35 90% 50%;
+    --accent-foreground: 20 50% 10%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 25 40% 88%;
+    --input: 25 40% 88%;
+    --ring: 15 85% 55%;
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 20 20% 45%;
+    --sidebar-primary: 15 85% 55%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 25 30% 93%;
+    --sidebar-accent-foreground: 20 50% 10%;
+    --sidebar-border: 25 40% 88%;
+    --sidebar-ring: 15 85% 55%;
+    --hero-bg: 20 50% 10%;
+    --hero-foreground: 20 30% 97%;
+    --success: 160 84% 39%;
+    --success-foreground: 0 0% 100%;
+    --shimmer-from: 25 40% 90%;
+    --shimmer-to: 25 30% 93%;
+  }
+
+  /* Forest theme */
+  .forest {
+    --background: 150 20% 8%;
+    --foreground: 140 15% 92%;
+    --card: 150 20% 12%;
+    --card-foreground: 140 15% 92%;
+    --popover: 150 20% 12%;
+    --popover-foreground: 140 15% 92%;
+    --primary: 145 65% 45%;
+    --primary-foreground: 150 20% 8%;
+    --secondary: 150 18% 18%;
+    --secondary-foreground: 140 15% 92%;
+    --muted: 150 18% 18%;
+    --muted-foreground: 145 12% 55%;
+    --accent: 80 60% 50%;
+    --accent-foreground: 150 20% 8%;
+    --destructive: 0 62% 50%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 150 18% 20%;
+    --input: 150 18% 20%;
+    --ring: 145 65% 45%;
+    --sidebar-background: 150 20% 10%;
+    --sidebar-foreground: 145 12% 55%;
+    --sidebar-primary: 145 65% 45%;
+    --sidebar-primary-foreground: 150 20% 8%;
+    --sidebar-accent: 150 18% 18%;
+    --sidebar-accent-foreground: 140 15% 92%;
+    --sidebar-border: 150 18% 20%;
+    --sidebar-ring: 145 65% 45%;
+    --hero-bg: 150 20% 8%;
+    --hero-foreground: 140 15% 92%;
+    --success: 145 65% 45%;
+    --success-foreground: 0 0% 100%;
+    --shimmer-from: 150 18% 18%;
+    --shimmer-to: 150 18% 25%;
+  }
+
+  /* Lavender theme */
+  .lavender {
+    --background: 270 30% 97%;
+    --foreground: 270 50% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 270 50% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 270 50% 10%;
+    --primary: 270 70% 60%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 270 30% 90%;
+    --secondary-foreground: 270 50% 10%;
+    --muted: 270 20% 94%;
+    --muted-foreground: 270 15% 45%;
+    --accent: 320 60% 55%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 270 25% 88%;
+    --input: 270 25% 88%;
+    --ring: 270 70% 60%;
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 270 15% 45%;
+    --sidebar-primary: 270 70% 60%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 270 20% 94%;
+    --sidebar-accent-foreground: 270 50% 10%;
+    --sidebar-border: 270 25% 88%;
+    --sidebar-ring: 270 70% 60%;
+    --hero-bg: 270 50% 10%;
+    --hero-foreground: 270 30% 97%;
+    --success: 160 84% 39%;
+    --success-foreground: 0 0% 100%;
+    --shimmer-from: 270 30% 90%;
+    --shimmer-to: 270 20% 94%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  }
+}
+
+@layer utilities {
+  .font-display {
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  }
+  .font-body {
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.animate-shimmer {
+  background: linear-gradient(
+    90deg,
+    hsl(var(--shimmer-from)) 25%,
+    hsl(var(--shimmer-to)) 50%,
+    hsl(var(--shimmer-from)) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}

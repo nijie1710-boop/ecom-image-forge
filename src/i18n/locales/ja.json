@@ -1,0 +1,177 @@
+{
+  "nav": {
+    "features": "機能",
+    "gallery": "ギャラリー",
+    "pricing": "料金",
+    "openStudio": "スタジオを開く"
+  },
+  "hero": {
+    "badge": "AI搭載ECフォトグラフィー",
+    "title1": "AIで商品画像を",
+    "title2": "数秒で生成",
+    "subtitle": "商品画像を1枚アップロードするだけで、プロ品質の商品写真、購入者レビュー画像、ライフスタイルシーンを無限に生成できます。",
+    "cta": "生成を開始",
+    "viewGallery": "ギャラリーを見る"
+  },
+  "features": {
+    "sectionTitle": "EC画像に必要なすべてを一箇所で",
+    "sectionSubtitle": "背景除去からリアルな購入者写真まで、ワンストップで対応。",
+    "items": [
+      { "title": "ワンクリックアップロード", "desc": "商品画像を1枚アップロード — JPG、PNG、WEBPに対応。" },
+      { "title": "AI背景除去", "desc": "背景を自動的に除去し、きれいな切り抜き画像を生成。" },
+      { "title": "マルチシーン生成", "desc": "リビング、オフィス、屋外、ライフスタイルなど多様なシーンを生成。" },
+      { "title": "購入者レビュー写真", "desc": "iPhoneスタイルのリアルな購入者レビュー写真、自然光。" },
+      { "title": "バッチ生成", "desc": "メイン画像、ライフスタイル、購入者写真を一括10枚以上生成。" },
+      { "title": "HD ダウンロード", "desc": "すべての画像をHD解像度（1024–2048px）でダウンロード。" }
+    ]
+  },
+  "gallery": {
+    "sectionTitle": "1枚のアップロード、多彩なスタイル",
+    "sectionSubtitle": "AIが1枚の商品写真を多様なEC画像に変換する様子をご覧ください。",
+    "labels": ["白背景", "ライフスタイル", "購入者レビュー", "プレミアムブランド", "オフィスシーン"]
+  },
+  "pricing": {
+    "sectionTitle": "シンプルで透明な料金体系",
+    "sectionSubtitle": "無料で始めて、必要に応じてアップグレード。",
+    "mostPopular": "一番人気",
+    "plans": [
+      {
+        "name": "無料プラン",
+        "price": "¥0",
+        "features": ["1日5枚", "基本スタイル", "標準解像度", "ウォーターマーク付き"],
+        "cta": "無料で始める"
+      },
+      {
+        "name": "プロプラン",
+        "price": "¥99",
+        "features": ["月200枚", "全スタイル＆シーン", "HD解像度", "ウォーターマークなし", "購入者レビュー写真", "優先生成"],
+        "cta": "プロ版を試す"
+      },
+      {
+        "name": "ビジネスプラン",
+        "price": "¥299",
+        "features": ["無制限生成", "プロ版全機能", "バッチ生成", "APIアクセス", "カスタムテンプレート", "優先サポート"],
+        "cta": "営業に連絡"
+      }
+    ],
+    "period": "/月"
+  },
+  "footer": {
+    "rights": "© 2026 AI Image Studio. All rights reserved."
+  },
+  "sidebar": {
+    "dashboard": "ダッシュボード",
+    "generate": "画像を生成",
+    "translate": "画像翻訳",
+    "myImages": "マイ画像",
+    "templates": "テンプレート",
+    "pricing": "料金",
+    "account": "アカウント"
+  },
+  "dashboard": {
+    "welcome": "おかえりなさい",
+    "welcomeSub": "AIでプロ品質の商品画像を生成しましょう。",
+    "imagesGenerated": "生成された画像",
+    "creditsRemaining": "残りクレジット",
+    "avgGeneration": "平均生成時間",
+    "generateNew": "新しい画像を生成",
+    "generateNewSub": "商品画像をアップロードして、AIで数秒でプロ品質のEC画像を作成。",
+    "startGenerating": "生成を開始",
+    "sampleGallery": "サンプルギャラリー",
+    "styles": {
+      "lifestyle": "ライフスタイル",
+      "buyerShow": "購入者レビュー",
+      "premium": "プレミアム",
+      "office": "オフィス"
+    }
+  },
+  "generate": {
+    "title": "画像を生成",
+    "uploadDrag": "商品画像をドラッグ＆ドロップ",
+    "uploadFormats": "JPG, PNG, WEBP",
+    "browseFiles": "ファイルを選択",
+    "imageType": "画像タイプ",
+    "style": "スタイル",
+    "scene": "シーン",
+    "model": "モデル",
+    "aspectRatio": "アスペクト比",
+    "generateBtn": "画像を生成",
+    "generating": "生成中...",
+    "results": "生成結果",
+    "downloadAll": "すべてダウンロード",
+    "download": "ダウンロード",
+    "readyTitle": "生成準備完了",
+    "readySub": "商品画像をアップロードして設定を構成し、AI搭載のEC写真の生成を開始してください。",
+    "imageTypes": ["ECメイン画像", "商品詳細画像", "ライフスタイルシーン", "購入者レビュー画像", "SNS商品画像"],
+    "styles": ["純白背景", "プレミアムブランド", "小紅書スタイル", "ライブコマース", "ミニマル商品写真", "アウトドアスタイル"],
+    "scenes": ["リビング", "キッチン", "オフィスデスク", "アウトドアキャンプ", "カフェ", "ジム", "ベッドルーム"],
+    "models": ["アジア女性モデル", "アジア男性モデル", "欧米女性モデル", "欧米男性モデル", "モデルなし"],
+    "ratios": ["1:1（淘宝メイン）", "3:4（小紅書）", "4:5", "9:16（ショート動画）"]
+  },
+  "lang": {
+    "zh": "中文",
+    "en": "English",
+    "ja": "日本語",
+    "ko": "한국어"
+  },
+  "auth": {
+    "login": "ログイン",
+    "signup": "新規登録",
+    "logout": "ログアウト",
+    "email": "メールアドレス",
+    "password": "パスワード",
+    "displayName": "表示名",
+    "displayNamePlaceholder": "名前を入力してください",
+    "loginSubtitle": "AI Image Studioアカウントにログイン",
+    "signupSubtitle": "アカウントを作成してAI EC画像の生成を始めましょう",
+    "signupSuccess": "登録成功",
+    "checkEmail": "メールを確認してアカウントを認証してください。",
+    "error": "エラー",
+    "noAccount": "アカウントをお持ちでないですか？",
+    "hasAccount": "すでにアカウントをお持ちですか？",
+    "forgotPassword": "パスワードをお忘れですか？",
+    "forgotTitle": "パスワードリセット",
+    "forgotDesc": "登録メールアドレスを入力してください。リセットリンクをお送りします。",
+    "sendResetLink": "リセットリンクを送信",
+    "backToLogin": "ログインに戻る",
+    "resetSent": "リセットメール送信済み",
+    "resetSentDesc": "メールを確認し、リンクをクリックしてパスワードをリセットしてください。",
+    "setNewPassword": "新しいパスワードを設定",
+    "setNewPasswordDesc": "新しいパスワードを入力してください。",
+    "newPassword": "新しいパスワード",
+    "confirmPassword": "パスワード確認",
+    "passwordMismatch": "パスワードが一致しません",
+    "passwordTooShort": "パスワードは6文字以上必要です",
+    "resetPassword": "パスワードをリセット",
+    "resetSuccess": "パスワードリセット成功",
+    "redirecting": "ダッシュボードにリダイレクト中..."
+  },
+  "myImages": {
+    "title": "マイ画像",
+    "subtitle": "生成したすべての画像を管理します。",
+    "empty": "まだ画像がありません。生成を始めましょう！",
+    "deleted": "画像を削除しました"
+  },
+  "templates": {
+    "title": "テンプレート",
+    "subtitle": "プリセットテンプレートで素早くプロ品質の画像を生成。",
+    "useTemplate": "テンプレートを使用",
+    "items": {
+      "whiteBackground": "白背景",
+      "lifestyle": "ライフスタイル",
+      "buyerShow": "購入者レビュー",
+      "premiumBrand": "プレミアムブランド"
+    }
+  },
+  "account": {
+    "title": "アカウント設定",
+    "subtitle": "プロフィールとサブスクリプションを管理します。",
+    "profile": "プロフィール",
+    "name": "名前",
+    "email": "メール",
+    "currentPlan": "現在のプラン",
+    "freePlan": "無料プラン",
+    "freeDesc": "1日5枚まで",
+    "upgrade": "アップグレード"
+  }
+}

@@ -1,0 +1,213 @@
+{
+  "nav": {
+    "features": "Features",
+    "gallery": "Gallery",
+    "pricing": "Pricing",
+    "openStudio": "Open Studio"
+  },
+  "brand": {
+    "name": "Picspark AI"
+  },
+  "hero": {
+    "badge": "AI-Powered E-commerce Photography",
+    "title1": "Generate Product Images",
+    "title2": "in Seconds with AI",
+    "subtitle": "Upload one product image and generate unlimited professional photos, buyer reviews, and lifestyle scenes for Taobao, Tmall, JD, Pinduoduo & Xiaohongshu.",
+    "cta": "Start Generating",
+    "viewGallery": "View Gallery"
+  },
+  "features": {
+    "sectionTitle": "Everything You Need for E-commerce Images",
+    "sectionSubtitle": "From background removal to realistic buyer photos — one platform does it all.",
+    "items": [
+      { "title": "One-Click Upload", "desc": "Upload a single product image — JPG, PNG, or WEBP." },
+      { "title": "AI Background Removal", "desc": "Automatically removes backgrounds for clean product cutouts." },
+      { "title": "Smart Crop", "desc": "Auto-adapt to Taobao, Douyin, Xiaohongshu sizes." },
+      { "title": "Multi-Scene Generation", "desc": "Generate 10+ popular scenes: living room, kitchen, outdoor & more." },
+      { "title": "Batch Generation", "desc": "Upload 10 images at once for mass production." },
+      { "title": "AI Copywriting", "desc": "Auto-generate product titles, descriptions & tags." },
+      { "title": "HD Downloads", "desc": "Download all images in HD resolution (1024–2048px)." },
+      { "title": "Membership Benefits", "desc": "Free: 5/day, Pro: unlimited generation." }
+    ]
+  },
+  "gallery": {
+    "sectionTitle": "One Upload, Multiple Styles",
+    "sectionSubtitle": "See how AI transforms a single product photo into diverse e-commerce images.",
+    "labels": ["White Background", "Lifestyle Scene", "Buyer Review", "Premium Brand", "Office Scene"]
+  },
+  "pricing": {
+    "sectionTitle": "Simple, Transparent Pricing",
+    "sectionSubtitle": "Start free. Upgrade when you need more.",
+    "mostPopular": "Most Popular",
+    "plans": [
+      {
+        "name": "Free",
+        "price": "¥0",
+        "features": ["5 images per day", "Basic styles", "Standard resolution", "Watermark"],
+        "cta": "Get Started"
+      },
+      {
+        "name": "Pro",
+        "price": "¥99",
+        "features": ["200 images per month", "All styles & scenes", "HD resolution", "No watermark", "Buyer show photos", "Priority generation"],
+        "cta": "Start Pro Trial"
+      },
+      {
+        "name": "Business",
+        "price": "¥299",
+        "features": ["Unlimited generation", "All Pro features", "Batch generation", "API access", "Custom templates", "Priority support"],
+        "cta": "Contact Sales"
+      }
+    ],
+    "period": "/month"
+  },
+  "footer": {
+    "rights": "© 2026 AI Image Studio. All rights reserved."
+  },
+  "sidebar": {
+    "dashboard": "Dashboard",
+    "generate": "Generate Images",
+    "translate": "Image Translation",
+    "myImages": "My Images",
+    "templates": "Templates",
+    "pricing": "Pricing",
+    "account": "Account"
+  },
+  "dashboard": {
+    "welcome": "Welcome back",
+    "welcomeSub": "Start generating professional product images with AI.",
+    "imagesGenerated": "Images Generated",
+    "creditsRemaining": "Credits Remaining",
+    "avgGeneration": "Avg. Generation",
+    "generateNew": "Generate New Images",
+    "generateNewSub": "Upload a product image and let AI create professional e-commerce photos in seconds.",
+    "startGenerating": "Start Generating",
+    "sampleGallery": "Sample Gallery",
+    "styles": {
+      "lifestyle": "Lifestyle",
+      "buyerShow": "Buyer Show",
+      "premium": "Premium",
+      "office": "Office"
+    }
+  },
+  "generate": {
+    "title": "Generate Images",
+    "uploadDrag": "Drag & drop product image",
+    "uploadFormats": "JPG, PNG, WEBP",
+    "browseFiles": "Browse Files",
+    "imageType": "Image Type",
+    "style": "Style",
+    "scene": "Scene",
+    "model": "Model",
+    "aspectRatio": "Aspect Ratio",
+    "generateBtn": "Generate Images",
+    "generating": "Generating...",
+    "results": "Generated Results",
+    "downloadAll": "Download All",
+    "download": "Download",
+    "readyTitle": "Ready to Generate",
+    "readySub": "Upload a product image and configure your settings to start generating AI-powered e-commerce photos.",
+    "imageTypes": ["E-commerce Main Image", "Product Detail Image", "Lifestyle Scene Image", "Buyer Review Image", "Social Media Product Image"],
+    "styles": ["Clean White", "Premium Brand", "Xiaohongshu Style", "Live Commerce", "Minimalist", "Outdoor Adventure", "Christmas Holiday", "Chinese New Year", "Valentine's Day", "Halloween", "Summer Fresh", "Vintage Film", "Cyberpunk", "Japanese Zen", "Industrial", "Forest Nature"],
+    "scenes": ["Living Room", "Kitchen", "Office Desk", "Outdoor Camping", "Coffee Shop", "Gym / Fitness", "Bedroom", "Balcony", "Bathroom", "Dining Room", "Beach / Ocean", "Forest / Grassland", "City Street", "Flower Shop", "Bookstore", "Kids Room", "Entrance Hall", "Walk-in Closet", "Garden / Courtyard"],
+    "models": ["Asian Female Model", "Asian Male Model", "Western Female Model", "Western Male Model", "No Model"],
+    "ratios": ["1:1 (Taobao Main)", "3:4 (Xiaohongshu)", "4:5", "9:16 (Short Video)", "16:9 (YouTube)", "2:3 (WeChat Moments)"],
+    "platforms": ["Taobao/Tmall", "JD.com", "Pinduoduo", "Xiaohongshu", "Douyin/Kuaishou", "WeChat Moments", "Weibo"],
+    "batchMode": "Batch Mode",
+    "batchLimit": "Max 10 images at once",
+    "aiCopy": "AI Copywriting",
+    "generateCopy": "Generate Copy",
+    "copyTitle": "Product Title",
+    "copyDesc": "Product Description",
+    "copyTags": "Tags",
+    "copyLoading": "Generating...",
+    "copyResult": "Generated Copy",
+    "membership": "Membership",
+    "vip": "VIP",
+    "free": "Free",
+    "pro": "Pro",
+    "enterprise": "Enterprise",
+    "daily": "per day",
+    "monthly": "per month",
+    "unlimited": "Unlimited",
+    "images": "images",
+    "features": {
+      "smartCrop": "Smart Crop",
+      "smartCropDesc": "Auto-adapt to different platform sizes",
+      "moreScenes": "More Scenes",
+      "moreScenesDesc": "Living room, kitchen, outdoor and more",
+      "aiCopy": "AI Copywriting",
+      "aiCopyDesc": "Auto-generate product titles and descriptions",
+      "batch": "Batch Processing",
+      "batchDesc": "Generate multiple images at once",
+      "hd": "HD Download",
+      "hdDesc": "1024-2048px high definition quality"
+    }
+  },
+  "lang": {
+    "zh": "中文",
+    "en": "English",
+    "ja": "日本語",
+    "ko": "한국어"
+  },
+  "auth": {
+    "login": "Log In",
+    "signup": "Sign Up",
+    "logout": "Log Out",
+    "email": "Email",
+    "password": "Password",
+    "displayName": "Display Name",
+    "displayNamePlaceholder": "Enter your name",
+    "loginSubtitle": "Log in to your Picspark AI account",
+    "signupSubtitle": "Create an account to start generating AI e-commerce images",
+    "signupSuccess": "Sign Up Successful",
+    "checkEmail": "Please check your email to verify your account.",
+    "error": "Error",
+    "noAccount": "Don't have an account?",
+    "hasAccount": "Already have an account?",
+    "forgotPassword": "Forgot password?",
+    "forgotTitle": "Reset Password",
+    "forgotDesc": "Enter your email address and we'll send you a reset link.",
+    "sendResetLink": "Send Reset Link",
+    "backToLogin": "Back to Login",
+    "resetSent": "Reset Email Sent",
+    "resetSentDesc": "Please check your email and click the link to reset your password.",
+    "setNewPassword": "Set New Password",
+    "setNewPasswordDesc": "Please enter your new password.",
+    "newPassword": "New Password",
+    "confirmPassword": "Confirm Password",
+    "passwordMismatch": "Passwords do not match",
+    "passwordTooShort": "Password must be at least 6 characters",
+    "resetPassword": "Reset Password",
+    "resetSuccess": "Password Reset Successful",
+    "redirecting": "Redirecting to dashboard..."
+  },
+  "myImages": {
+    "title": "My Images",
+    "subtitle": "Manage all your generated images.",
+    "empty": "No images yet. Start generating!",
+    "deleted": "Image deleted"
+  },
+  "templates": {
+    "title": "Templates",
+    "subtitle": "Use preset templates to quickly generate professional images.",
+    "useTemplate": "Use Template",
+    "items": {
+      "whiteBackground": "White Background",
+      "lifestyle": "Lifestyle Scene",
+      "buyerShow": "Buyer Show",
+      "premiumBrand": "Premium Brand"
+    }
+  },
+  "account": {
+    "title": "Account Settings",
+    "subtitle": "Manage your profile and subscription.",
+    "profile": "Profile",
+    "name": "Name",
+    "email": "Email",
+    "currentPlan": "Current Plan",
+    "freePlan": "Free Plan",
+    "freeDesc": "5 images per day",
+    "upgrade": "Upgrade Plan"
+  }
+}

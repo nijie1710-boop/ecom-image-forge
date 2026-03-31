@@ -1,0 +1,177 @@
+{
+  "nav": {
+    "features": "기능",
+    "gallery": "갤러리",
+    "pricing": "가격",
+    "openStudio": "스튜디오 열기"
+  },
+  "hero": {
+    "badge": "AI 기반 이커머스 사진",
+    "title1": "AI로 상품 이미지를",
+    "title2": "몇 초 만에 생성",
+    "subtitle": "상품 이미지 한 장만 업로드하면 전문 상품 사진, 구매자 리뷰 이미지, 라이프스타일 장면을 무제한으로 생성할 수 있습니다.",
+    "cta": "생성 시작",
+    "viewGallery": "갤러리 보기"
+  },
+  "features": {
+    "sectionTitle": "이커머스 이미지에 필요한 모든 것",
+    "sectionSubtitle": "배경 제거부터 실감나는 구매자 사진까지 — 한 플랫폼에서 모두 해결.",
+    "items": [
+      { "title": "원클릭 업로드", "desc": "상품 이미지 한 장 업로드 — JPG, PNG, WEBP 지원." },
+      { "title": "AI 배경 제거", "desc": "배경을 자동으로 제거하여 깔끔한 누끼 이미지 생성." },
+      { "title": "다양한 장면 생성", "desc": "거실, 사무실, 야외, 라이프스타일 등 다양한 장면 생성." },
+      { "title": "구매자 리뷰 사진", "desc": "iPhone 스타일의 실감나는 구매자 리뷰 사진, 자연광." },
+      { "title": "배치 생성", "desc": "메인 이미지, 라이프스타일, 구매자 사진 10장 이상 일괄 생성." },
+      { "title": "HD 다운로드", "desc": "모든 이미지를 HD 해상도(1024–2048px)로 다운로드." }
+    ]
+  },
+  "gallery": {
+    "sectionTitle": "한 번 업로드, 다양한 스타일",
+    "sectionSubtitle": "AI가 한 장의 상품 사진을 다양한 이커머스 이미지로 변환하는 과정을 확인하세요.",
+    "labels": ["흰색 배경", "라이프스타일", "구매자 리뷰", "프리미엄 브랜드", "오피스 장면"]
+  },
+  "pricing": {
+    "sectionTitle": "심플하고 투명한 가격",
+    "sectionSubtitle": "무료로 시작하고 필요할 때 업그레이드하세요.",
+    "mostPopular": "가장 인기",
+    "plans": [
+      {
+        "name": "무료",
+        "price": "¥0",
+        "features": ["하루 5장", "기본 스타일", "표준 해상도", "워터마크"],
+        "cta": "무료로 시작"
+      },
+      {
+        "name": "프로",
+        "price": "¥99",
+        "features": ["월 200장", "모든 스타일 & 장면", "HD 해상도", "워터마크 없음", "구매자 리뷰 사진", "우선 생성"],
+        "cta": "프로 시작"
+      },
+      {
+        "name": "비즈니스",
+        "price": "¥299",
+        "features": ["무제한 생성", "모든 프로 기능", "배치 생성", "API 접근", "커스텀 템플릿", "우선 지원"],
+        "cta": "영업팀 연락"
+      }
+    ],
+    "period": "/월"
+  },
+  "footer": {
+    "rights": "© 2026 AI Image Studio. All rights reserved."
+  },
+  "sidebar": {
+    "dashboard": "대시보드",
+    "generate": "이미지 생성",
+    "translate": "이미지 번역",
+    "myImages": "내 이미지",
+    "templates": "템플릿",
+    "pricing": "가격",
+    "account": "계정"
+  },
+  "dashboard": {
+    "welcome": "다시 오신 것을 환영합니다",
+    "welcomeSub": "AI로 전문 상품 이미지를 생성하세요.",
+    "imagesGenerated": "생성된 이미지",
+    "creditsRemaining": "남은 크레딧",
+    "avgGeneration": "평균 생성 시간",
+    "generateNew": "새 이미지 생성",
+    "generateNewSub": "상품 이미지를 업로드하면 AI가 몇 초 만에 전문 이커머스 사진을 생성합니다.",
+    "startGenerating": "생성 시작",
+    "sampleGallery": "샘플 갤러리",
+    "styles": {
+      "lifestyle": "라이프스타일",
+      "buyerShow": "구매자 리뷰",
+      "premium": "프리미엄",
+      "office": "오피스"
+    }
+  },
+  "generate": {
+    "title": "이미지 생성",
+    "uploadDrag": "상품 이미지를 드래그 앤 드롭",
+    "uploadFormats": "JPG, PNG, WEBP",
+    "browseFiles": "파일 선택",
+    "imageType": "이미지 유형",
+    "style": "스타일",
+    "scene": "장면",
+    "model": "모델",
+    "aspectRatio": "화면 비율",
+    "generateBtn": "이미지 생성",
+    "generating": "생성 중...",
+    "results": "생성 결과",
+    "downloadAll": "전체 다운로드",
+    "download": "다운로드",
+    "readyTitle": "생성 준비 완료",
+    "readySub": "상품 이미지를 업로드하고 설정을 구성하여 AI 기반 이커머스 사진 생성을 시작하세요.",
+    "imageTypes": ["이커머스 메인 이미지", "상품 상세 이미지", "라이프스타일 장면", "구매자 리뷰 이미지", "SNS 상품 이미지"],
+    "styles": ["깔끔한 흰색 배경", "프리미엄 브랜드", "샤오홍슈 스타일", "라이브 커머스", "미니멀 제품 사진", "아웃도어 스타일"],
+    "scenes": ["거실", "주방", "사무실 책상", "아웃도어 캠핑", "카페", "헬스장", "침실"],
+    "models": ["아시아 여성 모델", "아시아 남성 모델", "서양 여성 모델", "서양 남성 모델", "모델 없음"],
+    "ratios": ["1:1 (타오바오)", "3:4 (샤오홍슈)", "4:5", "9:16 (숏폼 영상)"]
+  },
+  "lang": {
+    "zh": "中文",
+    "en": "English",
+    "ja": "日本語",
+    "ko": "한국어"
+  },
+  "auth": {
+    "login": "로그인",
+    "signup": "회원가입",
+    "logout": "로그아웃",
+    "email": "이메일",
+    "password": "비밀번호",
+    "displayName": "표시 이름",
+    "displayNamePlaceholder": "이름을 입력하세요",
+    "loginSubtitle": "AI Image Studio 계정에 로그인",
+    "signupSubtitle": "계정을 만들어 AI 이커머스 이미지 생성을 시작하세요",
+    "signupSuccess": "가입 성공",
+    "checkEmail": "이메일을 확인하여 계정을 인증하세요.",
+    "error": "오류",
+    "noAccount": "계정이 없으신가요?",
+    "hasAccount": "이미 계정이 있으신가요?",
+    "forgotPassword": "비밀번호를 잊으셨나요?",
+    "forgotTitle": "비밀번호 재설정",
+    "forgotDesc": "가입한 이메일 주소를 입력하시면 재설정 링크를 보내드립니다.",
+    "sendResetLink": "재설정 링크 보내기",
+    "backToLogin": "로그인으로 돌아가기",
+    "resetSent": "재설정 이메일 전송됨",
+    "resetSentDesc": "이메일을 확인하고 링크를 클릭하여 비밀번호를 재설정하세요.",
+    "setNewPassword": "새 비밀번호 설정",
+    "setNewPasswordDesc": "새 비밀번호를 입력하세요.",
+    "newPassword": "새 비밀번호",
+    "confirmPassword": "비밀번호 확인",
+    "passwordMismatch": "비밀번호가 일치하지 않습니다",
+    "passwordTooShort": "비밀번호는 6자 이상이어야 합니다",
+    "resetPassword": "비밀번호 재설정",
+    "resetSuccess": "비밀번호 재설정 성공",
+    "redirecting": "대시보드로 이동 중..."
+  },
+  "myImages": {
+    "title": "내 이미지",
+    "subtitle": "생성한 모든 이미지를 관리하세요.",
+    "empty": "아직 이미지가 없습니다. 생성을 시작하세요!",
+    "deleted": "이미지가 삭제되었습니다"
+  },
+  "templates": {
+    "title": "템플릿",
+    "subtitle": "프리셋 템플릿으로 전문 이미지를 빠르게 생성하세요.",
+    "useTemplate": "템플릿 사용",
+    "items": {
+      "whiteBackground": "흰색 배경",
+      "lifestyle": "라이프스타일",
+      "buyerShow": "구매 후기",
+      "premiumBrand": "프리미엄 브랜드"
+    }
+  },
+  "account": {
+    "title": "계정 설정",
+    "subtitle": "프로필과 구독을 관리하세요.",
+    "profile": "프로필",
+    "name": "이름",
+    "email": "이메일",
+    "currentPlan": "현재 플랜",
+    "freePlan": "무료 플랜",
+    "freeDesc": "하루 5장",
+    "upgrade": "업그레이드"
+  }
+}

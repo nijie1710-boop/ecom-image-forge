@@ -1,0 +1,13 @@
+project_id = "ciylvpeobxzqcavorhqq"
+
+[functions.generate-image]
+verify_jwt = false
+
+[functions.generate-copy]
+verify_jwt = false
+
+[functions.translate-image]
+verify_jwt = false
+
+[functions.manage-balance]
+verify_jwt = false
