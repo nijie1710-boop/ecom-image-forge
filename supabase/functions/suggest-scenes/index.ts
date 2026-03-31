@@ -125,8 +125,13 @@ Return ONLY the JSON object, no markdown formatting, no code blocks, no other te
     const rawText = await apiResponse.text();
 
     if (!apiResponse.ok) {
-      console.error("Gemini API error:", apiResponse.status, rawText.substring(0, 300));
-      throw new Error(`AI 服务暂时不可用 (${apiResponse.status})，请稍后重试`);
+      let errorDetail = rawText.substring(0, 300);
+      try {
+        const errJson = JSON.parse(rawText);
+        errorDetail = errJson.error?.message || errJson.error?.details || errorDetail;
+      } catch {}
+      console.error("Gemini API error:", apiResponse.status, errorDetail);
+      throw new Error(`AI 服务暂时不可用 (${apiResponse.status}): ${errorDetail}`);
     }
 
     let apiData;
