@@ -207,37 +207,15 @@ const GeneratePage = () => {
     }
   };
 
-  // AI 场景推荐 - 先上传到 Storage，用 URL 调用（避免 base64 大小限制）
+  // AI 场景推荐
   const fetchSceneSuggestions = async (imageDataUrl: string) => {
     setIsLoadingSuggestions(true);
     setSuggestionError(null);
     setSceneSuggestions([]);
     try {
-      // 如果是 base64，先上传到 Supabase Storage 获取 URL
-      let imageUrl = imageDataUrl;
-      if (imageDataUrl.startsWith('data:')) {
-        // 转换 base64 为 Blob 上传
-        const response = await fetch(imageDataUrl);
-        const blob = await response.blob();
-        const fileName = `scene-suggest/${Date.now()}.jpg`;
-        const { data: uploadData, error: uploadError } = await supabase.storage
-          .from('generated-images')
-          .upload(fileName, blob, { upsert: false });
-
-        if (uploadError) {
-          console.error('Upload error:', uploadError);
-          throw new Error('图片上传失败，请重试');
-        }
-
-        const { data: urlData } = supabase.storage
-          .from('generated-images')
-          .getPublicUrl(fileName);
-        imageUrl = urlData.publicUrl;
-        console.log('Uploaded image URL:', imageUrl);
-      }
-
+      // 直接传 base64 给函数（函数内部处理图片下载）
       const { data, error } = await supabase.functions.invoke('suggest-scenes', {
-        body: { imageUrl, imageType },
+        body: { imageBase64: imageDataUrl, imageType },
       });
       if (error) { throw new Error(error.message || '场景推荐失败'); }
       if (data?.error) { throw new Error(data.error); }
