@@ -3,8 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { Upload, X, Sparkles, Loader2, Copy, Check, Images, Download, Edit3, Eye, ImagePlus, RefreshCw, Globe, ZoomIn } from "lucide-react";
-import { generatePrompt } from "@/lib/ai-generator";
+import { Upload, X, Sparkles, Loader2, Copy, Check, Images, Download, Edit3, Eye, RefreshCw, Globe, ZoomIn } from "lucide-react";
 import { type OverlayStyle } from "@/lib/image-text-overlay";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -41,13 +40,6 @@ const ratioOptions = [
   { value: '2:3', label: '2:3 竖版海报' },
 ];
 
-const promptExamples = [
-  "现代客厅场景，阳光明亮，温馨氛围",
-  "高端电商风格，白底，干净构图",
-  "小红书种草风，生活感强",
-  "户外露营场景，自然光线",
-  "日式极简风，木质桌面",
-];
 
 const GeneratePage = () => {
   const { t } = useTranslation();
@@ -628,7 +620,7 @@ const GeneratePage = () => {
             <div>
               <Sparkles className="h-12 w-12 text-muted-foreground/15 mx-auto mb-3" />
               <h3 className="font-semibold text-muted-foreground mb-1 text-sm">准备就绪</h3>
-              <p className="text-xs text-muted-foreground/60 max-w-xs">上传产品图，选择风格和场景，开始生成专业电商图片</p>
+              <p className="text-xs text-muted-foreground/60 max-w-xs">上传产品图，选择场景描述，开始生成专业电商图片</p>
             </div>
           </div>
         )}

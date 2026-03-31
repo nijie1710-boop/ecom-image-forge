@@ -15,26 +15,40 @@ serve(async (req) => {
   }
 
   try {
-    // ========== 1. 用户认证 ==========
+    // ========== 1. 用户认证（支持 DISABLE_AUTH 绕过） ==========
+    const DISABLE_AUTH = Deno.env.get("DISABLE_AUTH") === "true";
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return new Response(JSON.stringify({ error: "未授权，请先登录" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-    const token = authHeader.replace("Bearer ", "");
-
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    if (authError || !user) {
-      return new Response(JSON.stringify({ error: "认证失败，请重新登录" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    let userId: string | null = null;
+
+    if (!DISABLE_AUTH) {
+      if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        return new Response(JSON.stringify({ error: "未授权，请先登录" }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const token = authHeader.replace("Bearer ", "");
+      const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: "认证失败，请重新登录" }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      userId = user.id;
+    } else {
+      // DISABLE_AUTH 模式：从 JWT payload 直接拿 userId
+      if (authHeader && authHeader.startsWith("Bearer ")) {
+        const token = authHeader.replace("Bearer ", "");
+        try {
+          const payload = JSON.parse(atob(token.split('.')[1]));
+          userId = payload.sub || payload.user_id || null;
+        } catch {}
+      }
     }
 
     const { imageBase64, platform, language } = await req.json();
@@ -42,7 +56,7 @@ serve(async (req) => {
 
     // ========== 2. 余额预校验 ==========
     const { data: balanceData, error: balanceError } = await supabase.rpc("get_user_balance", {
-      p_user_id: user.id,
+      p_user_id: userId,
     });
     if (balanceError) {
       return new Response(JSON.stringify({ error: "余额查询失败" }), {
@@ -63,7 +77,7 @@ serve(async (req) => {
 
     // 预扣费
     const { data: deductResult, error: deductError } = await supabase.rpc("deduct_balance", {
-      p_user_id: user.id,
+      p_user_id: userId,
       p_amount: cost,
       p_operation_type: "generate_copy",
       p_description: "生成电商文案",
@@ -111,7 +125,7 @@ ${langInstruction}
     // ========== 使用 Google Gemini ==========
     if (!GEMINI_API_KEY) {
       await supabase.rpc("add_balance", {
-        p_user_id: user.id, p_amount: cost, p_payment_method: "refund", p_notes: "文案生成失败：无可用AI密钥",
+        p_user_id: userId, p_amount: cost, p_payment_method: "refund", p_notes: "文案生成失败：无可用AI密钥",
       });
       return new Response(JSON.stringify({ error: "AI 服务未配置，请联系管理员" }), {
         status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -157,7 +171,7 @@ ${langInstruction}
     if (generationFailed) {
       // 退还积分
       await supabase.rpc("add_balance", {
-        p_user_id: user.id, p_amount: cost, p_payment_method: "refund", p_notes: `文案生成失败退款：${failureReason}`,
+        p_user_id: userId, p_amount: cost, p_payment_method: "refund", p_notes: `文案生成失败退款：${failureReason}`,
       });
       return new Response(JSON.stringify({ error: failureReason }), {
         status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
