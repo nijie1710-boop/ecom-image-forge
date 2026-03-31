@@ -41,23 +41,17 @@ export interface CopyGenParams {
   copyImageType: "main" | "detail" | "all";
   enableTextOverlay: boolean;
   overlayTemplate: OverlayStyle;
-  style: string;
-  scene: string;
   userId?: string;
   onComplete?: (images: string[]) => void;
 }
 
 export interface ImageGenParams {
   prompt: string;
-  ratio: string;
+  aspectRatio: string;
   imageBase64?: string;
-  referenceImageUrl?: string;
   imageType?: string;
+  textLanguage?: string;
   n: number;
-  style: string;
-  scene: string;
-  model: string;
-  uiRatioLabel?: string;
   userId?: string;
   onComplete?: (images: string[]) => void;
 }
@@ -135,7 +129,7 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   );
 
   const saveLocalHistory = useCallback(
-    async (images: string[], payload: { prompt: string; style: string; scene: string; aspectRatio: string }) => {
+    async (images: string[], payload: { prompt: string; aspectRatio: string }) => {
       try {
         const localHistory = JSON.parse(localStorage.getItem("local_image_history") || "[]");
         const permanentUrls = await Promise.all(images.map((url) => uploadToStorage(url, crypto.randomUUID())));
@@ -143,8 +137,6 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           id: crypto.randomUUID(),
           image_url: url,
           prompt: payload.prompt,
-          style: payload.style,
-          scene: payload.scene,
           aspect_ratio: payload.aspectRatio,
           created_at: new Date().toISOString(),
         }));
@@ -160,7 +152,7 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     async (
       userId: string | undefined,
       images: string[],
-      payload: { prompt: string; style: string; scene: string; aspectRatio: string }
+      payload: { prompt: string; aspectRatio: string }
     ) => {
       if (!userId || images.length === 0) return;
       try {
@@ -169,8 +161,6 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           user_id: userId,
           image_url: url,
           prompt: payload.prompt,
-          style: payload.style,
-          scene: payload.scene,
           aspect_ratio: payload.aspectRatio,
         }));
         const { error } = await supabase.from("generated_images").insert(records);
@@ -330,17 +320,10 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         try {
           // 先验证图片格式，过滤无效的 Lovable image_key
           const validImageBase64 = getValidImageUrl(params.imageBase64);
-          const validReferenceImageUrl = getValidImageUrl(params.referenceImageUrl);
 
           const productImageUrl = await ensureUsableImageUrl(validImageBase64, "source");
           if (validImageBase64 && !productImageUrl) {
             updateJob(jobId, { status: "error", error: "产品图上传失败，请重试" });
-            return;
-          }
-
-          const styleReferenceUrl = await ensureUsableImageUrl(validReferenceImageUrl, "style");
-          if (validReferenceImageUrl && !styleReferenceUrl) {
-            updateJob(jobId, { status: "error", error: "参考图上传失败，请重试" });
             return;
           }
 
@@ -358,11 +341,11 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           // 调用服务端生成（含服务端扣费，无需前端处理）
           const result = await generateImage({
             prompt: params.prompt,
-            aspectRatio: params.ratio,
+            aspectRatio: params.aspectRatio,
             n: params.n,
             imageBase64: productImageUrl,
-            referenceImageUrl: styleReferenceUrl,
             imageType: params.imageType,
+            textLanguage: params.textLanguage,
           });
 
           if (result.error) {
@@ -380,9 +363,9 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           // 保存历史记录
           const payload = {
             prompt: params.prompt,
-            style: params.style,
-            scene: params.scene,
-            aspectRatio: params.uiRatioLabel || params.ratio,
+            style: "",
+            scene: "",
+            aspectRatio: params.aspectRatio,
           };
 
           await Promise.all([

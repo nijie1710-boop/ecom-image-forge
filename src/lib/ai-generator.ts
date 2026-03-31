@@ -5,8 +5,8 @@ export interface GenerateImageParams {
   aspectRatio?: string;
   n?: number;
   imageBase64?: string;
-  referenceImageUrl?: string;
   imageType?: string;
+  textLanguage?: string;
 }
 
 export interface GenerateImageResult {
@@ -29,10 +29,10 @@ async function generateSingleImage(params: GenerateImageParams, attempt: number)
   const { data, error } = await supabase.functions.invoke('generate-image', {
     body: {
       prompt: params.prompt,
-      referenceImageUrl: params.imageBase64 || undefined,
-      referenceStyleUrl: params.referenceImageUrl || undefined,
+      imageBase64: params.imageBase64 || undefined,
       aspectRatio: params.aspectRatio || '1:1',
-      imageType: params.imageType || '电商主图',
+      imageType: params.imageType || '主图',
+      textLanguage: params.textLanguage || 'zh',
     },
   });
 

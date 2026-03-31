@@ -231,7 +231,7 @@ const GeneratePage = () => {
 
     const params = {
       prompt: finalPrompt,
-      ratio: selectedRatio,
+      aspectRatio: selectedRatio,
       n: totalImages,
       imageBase64: uploadedImages.length > 0 ? uploadedImages[0] : undefined,
       imageType,
