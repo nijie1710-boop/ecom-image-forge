@@ -31,68 +31,62 @@ serve(async (req: Request) => {
       }
     }
 
-    const { imageBase64, imageType } = await req.json();
+    const { imageUrl } = await req.json();
 
     const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
     if (!GEMINI_API_KEY) {
       throw new Error("GEMINI_API_KEY is not configured");
     }
 
-    // 解析图片 base64
-    let mimeType = "image/jpeg";
-    let base64Data = "";
-    let hasImage = false;
-
-    if (imageBase64) {
-      hasImage = true;
-      if (imageBase64.includes(",")) {
-        const parts = imageBase64.split(",");
-        const metaPart = parts[0];
-        base64Data = parts[1];
-        const mimeMatch = metaPart.match(/data:([^;]+)/);
-        if (mimeMatch) mimeType = mimeMatch[1];
-      } else {
-        base64Data = imageBase64;
-      }
-    }
-
-    // 构建 prompt
-    let promptText = "";
-    if (hasImage) {
-      promptText = `You are an expert e-commerce product photographer and scene designer.
-
-If an image is provided, analyze it carefully and identify:
-1. What product is shown
-2. Key visual features, colors, materials, style
-3. Any visible text or branding
-
-Then generate exactly 3 diverse scene suggestions for this product in Chinese.
-
-If no image is provided (or image analysis fails), generate 3 general e-commerce scene suggestions for any product.
-
-Output ONLY a valid JSON array with exactly 3 items like this (no markdown, no code blocks):
-[{"scene":"场景名称","description":"详细场景描述"},{"scene":"场景名称2","description":"详细场景描述2"},{"scene":"场景名称3","description":"详细场景描述3"}]`;
-    } else {
-      promptText = `You are an expert e-commerce product photographer. Generate exactly 3 diverse scene suggestions for e-commerce product photography in Chinese.
-
-Output ONLY a valid JSON array like this (no markdown, no code blocks):
-[{"scene":"现代简约","description":"纯白背景专业棚拍展示产品全貌"},{"scene":"生活场景","description":"温馨室内环境自然光线融入生活"},{"scene":"创意展示","description":"艺术感布景戏剧性灯光突出设计"}]`;
-    }
-
-    // 构建请求 parts
-    const parts: any[] = [{ text: promptText }];
-    if (hasImage) {
-      parts.push({
-        inlineData: {
-          mimeType,
-          data: base64Data,
-        },
+    // 下载图片
+    if (!imageUrl) {
+      return new Response(JSON.stringify({ error: "请上传产品图片" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/nano-banana-pro-preview:generateContent?key=${GEMINI_API_KEY}`;
+    console.error("suggest-scenes: downloading from URL:", imageUrl.substring(0, 100));
 
-    console.error("suggest-scenes: hasImage=", hasImage, "base64 length=", base64Data.length);
+    let imageData: ArrayBuffer | null = null;
+    let mimeType = "image/jpeg";
+
+    try {
+      const imgResponse = await fetch(imageUrl);
+      if (!imgResponse.ok) {
+        throw new Error(`图片下载失败: ${imgResponse.status}`);
+      }
+      imageData = await imgResponse.arrayBuffer();
+      mimeType = imgResponse.headers.get("content-type") || "image/jpeg";
+      console.error("suggest-scenes: downloaded", imageData.byteLength, "bytes, mime:", mimeType);
+    } catch (fetchErr: any) {
+      console.error("suggest-scenes: fetch error:", fetchErr.message);
+      throw new Error("图片下载失败，请检查图片链接是否有效");
+    }
+
+    const promptText = `You are an expert e-commerce product photographer and scene designer.
+
+Analyze the product image and generate exactly 2 diverse scene suggestions for this product in Chinese.
+
+Output ONLY a valid JSON array with exactly 2 items like this (no markdown, no code blocks):
+[{"scene":"场景名称1","description":"详细场景描述1"},{"scene":"场景名称2","description":"详细场景描述2"}]
+
+Requirements:
+- Each scene must be specific to this product's type, color, material, and style
+- Each scene should have a different mood/direction
+- Be practical for e-commerce product photography`;
+
+    const parts: any[] = [
+      { text: promptText },
+      {
+        inlineData: {
+          mimeType,
+          data: btoa(String.fromCharCode(...new Uint8Array(imageData))),
+        },
+      },
+    ];
+
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${GEMINI_API_KEY}`;
 
     const apiResponse = await fetch(apiUrl, {
       method: "POST",
@@ -102,7 +96,7 @@ Output ONLY a valid JSON array like this (no markdown, no code blocks):
         generationConfig: {
           temperature: 0.8,
           topP: 0.9,
-          maxOutputTokens: 2048,
+          maxOutputTokens: 1024,
         },
       }),
     });
@@ -133,7 +127,6 @@ Output ONLY a valid JSON array like this (no markdown, no code blocks):
 
     console.error("suggest-scenes: AI response:", text.substring(0, 200));
 
-    // 解析 JSON
     let suggestions: any[];
     try {
       const jsonMatch = text.match(/\[[\s\S]*\]/);
@@ -143,23 +136,18 @@ Output ONLY a valid JSON array like this (no markdown, no code blocks):
         suggestions = JSON.parse(text);
       }
     } catch {
-      // 解析失败，使用默认场景
       suggestions = [
         { scene: "现代简约风", description: "纯白背景，专业棚拍，展示产品全貌和细节" },
         { scene: "生活场景图", description: "温馨室内环境，自然光线，融入真实生活场景" },
-        { scene: "创意展示图", description: "艺术感布景，戏剧性灯光，突出产品设计感" },
       ];
     }
 
-    suggestions = suggestions.slice(0, 3).map((s: any) => ({
+    suggestions = suggestions.slice(0, 2).map((s: any) => ({
       scene: String(s.scene || "场景"),
       description: String(s.description || ""),
     }));
 
-    return new Response(JSON.stringify({
-      suggestions,
-      note: hasImage ? "基于产品图片分析生成" : "基于通用场景生成",
-    }), {
+    return new Response(JSON.stringify({ suggestions }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
 

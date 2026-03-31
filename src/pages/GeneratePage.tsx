@@ -151,7 +151,7 @@ const GeneratePage = () => {
     }
   }, [activeJob, uploadedImages.length]);
 
-  // 图片压缩：强制压缩到 300px，质量 0.5，确保 base64 < 200KB
+  // 图片压缩：更小更快，确保 base64 < 100KB
   const compressImage = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -160,9 +160,9 @@ const GeneratePage = () => {
         const img = new Image();
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          // 固定 300px 宽度
-          const TARGET_WIDTH = 300;
-          const quality = 0.5;
+          // 固定 200px 宽度，质量 0.3
+          const TARGET_WIDTH = 200;
+          const quality = 0.3;
 
           let width = TARGET_WIDTH;
           let height = Math.round((img.height * TARGET_WIDTH) / img.width);
@@ -175,7 +175,7 @@ const GeneratePage = () => {
           try {
             const compressed = canvas.toDataURL('image/jpeg', quality);
             const sizeKB = (compressed.length * 0.75) / 1024;
-            console.log(`Scene image: ${img.width}x${img.height} → ${width}x${height}, base64 ~${sizeKB.toFixed(0)}KB`);
+            console.log(`Scene: ${img.width}x${img.height}→${width}x${height}, ~${sizeKB.toFixed(0)}KB`);
             resolve(compressed);
           } catch(err) {
             console.error('Compression error:', err);
