@@ -151,11 +151,11 @@ const GeneratePage = () => {
     }
   }, [activeJob, uploadedImages.length]);
 
-  // 图片压缩：超过 500KB 的图片压缩到 800px 宽度，质量 0.7
+  // 图片压缩：超过 300KB 的图片压缩到 600px 宽度，质量 0.5
   const compressImage = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
-      // 如果文件小于 500KB，直接返回原文件
-      if (file.size < 500 * 1024) {
+      // 如果文件小于 300KB，直接返回原文件
+      if (file.size < 300 * 1024) {
         const reader = new FileReader();
         reader.onload = (e) => resolve(e.target?.result as string);
         reader.onerror = reject;
@@ -167,8 +167,8 @@ const GeneratePage = () => {
       const img = new Image();
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 800;
-        const quality = 0.7;
+        const MAX_WIDTH = 600;  // 更小
+        const quality = 0.5;     // 更低质量
 
         let width = img.width;
         let height = img.height;
