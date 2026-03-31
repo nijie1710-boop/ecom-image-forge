@@ -31,38 +31,38 @@ serve(async (req: Request) => {
       }
     }
 
-    const { imageUrl } = await req.json();
+    const body = await req.json();
+    console.error("suggest-scenes: received body keys:", Object.keys(body).join(', '));
+    console.error("suggest-scenes: imageBase64 present:", !!body.imageBase64, "length:", body.imageBase64?.length || 0);
+
+    const { imageBase64 } = body;
 
     const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
     if (!GEMINI_API_KEY) {
       throw new Error("GEMINI_API_KEY is not configured");
     }
 
-    // 下载图片
-    if (!imageUrl) {
-      return new Response(JSON.stringify({ error: "请上传产品图片" }), {
+    if (!imageBase64 || imageBase64.length < 100) {
+      console.error("suggest-scenes: imageBase64 too short or empty, length:", imageBase64?.length || 0);
+      return new Response(JSON.stringify({ error: "请上传产品图片或图片太小" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    console.error("suggest-scenes: downloading from URL:", imageUrl.substring(0, 100));
-
-    let imageData: ArrayBuffer | null = null;
+    // 解析 base64
     let mimeType = "image/jpeg";
-
-    try {
-      const imgResponse = await fetch(imageUrl);
-      if (!imgResponse.ok) {
-        throw new Error(`图片下载失败: ${imgResponse.status}`);
-      }
-      imageData = await imgResponse.arrayBuffer();
-      mimeType = imgResponse.headers.get("content-type") || "image/jpeg";
-      console.error("suggest-scenes: downloaded", imageData.byteLength, "bytes, mime:", mimeType);
-    } catch (fetchErr: any) {
-      console.error("suggest-scenes: fetch error:", fetchErr.message);
-      throw new Error("图片下载失败，请检查图片链接是否有效");
+    let base64Data = "";
+    if (imageBase64.includes(",")) {
+      const parts = imageBase64.split(",");
+      base64Data = parts[1] || parts[0];
+      const mimeMatch = parts[0].match(/data:([^;]+)/);
+      if (mimeMatch) mimeType = mimeMatch[1];
+    } else {
+      base64Data = imageBase64;
     }
+
+    console.error("suggest-scenes: parsed base64 length:", base64Data.length, "mime:", mimeType);
 
     const promptText = `You are an expert e-commerce product photographer and scene designer.
 
@@ -81,7 +81,7 @@ Requirements:
       {
         inlineData: {
           mimeType,
-          data: btoa(String.fromCharCode(...new Uint8Array(imageData))),
+          data: base64Data,
         },
       },
     ];
