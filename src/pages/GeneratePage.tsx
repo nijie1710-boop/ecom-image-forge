@@ -180,6 +180,8 @@ const GeneratePage = () => {
       if (data?.error) { throw new Error(data.error); }
       if (data?.suggestions && Array.isArray(data.suggestions)) {
         setSceneSuggestions(data.suggestions);
+        // 如果有产品摘要，也可以在 UI 上显示
+        console.log('AI 产品分析:', data.product_summary, '可见文字:', data.visible_text);
       } else {
         throw new Error('返回格式错误');
       }
