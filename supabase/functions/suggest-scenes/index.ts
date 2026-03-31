@@ -119,7 +119,7 @@ Return ONLY the JSON object, no markdown formatting, no code blocks, no other te
       },
     ];
 
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/nano-banana-pro-preview:generateContent?key=${GEMINI_API_KEY}`;
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
 
     const apiResponse = await fetch(apiUrl, {
       method: "POST",
