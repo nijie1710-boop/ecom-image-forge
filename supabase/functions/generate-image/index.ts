@@ -133,7 +133,9 @@ serve(async (req: Request) => {
     console.error("parts:", parts.length, "(1=text, 2=product, 3=style)");
     console.error("prompt:", systemInstruction.substring(0, 400));
 
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/nano-banana-pro-preview:generateContent?key=${GEMINI_API_KEY}`;
+    // nano-banana-pro = gemini-3-pro-image-preview（专业级，高保真，复杂指令）
+    // gemini-2.5-flash-image（速度优先，保真度一般）
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-image-preview:generateContent?key=${GEMINI_API_KEY}`;
     const apiResponse = await fetch(apiUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
