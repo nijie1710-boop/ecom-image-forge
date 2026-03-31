@@ -151,39 +151,41 @@ const GeneratePage = () => {
     }
   }, [activeJob, uploadedImages.length]);
 
-  // 强制压缩：不管原图多大，都压缩到 300px，质量 0.3
-  // 目标：base64 不超过 100KB，确保能传给 Edge Functions
+  // 图片压缩：强制压缩到 300px，质量 0.5，确保 base64 < 200KB
   const compressImage = (file: File): Promise<string> => {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = (e) => {
         const dataUrl = e.target?.result as string;
         const img = new Image();
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          const MAX_WIDTH = 300;
-          const quality = 0.3;
+          // 固定 300px 宽度
+          const TARGET_WIDTH = 300;
+          const quality = 0.5;
 
-          let width = img.width;
-          let height = img.height;
-          if (width > MAX_WIDTH) {
-            height = (height * MAX_WIDTH) / width;
-            width = MAX_WIDTH;
-          }
+          let width = TARGET_WIDTH;
+          let height = Math.round((img.height * TARGET_WIDTH) / img.width);
 
           canvas.width = width;
           canvas.height = height;
           const ctx = canvas.getContext('2d')!;
           ctx.drawImage(img, 0, 0, width, height);
 
-          const compressed = canvas.toDataURL('image/jpeg', quality);
-          console.log(`Scene img: ${img.width}x${img.height} → ${width}x${height}, base64: ${(compressed.length/1024).toFixed(0)}KB`);
-          resolve(compressed);
+          try {
+            const compressed = canvas.toDataURL('image/jpeg', quality);
+            const sizeKB = (compressed.length * 0.75) / 1024;
+            console.log(`Scene image: ${img.width}x${img.height} → ${width}x${height}, base64 ~${sizeKB.toFixed(0)}KB`);
+            resolve(compressed);
+          } catch(err) {
+            console.error('Compression error:', err);
+            resolve(dataUrl);
+          }
         };
         img.onerror = () => resolve(dataUrl);
         img.src = dataUrl;
       };
-      reader.onerror = () => resolve(dataUrl);
+      reader.onerror = () => reject(new Error('文件读取失败'));
       reader.readAsDataURL(file);
     });
   };
@@ -223,7 +225,12 @@ const GeneratePage = () => {
       }
     } catch (err: any) {
       console.error('Scene suggestion error:', err);
-      setSuggestionError(err.message || '场景推荐失败，请稍后重试');
+      // 简化错误信息，避免显示过长的 base64 数据
+      let errorMsg = err.message || '场景推荐失败，请稍后重试';
+      if (errorMsg.includes('Base64 decoding failed')) {
+        errorMsg = '图片数据处理失败，请尝试更换图片或刷新页面';
+      }
+      setSuggestionError(errorMsg);
     } finally {
       setIsLoadingSuggestions(false);
     }
