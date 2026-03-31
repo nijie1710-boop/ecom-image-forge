@@ -151,44 +151,40 @@ const GeneratePage = () => {
     }
   }, [activeJob, uploadedImages.length]);
 
-  // 图片压缩：超过 300KB 的图片压缩到 600px 宽度，质量 0.5
+  // 强制压缩：不管原图多大，都压缩到 300px，质量 0.3
+  // 目标：base64 不超过 100KB，确保能传给 Edge Functions
   const compressImage = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      // 如果文件小于 300KB，直接返回原文件
-      if (file.size < 300 * 1024) {
-        const reader = new FileReader();
-        reader.onload = (e) => resolve(e.target?.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-        return;
-      }
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const dataUrl = e.target?.result as string;
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 300;
+          const quality = 0.3;
 
-      // 压缩大图
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 600;  // 更小
-        const quality = 0.5;     // 更低质量
+          let width = img.width;
+          let height = img.height;
+          if (width > MAX_WIDTH) {
+            height = (height * MAX_WIDTH) / width;
+            width = MAX_WIDTH;
+          }
 
-        let width = img.width;
-        let height = img.height;
-        if (width > MAX_WIDTH) {
-          height = (height * MAX_WIDTH) / width;
-          width = MAX_WIDTH;
-        }
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d')!;
+          ctx.drawImage(img, 0, 0, width, height);
 
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d')!;
-        ctx.drawImage(img, 0, 0, width, height);
-
-        // 输出为 JPEG（更小）
-        const compressed = canvas.toDataURL('image/jpeg', quality);
-        console.log(`Compressed: ${img.width}x${img.height} → ${width}x${height}, size: ${(file.size / 1024).toFixed(0)}KB → ${(compressed.length / 1024).toFixed(0)}KB`);
-        resolve(compressed);
+          const compressed = canvas.toDataURL('image/jpeg', quality);
+          console.log(`Scene img: ${img.width}x${img.height} → ${width}x${height}, base64: ${(compressed.length/1024).toFixed(0)}KB`);
+          resolve(compressed);
+        };
+        img.onerror = () => resolve(dataUrl);
+        img.src = dataUrl;
       };
-      img.onerror = reject;
-      img.src = URL.createObjectURL(file);
+      reader.onerror = () => resolve(dataUrl);
+      reader.readAsDataURL(file);
     });
   };
 
@@ -226,6 +222,7 @@ const GeneratePage = () => {
         throw new Error('返回格式错误');
       }
     } catch (err: any) {
+      console.error('Scene suggestion error:', err);
       setSuggestionError(err.message || '场景推荐失败，请稍后重试');
     } finally {
       setIsLoadingSuggestions(false);
