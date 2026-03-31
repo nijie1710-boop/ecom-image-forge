@@ -207,20 +207,42 @@ const GeneratePage = () => {
     }
   };
 
-  // AI 场景推荐
+  // AI 场景推荐 - 先上传到 Storage，用 URL 调用（避免 base64 大小限制）
   const fetchSceneSuggestions = async (imageDataUrl: string) => {
     setIsLoadingSuggestions(true);
     setSuggestionError(null);
     setSceneSuggestions([]);
     try {
+      // 如果是 base64，先上传到 Supabase Storage 获取 URL
+      let imageUrl = imageDataUrl;
+      if (imageDataUrl.startsWith('data:')) {
+        // 转换 base64 为 Blob 上传
+        const response = await fetch(imageDataUrl);
+        const blob = await response.blob();
+        const fileName = `scene-suggest/${Date.now()}.jpg`;
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('generated-images')
+          .upload(fileName, blob, { upsert: false });
+
+        if (uploadError) {
+          console.error('Upload error:', uploadError);
+          throw new Error('图片上传失败，请重试');
+        }
+
+        const { data: urlData } = supabase.storage
+          .from('generated-images')
+          .getPublicUrl(fileName);
+        imageUrl = urlData.publicUrl;
+        console.log('Uploaded image URL:', imageUrl);
+      }
+
       const { data, error } = await supabase.functions.invoke('suggest-scenes', {
-        body: { imageBase64: imageDataUrl, imageType },
+        body: { imageUrl, imageType },
       });
       if (error) { throw new Error(error.message || '场景推荐失败'); }
       if (data?.error) { throw new Error(data.error); }
       if (data?.suggestions && Array.isArray(data.suggestions)) {
         setSceneSuggestions(data.suggestions);
-        // 如果有产品摘要，也可以在 UI 上显示
         console.log('AI 产品分析:', data.product_summary, '可见文字:', data.visible_text);
       } else {
         throw new Error('返回格式错误');
