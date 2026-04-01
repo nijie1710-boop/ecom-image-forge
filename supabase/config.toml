@@ -12,5 +12,8 @@ verify_jwt = false
 [functions.suggest-scenes]
 verify_jwt = false
 
+[functions.detail-plan]
+verify_jwt = false
+
 [functions.manage-balance]
 verify_jwt = false

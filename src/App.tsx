@@ -12,6 +12,7 @@ import AuthPage from "./pages/AuthPage";
 import DashboardLayout from "./pages/DashboardLayout";
 import DashboardHome from "./pages/DashboardHome";
 import GeneratePage from "./pages/GeneratePage";
+import DetailDesignPage from "./pages/DetailDesignPage";
 import MyImagesPage from "./pages/MyImagesPage";
 import PricingPage from "./pages/PricingPage";
 import RechargePage from "./pages/RechargePage";
@@ -47,6 +48,7 @@ const App = () => (
               >
                 <Route index element={<DashboardHome />} />
                 <Route path="generate" element={<GeneratePage />} />
+                <Route path="detail-design" element={<DetailDesignPage />} />
                 <Route path="images" element={<MyImagesPage />} />
                 <Route path="pricing" element={<PricingPage />} />
                 <Route path="recharge" element={<RechargePage />} />

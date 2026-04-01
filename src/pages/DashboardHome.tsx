@@ -1,21 +1,48 @@
 import { useTranslation } from "react-i18next";
-import { Wand2, Image, Upload, Sparkles, FileText, ArrowRight, Zap } from "lucide-react";
+import {
+  Wand2,
+  Image,
+  Upload,
+  Sparkles,
+  FileText,
+  ArrowRight,
+  Zap,
+  LayoutPanelTop,
+} from "lucide-react";
 import { Link } from "react-router-dom";
-import { Button } from "@/components/ui/button";
 import demoLifestyle from "@/assets/demo-lifestyle-1.jpg";
 import demoBuyer from "@/assets/demo-buyer-1.jpg";
 import demoPremium from "@/assets/demo-premium-1.jpg";
 import demoOffice from "@/assets/demo-office-1.jpg";
 
 const steps = [
-  { icon: Upload, title: "上传图片", desc: "上传产品照片或输入描述" },
-  { icon: Sparkles, title: "AI生成", desc: "选择风格场景一键生成" },
-  { icon: FileText, title: "生成文案", desc: "AI 生成营销卖点与详情页" },
+  { icon: Upload, title: "上传商品图", desc: "上传产品图或补充设计需求" },
+  { icon: Sparkles, title: "AI 生成方案", desc: "生成主图、场景图或详情页策划" },
+  { icon: FileText, title: "输出结果", desc: "导出图片、文案和长图结构方案" },
 ];
 
 const quickActions = [
-  { icon: Wand2, title: "AI 生成图片", desc: "上传产品，秒出电商图", path: "/dashboard/generate", color: "from-primary to-purple-500" },
-  { icon: Image, title: "我的图片库", desc: "查看和管理生成的图片", path: "/dashboard/images", color: "from-amber-500 to-orange-500" },
+  {
+    icon: Wand2,
+    title: "AI 生图",
+    desc: "上传商品，快速生成主图和场景图",
+    path: "/dashboard/generate",
+    color: "from-primary to-purple-500",
+  },
+  {
+    icon: LayoutPanelTop,
+    title: "AI 详情页",
+    desc: "先做整版策划，再逐屏生成长图详情页",
+    path: "/dashboard/detail-design",
+    color: "from-fuchsia-500 to-rose-500",
+  },
+  {
+    icon: Image,
+    title: "我的图片库",
+    desc: "查看和管理已经生成的图片结果",
+    path: "/dashboard/images",
+    color: "from-amber-500 to-orange-500",
+  },
 ];
 
 const galleryItems = [
@@ -26,63 +53,64 @@ const galleryItems = [
 ];
 
 const DashboardHome = () => {
-  const { t } = useTranslation();
+  useTranslation();
 
   return (
-    <div className="max-w-7xl mx-auto">
-      {/* Hero Section */}
-      <div className="px-4 pt-6 pb-4 md:px-8 md:pt-10 md:pb-6">
-        <div className="text-center md:text-left max-w-2xl md:mx-0 mx-auto">
+    <div className="mx-auto max-w-7xl">
+      <div className="px-4 pb-4 pt-6 md:px-8 md:pb-6 md:pt-10">
+        <div className="mx-auto max-w-2xl text-center md:mx-0 md:text-left">
           <h1
-            className="font-bold text-3xl md:text-4xl lg:text-5xl mb-2"
+            className="mb-2 text-3xl font-bold md:text-4xl lg:text-5xl"
             style={{
-              background: 'linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(280, 70%, 55%) 100%)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
+              background:
+                "linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(280, 70%, 55%) 100%)",
+              WebkitBackgroundClip: "text",
+              WebkitTextFillColor: "transparent",
             }}
           >
             PicSpark AI
           </h1>
-          <p className="text-muted-foreground text-sm md:text-base">
-            上传产品图，AI 秒级生成专业电商图片与营销文案
+          <p className="text-sm text-muted-foreground md:text-base">
+            上传商品图，AI 快速生成电商图片、详情页策划和营销文案。
           </p>
         </div>
       </div>
 
-      {/* Main CTA */}
-      <div className="px-4 md:px-8 mb-6">
+      <div className="mb-6 px-4 md:px-8">
         <Link to="/dashboard/generate" className="block">
-          <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-primary via-primary/90 to-purple-600 p-5 md:p-8 text-primary-foreground group hover:shadow-xl hover:shadow-primary/20 transition-shadow">
+          <div className="group relative overflow-hidden rounded-2xl bg-gradient-to-br from-primary via-primary/90 to-purple-600 p-5 text-primary-foreground transition-shadow hover:shadow-xl hover:shadow-primary/20 md:p-8">
             <div className="relative z-10 flex items-center justify-between">
               <div>
-                <h2 className="text-lg md:text-2xl font-bold mb-1">开始 AI 创作</h2>
-                <p className="text-primary-foreground/70 text-sm md:text-base">上传产品图片，AI 生成专业电商主图</p>
+                <h2 className="mb-1 text-lg font-bold md:text-2xl">开始 AI 创作</h2>
+                <p className="text-sm text-primary-foreground/70 md:text-base">
+                  用单图生成商品图，或直接进入新的 AI 详情页策划模块
+                </p>
               </div>
-              <div className="h-12 w-12 md:h-14 md:w-14 rounded-2xl bg-white/20 flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform">
+              <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-white/20 transition-transform group-hover:scale-110 md:h-14 md:w-14">
                 <ArrowRight className="h-6 w-6" />
               </div>
             </div>
-            {/* Decorative circles */}
-            <div className="absolute -right-8 -top-8 w-32 h-32 rounded-full bg-white/5" />
-            <div className="absolute -right-4 -bottom-10 w-24 h-24 rounded-full bg-white/5" />
+            <div className="absolute -right-8 -top-8 h-32 w-32 rounded-full bg-white/5" />
+            <div className="absolute -bottom-10 -right-4 h-24 w-24 rounded-full bg-white/5" />
           </div>
         </Link>
       </div>
 
-      {/* Quick Actions Grid */}
-      <div className="px-4 md:px-8 mb-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div className="mb-6 px-4 md:px-8">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
           {quickActions.map((action) => {
             const Icon = action.icon;
             return (
               <Link key={action.path} to={action.path}>
-                <div className="flex items-center gap-3 p-4 bg-card border border-border rounded-xl hover:border-primary/30 hover:shadow-md transition-all group">
-                  <div className={`h-11 w-11 rounded-xl bg-gradient-to-br ${action.color} flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform`}>
+                <div className="group flex items-center gap-3 rounded-xl border border-border bg-card p-4 transition-all hover:border-primary/30 hover:shadow-md">
+                  <div
+                    className={`h-11 w-11 flex-shrink-0 rounded-xl bg-gradient-to-br ${action.color} flex items-center justify-center transition-transform group-hover:scale-105`}
+                  >
                     <Icon className="h-5 w-5 text-white" />
                   </div>
                   <div className="min-w-0">
-                    <p className="font-semibold text-foreground text-sm">{action.title}</p>
-                    <p className="text-xs text-muted-foreground truncate">{action.desc}</p>
+                    <p className="text-sm font-semibold text-foreground">{action.title}</p>
+                    <p className="truncate text-xs text-muted-foreground">{action.desc}</p>
                   </div>
                 </div>
               </Link>
@@ -91,26 +119,25 @@ const DashboardHome = () => {
         </div>
       </div>
 
-      {/* Steps Row */}
-      <div className="px-4 md:px-8 mb-6">
-        <h3 className="font-semibold text-foreground text-sm mb-3 flex items-center gap-1.5">
+      <div className="mb-6 px-4 md:px-8">
+        <h3 className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-foreground">
           <Zap className="h-4 w-4 text-primary" />
           使用步骤
         </h3>
         <div className="flex flex-col gap-2.5">
-          {steps.map((step, i) => {
+          {steps.map((step, index) => {
             const Icon = step.icon;
             return (
-              <div key={i} className="flex items-center gap-3">
-                <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+              <div key={index} className="flex items-center gap-3">
+                <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-primary/10">
                   <Icon className="h-4 w-4 text-primary" />
                 </div>
                 <div>
-                  <p className="font-medium text-foreground text-sm leading-tight">{step.title}</p>
+                  <p className="text-sm font-medium leading-tight text-foreground">{step.title}</p>
                   <p className="text-xs text-muted-foreground">{step.desc}</p>
                 </div>
-                {i < steps.length - 1 && (
-                  <ArrowRight className="h-3 w-3 text-muted-foreground/40 ml-auto hidden md:block" />
+                {index < steps.length - 1 && (
+                  <ArrowRight className="ml-auto hidden h-3 w-3 text-muted-foreground/40 md:block" />
                 )}
               </div>
             );
@@ -118,16 +145,15 @@ const DashboardHome = () => {
         </div>
       </div>
 
-      {/* Gallery */}
-      <div className="px-4 md:px-8 pb-8">
-        <h3 className="font-semibold text-foreground text-sm mb-3">示例展示</h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-3">
-          {galleryItems.map((item, i) => (
-            <div key={i} className="relative group overflow-hidden rounded-xl">
+      <div className="px-4 pb-8 md:px-8">
+        <h3 className="mb-3 text-sm font-semibold text-foreground">示例展示</h3>
+        <div className="grid grid-cols-2 gap-2 md:grid-cols-4 md:gap-3">
+          {galleryItems.map((item, index) => (
+            <div key={index} className="group relative overflow-hidden rounded-xl">
               <img
                 src={item.src}
                 alt={item.label}
-                className="w-full aspect-square object-cover group-hover:scale-105 transition-transform duration-300"
+                className="aspect-square w-full object-cover transition-transform duration-300 group-hover:scale-105"
                 loading="lazy"
               />
               <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent p-2.5">
