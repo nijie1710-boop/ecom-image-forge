@@ -321,7 +321,7 @@ serve(async (req: Request) => {
 
     const productSource = coerceImageInput(imageBase64) || coerceImageInput(referenceImageUrl);
     const productImage = productSource ? await resolveImageToBase64(productSource) : null;
-    const gallerySources = coerceImageList(referenceGallery);
+    const gallerySources = coerceImageList(referenceGallery).slice(0, 2);
     const galleryImages = (
       await Promise.all(gallerySources.map((item) => resolveImageToBase64(item)))
     ).filter(Boolean) as Array<{ mimeType: string; base64: string }>;
