@@ -181,12 +181,12 @@ function extractPromptSections(prompt: string) {
 
 function buildModelFallbacks(model: SupportedModel): string[] {
   if (model === "gemini-3.1-flash-image-preview") {
-    return ["gemini-3.1-flash-image-preview", "nano-banana-pro-preview", "gemini-2.5-flash-image"];
+    return ["gemini-3.1-flash-image-preview", "gemini-2.5-flash-image"];
   }
   if (model === "gemini-2.5-flash-image") {
-    return ["gemini-2.5-flash-image", "nano-banana-pro-preview", "gemini-3.1-flash-image-preview"];
+    return ["gemini-2.5-flash-image", "gemini-3.1-flash-image-preview"];
   }
-  return ["gemini-3-pro-image-preview", "nano-banana-pro-preview", "gemini-2.5-flash-image"];
+  return ["gemini-3-pro-image-preview", "gemini-2.5-flash-image"];
 }
 
 async function callImageModel(
@@ -208,7 +208,7 @@ async function callImageModel(
         contents: [{ parts }],
         generationConfig: {
           responseModalities: ["text", "image"],
-          maxOutputTokens: 1024,
+          maxOutputTokens: 512,
         },
         safetySettings: [
           { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
@@ -321,7 +321,8 @@ serve(async (req: Request) => {
 
     const productSource = coerceImageInput(imageBase64) || coerceImageInput(referenceImageUrl);
     const productImage = productSource ? await resolveImageToBase64(productSource) : null;
-    const gallerySources = coerceImageList(referenceGallery).slice(0, 2);
+    const galleryLimit = modelReferenceImage ? 1 : 2;
+    const gallerySources = coerceImageList(referenceGallery).slice(0, galleryLimit);
     const galleryImages = (
       await Promise.all(gallerySources.map((item) => resolveImageToBase64(item)))
     ).filter(Boolean) as Array<{ mimeType: string; base64: string }>;
@@ -365,7 +366,7 @@ serve(async (req: Request) => {
     }
     if (normalizedModelMode === "with_model" && modelReferenceImage) {
       roleInstructions.push(
-        "One reference image is a model/person reference. Use it only to guide pose, hand placement, body presence, and natural wearing context. Do not let the model hide the product.",
+        "One reference image is a model/person reference. A visible human model is mandatory in the final image. Use it to guide pose, hand placement, body presence, and natural wearing context. Do not let the model hide the product.",
       );
     }
     if (styleImage) {
@@ -417,9 +418,11 @@ serve(async (req: Request) => {
         ? [
             "MODEL PRESENCE:",
             modelReferenceImage
-              ? "A real model should appear in the composition when helpful, following the model reference naturally while keeping the product fully visible."
-              : "A tasteful model presence is allowed, but the product must remain the primary hero.",
+              ? "A real human model must appear in the composition. The output is invalid if there is no visible person. Follow the model reference naturally while keeping the product fully visible."
+              : "A real human model must appear in the composition, but the product must remain the primary hero.",
             "Do not crop the product awkwardly and do not let hair, hands, or clothing cover the key selling points.",
+            "If this is a wearable product, show the product being naturally worn by the model instead of floating alone.",
+            "If this is a handheld or personal-use product, allow the model to hold or interact with it naturally.",
           ].join(". ")
         : [
             "MODEL PRESENCE:",
@@ -465,6 +468,7 @@ serve(async (req: Request) => {
 
     const parts: Array<Record<string, unknown>> = [{ text: systemInstruction }];
     if (productImage) {
+      parts.push({ text: "REFERENCE IMAGE 1: PRIMARY PRODUCT. Preserve this exact product." });
       parts.push({
         inlineData: {
           mimeType: productImage.mimeType,
@@ -472,7 +476,10 @@ serve(async (req: Request) => {
         },
       });
     }
-    galleryImages.forEach((image) => {
+    galleryImages.forEach((image, index) => {
+      parts.push({
+        text: `REFERENCE IMAGE ${index + 2}: ADDITIONAL PRODUCT ANGLE. Use only to lock product details and consistency.`,
+      });
       parts.push({
         inlineData: {
           mimeType: image.mimeType,
@@ -482,6 +489,9 @@ serve(async (req: Request) => {
     });
     if (modelReferenceImage) {
       parts.push({
+        text: "MODEL REFERENCE IMAGE: A real human model must appear in the final image. Use this for pose, body presence, and styling only.",
+      });
+      parts.push({
         inlineData: {
           mimeType: modelReferenceImage.mimeType,
           data: modelReferenceImage.base64,
@@ -489,6 +499,9 @@ serve(async (req: Request) => {
       });
     }
     if (styleImage) {
+      parts.push({
+        text: "STYLE REFERENCE IMAGE: Use this only for lighting, mood, composition rhythm, and color atmosphere. Do not copy its product.",
+      });
       parts.push({
         inlineData: {
           mimeType: styleImage.mimeType,
