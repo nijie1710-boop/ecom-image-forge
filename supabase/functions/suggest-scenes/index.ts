@@ -6,6 +6,74 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+function coerceImageInput(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (
+    value &&
+    typeof value === "object" &&
+    "value" in value &&
+    typeof (value as { value?: unknown }).value === "string"
+  ) {
+    return (value as { value: string }).value;
+  }
+  return "";
+}
+
+async function callGemini(
+  apiKey: string,
+  mimeType: string,
+  base64Data: string,
+  promptText: string,
+) {
+  const candidateModels = ["gemini-2.5-flash", "gemini-2.0-flash"];
+  let lastError = "Unknown Gemini error";
+
+  for (const model of candidateModels) {
+    const apiUrl =
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+    const apiResponse = await fetch(apiUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{
+          parts: [
+            { text: promptText },
+            { inlineData: { mimeType, data: base64Data } },
+          ],
+        }],
+        generationConfig: {
+          temperature: 0.2,
+          topP: 0.8,
+          maxOutputTokens: 1600,
+          responseMimeType: "application/json",
+          thinkingConfig: {
+            thinkingBudget: 0,
+          },
+        },
+      }),
+    });
+
+    const rawText = await apiResponse.text();
+    if (apiResponse.ok) {
+      return rawText;
+    }
+
+    let errorDetail = rawText.substring(0, 300);
+    try {
+      const errJson = JSON.parse(rawText);
+      errorDetail = errJson.error?.message || errJson.error?.details || errorDetail;
+    } catch {
+      // ignore
+    }
+
+    console.error(`Gemini API error on ${model}:`, apiResponse.status, errorDetail);
+    lastError = `${model}: ${errorDetail}`;
+  }
+
+  throw new Error(`AI 服务暂时不可用: ${lastError}`);
+}
+
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -35,19 +103,7 @@ serve(async (req: Request) => {
     }
 
     const body = await req.json();
-    const imageBase64 = body.imageBase64 as string | undefined;
-    console.error("suggest-scenes: received body keys:", Object.keys(body).join(", "));
-    console.error(
-      "suggest-scenes: imageBase64 present:",
-      !!imageBase64,
-      "length:",
-      imageBase64?.length || 0,
-    );
-
-    const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
-    if (!geminiApiKey) {
-      throw new Error("GEMINI_API_KEY is not configured");
-    }
+    const imageBase64 = coerceImageInput(body.imageBase64);
 
     if (!imageBase64 || imageBase64.length < 100) {
       return new Response(JSON.stringify({ error: "请上传有效的产品图片" }), {
@@ -56,76 +112,34 @@ serve(async (req: Request) => {
       });
     }
 
+    const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
+    if (!geminiApiKey) {
+      throw new Error("GEMINI_API_KEY is not configured");
+    }
+
     let mimeType = "image/jpeg";
-    let base64Data = "";
+    let base64Data = imageBase64;
     if (imageBase64.includes(",")) {
       const parts = imageBase64.split(",");
       base64Data = parts[1] || parts[0];
       const mimeMatch = parts[0].match(/data:([^;]+)/);
       if (mimeMatch) mimeType = mimeMatch[1];
-    } else {
-      base64Data = imageBase64;
     }
 
-    const promptText = `You are a senior e-commerce art director and product photographer.
+    const promptText = [
+      "You are a senior e-commerce art director.",
+      "Identify the original uploaded product only.",
+      "If the image is a screenshot of an editor, webpage, or dashboard, the true product reference is the small uploaded product thumbnail in the left input panel.",
+      "Never use the large generated result images on the right side as the product reference.",
+      "Ignore all UI text, generated outputs, buttons, panels, labels, and layout chrome.",
+      "The image may already contain lifestyle background, poster text, stickers, badges, props, or marketing layout. Ignore those distractions.",
+      "Then output exactly 3 Chinese scene suggestions for photographing the SAME product.",
+      "Each suggestion must be practical for e-commerce and must preserve the same product category, shape, material, and printed design.",
+      "Return JSON only.",
+      '{"product_summary":"中文总结主商品类别和关键特征","visible_text":"图片里可见的文字，没有则写 NONE","suggestions":[{"scene":"场景标题1","description":"完整中文场景提示词1"},{"scene":"场景标题2","description":"完整中文场景提示词2"},{"scene":"场景标题3","description":"完整中文场景提示词3"}]}',
+    ].join(" ");
 
-Analyze the uploaded product image first. Then produce exactly 3 scene suggestions in Chinese for photographing THIS SAME product.
-
-Return ONLY valid JSON with this exact shape:
-{
-  "product_summary": "一句中文总结，说明产品类别、材质、颜色、关键外观特征",
-  "visible_text": "图片上能看到的文字，没有就写 NONE",
-  "suggestions": [
-    { "scene": "场景标题1", "description": "完整场景提示词1" },
-    { "scene": "场景标题2", "description": "完整场景提示词2" },
-    { "scene": "场景标题3", "description": "完整场景提示词3" }
-  ]
-}
-
-Strict requirements:
-- The suggestions must be grounded in the actual product category. Never misidentify the product.
-- The product must remain the same product. Never imply replacing it with another object.
-- Mention specific visual traits from the image such as color, material, print, structure, or visible graphics.
-- Avoid generic empty labels like “现代简约风” unless the description includes a concrete photography setup.
-- Each description must be a production-ready Chinese prompt, not a slogan.
-- For apparel, prioritize apparel-friendly setups such as hanger display, flat lay, folded merchandising, torso mannequin, wardrobe scene, or detail close-up.
-- For non-apparel products, adapt the scene naturally to the product category.
-- Keep the 3 options meaningfully different in composition or merchandising direction.`;
-
-    const apiUrl =
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${geminiApiKey}`;
-
-    const apiResponse = await fetch(apiUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{
-          parts: [
-            { text: promptText },
-            { inlineData: { mimeType, data: base64Data } },
-          ],
-        }],
-        generationConfig: {
-          temperature: 0.5,
-          topP: 0.8,
-          maxOutputTokens: 1200,
-        },
-      }),
-    });
-
-    const rawText = await apiResponse.text();
-
-    if (!apiResponse.ok) {
-      let errorDetail = rawText.substring(0, 300);
-      try {
-        const errJson = JSON.parse(rawText);
-        errorDetail = errJson.error?.message || errJson.error?.details || errorDetail;
-      } catch {
-        // ignore
-      }
-      console.error("Gemini API error:", apiResponse.status, errorDetail);
-      throw new Error(`AI 服务暂时不可用 (${apiResponse.status})`);
-    }
+    const rawText = await callGemini(geminiApiKey, mimeType, base64Data, promptText);
 
     let apiData: Record<string, unknown>;
     try {
@@ -142,13 +156,15 @@ Strict requirements:
       throw new Error("AI 未能生成场景建议");
     }
 
-    console.error("suggest-scenes: AI response:", text.substring(0, 300));
-
     let analysis: {
       product_summary?: string;
       visible_text?: string;
       suggestions?: Array<{ scene?: string; description?: string }>;
-    } = { product_summary: "", visible_text: "NONE", suggestions: [] };
+    } = {
+      product_summary: "",
+      visible_text: "NONE",
+      suggestions: [],
+    };
 
     try {
       const jsonMatch = text.match(/\{[\s\S]*\}/);
@@ -156,26 +172,38 @@ Strict requirements:
     } catch (parseErr) {
       console.error("Parse error:", parseErr, "text:", text.substring(0, 300));
       analysis = {
-        product_summary: "产品分析失败",
+        product_summary: "产品识别失败",
         visible_text: "NONE",
         suggestions: [
           {
             scene: "白底主图",
             description:
-              "纯白背景，正面完整展示同一件产品，专业棚拍光线，突出颜色、版型和图案细节，不添加无关道具。",
+              "纯白背景，完整展示同一件产品，专业电商棚拍光线，突出材质、颜色和产品主体，不添加无关道具。",
           },
           {
             scene: "生活化陈列",
             description:
-              "围绕同一件产品搭建简洁生活化陈列场景，保留产品原有颜色、材质和印花，使用柔和自然光与干净背景，强调真实电商展示感。",
+              "围绕同一件产品搭建简洁真实的生活化陈列场景，保留产品原有形态与材质，使用自然柔和光线，突出商品本体。",
           },
           {
             scene: "细节卖点展示",
             description:
-              "聚焦同一件产品的材质、纹理、图案和做工细节，使用近景或半身陈列构图，突出产品卖点但不改变商品本体。",
+              "聚焦同一件产品的材质、纹理、图案和做工细节，使用近景或局部构图，突出卖点但不改变商品本体。",
           },
         ],
       };
+    }
+
+    const visibleText = String(analysis.visible_text || "NONE");
+    const screenshotKeywords = ["AI电商图片生成", "生成结果", "图片类型", "文字语言", "场景描述", "换一批"];
+    const matchedUiKeywords = screenshotKeywords.filter((keyword) => visibleText.includes(keyword));
+    if (matchedUiKeywords.length >= 2) {
+      return new Response(JSON.stringify({
+        error: "检测到你上传的更像是页面截图，请直接上传原始商品图，不要上传带有界面和生成结果的截图。",
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     const suggestions = (analysis.suggestions || []).slice(0, 3).map((item) => ({

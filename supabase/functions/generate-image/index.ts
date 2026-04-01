@@ -27,6 +27,19 @@ function parseDataUrl(url: string): { mimeType: string; base64: string } | null 
   return { mimeType: match[1], base64: match[2] };
 }
 
+function coerceImageInput(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (
+    value &&
+    typeof value === "object" &&
+    "value" in value &&
+    typeof (value as { value?: unknown }).value === "string"
+  ) {
+    return (value as { value: string }).value;
+  }
+  return "";
+}
+
 async function resolveImageToBase64(
   source: string,
 ): Promise<{ mimeType: string; base64: string } | null> {
@@ -151,10 +164,11 @@ serve(async (req: Request) => {
       throw new Error("GEMINI_API_KEY is not configured");
     }
 
-    const productSource = imageBase64 || referenceImageUrl;
+    const productSource = coerceImageInput(imageBase64) || coerceImageInput(referenceImageUrl);
     const productImg = productSource ? await resolveImageToBase64(productSource) : null;
-    const styleImg = referenceStyleUrl
-      ? await resolveImageToBase64(referenceStyleUrl)
+    const styleSource = coerceImageInput(referenceStyleUrl);
+    const styleImg = styleSource
+      ? await resolveImageToBase64(styleSource)
       : null;
 
     const normalizedImageType = normalizeImageType(imageType);
@@ -164,6 +178,7 @@ serve(async (req: Request) => {
       "=== ABSOLUTE RULES ===",
       "This is a product-preserving image generation task, not a redesign.",
       "The first image contains the exact product that must remain the same product in the output.",
+      "The reference image may already include props, background, scenery, text overlays, or decorative layout. Ignore those distractions and preserve only the main sellable product.",
       "Never replace the product with another category. A garment must stay a garment. A speaker must stay a speaker. A bag must stay a bag.",
       "Copy the exact silhouette, structure, proportions, color palette, material appearance, and surface texture.",
       "Preserve logos, printed artwork, letters, graphics, seams, collar shape, sleeves, hems, ports, buttons, zippers, stitching, and distinctive details exactly as they appear on the original product.",
@@ -184,6 +199,7 @@ serve(async (req: Request) => {
         "ROLE ASSIGNMENT:",
         "Image 1 is the only product reference and must be preserved exactly.",
         "Re-photograph the same product in a better e-commerce setup.",
+        "If the source image is a poster, banner, lifestyle shot, or already contains scene props, extract the core product and rebuild a clean product-focused composition around it.",
       ].join(". ");
 
     const typeInstruction = normalizedImageType === "detail"
