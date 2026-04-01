@@ -240,9 +240,9 @@ ${targetPlatform}
 2. 画面必须明显体现当前分屏的目标和视觉方向。
 3. 如果用户提供了分屏构思，必须优先吸收并融入当前这一屏，而不是忽略它。
 4. 如果需要出现说明性元素，优先用版式留白、局部结构和材质细节表达。
-5. 如需渲染文字，必须使用可读、标准、常见的商业无衬线字体风格，字形完整、笔画正确、排版干净。
-6. 严禁出现乱码、伪文字、无法识别的字形、奇怪符号、拼写错误或装饰性怪字体。
-7. 如果模型无法稳定渲染正确文字，宁可减少文字或只保留极短标题，也不要输出错误文字。
+5. 基础生成图里不要直接渲染任何嵌入式文字、标题字、卖点字、海报字或装饰字，所有最终文字会在后期使用真实字体叠加。
+6. 请主动为后期文字排版预留干净、安全、易读的留白区域，不要让主体商品挡住文案位置。
+7. 严禁出现乱码、伪文字、无法识别的字形、奇怪符号、拼写错误或装饰性怪字体。
 8. ${languageRule(targetLanguage)}
 9. 保持商品真实、可售、适合电商详情页，不做无关艺术化改造。
 `.trim();
@@ -518,14 +518,15 @@ const DetailDesignPage = () => {
   const handleFiles = async (files: FileList | null) => {
     if (!files?.length) return;
 
+    const availableSlots = Math.max(0, 5 - productImages.length);
     const imageFiles = Array.from(files)
       .filter((file) => file.type.match(/image\/(jpeg|png|webp)/))
-      .slice(0, 5);
+      .slice(0, availableSlots || 5);
 
     if (!imageFiles.length) return;
 
     const compressed = await Promise.all(imageFiles.map((file) => compressImage(file)));
-    setProductImages(compressed);
+    setProductImages((current) => [...current, ...compressed].slice(0, 5));
     resetPlan();
   };
 
@@ -624,6 +625,18 @@ const DetailDesignPage = () => {
     } catch (downloadError) {
       setGenerationError(
         downloadError instanceof Error ? downloadError.message : "下载成品失败",
+      );
+    }
+  };
+
+  const handleOpenEditor = async (generated: GeneratedScreenState) => {
+    try {
+      const composed = await getComposedImageUrl(generated);
+      sessionStorage.setItem("detail-design-edit-image", composed);
+      navigate("/dashboard/edit?source=detail-design");
+    } catch (editError) {
+      setGenerationError(
+        editError instanceof Error ? editError.message : "打开编辑页失败",
       );
     }
   };
@@ -779,6 +792,21 @@ const DetailDesignPage = () => {
                     </button>
                   </div>
                 ))}
+                {productImages.length < 5 && (
+                  <label className="flex aspect-square cursor-pointer items-center justify-center rounded-2xl border border-dashed border-border bg-background text-muted-foreground transition hover:border-primary/40 hover:text-primary">
+                    <div className="text-center">
+                      <Upload className="mx-auto mb-2 h-5 w-5" />
+                      <div className="text-xs">继续添加</div>
+                    </div>
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      multiple
+                      className="hidden"
+                      onChange={(event) => void handleFiles(event.target.files)}
+                    />
+                  </label>
+                )}
               </div>
             )}
           </section>
@@ -1175,11 +1203,7 @@ const DetailDesignPage = () => {
                                 variant="outline"
                                 size="sm"
                                 className="rounded-xl"
-                                onClick={() =>
-                                  navigate(
-                                    `/dashboard/edit?url=${encodeURIComponent(generated.imageUrl || "")}`,
-                                  )
-                                }
+                                onClick={() => void handleOpenEditor(generated)}
                               >
                                 <Edit3 className="mr-1.5 h-4 w-4" />
                                 图片编辑

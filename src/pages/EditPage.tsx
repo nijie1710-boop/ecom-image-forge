@@ -1,8 +1,14 @@
-import { useState, useRef, useEffect } from "react";
-import { useSearchParams, useNavigate } from "react-router-dom";
-import { Download, Type, Crop, RotateCw, Sun, Contrast, Palette, Undo, Redo, Save } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import {
+  ArrowLeft,
+  Download,
+  Redo,
+  SlidersHorizontal,
+  Type,
+  Undo,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 
 interface TextOverlay {
   id: string;
@@ -14,323 +20,352 @@ interface TextOverlay {
   fontFamily: string;
 }
 
+const DEFAULT_FONT =
+  '"Microsoft YaHei","PingFang SC","Noto Sans SC","Helvetica Neue",Arial,sans-serif';
+
 const EditPage = () => {
-  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const imageUrl = searchParams.get("url");
-  
+  const [searchParams] = useSearchParams();
+  const queryUrl = searchParams.get("url");
+  const storedUrl =
+    typeof window !== "undefined" ? sessionStorage.getItem("detail-design-edit-image") : null;
+  const imageUrl = queryUrl || storedUrl;
+
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [image, setImage] = useState<HTMLImageElement | null>(null);
   const [textOverlays, setTextOverlays] = useState<TextOverlay[]>([]);
-  const [selectedText, setSelectedText] = useState<string | null>(null);
+  const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
   const [brightness, setBrightness] = useState(100);
   const [contrast, setContrast] = useState(100);
   const [saturation, setSaturation] = useState(100);
-  const [cropMode, setCropMode] = useState(false);
-  const [history, setHistory] = useState<ImageData[]>([]);
+  const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
 
-  // 加载图片
+  const selectedText = useMemo(
+    () => textOverlays.find((overlay) => overlay.id === selectedTextId) || null,
+    [selectedTextId, textOverlays],
+  );
+
   useEffect(() => {
-    if (imageUrl) {
-      const img = new Image();
-      img.crossOrigin = "anonymous";
-      img.onload = () => {
-        setImage(img);
-        drawImage();
-      };
-      img.src = imageUrl;
+    if (!imageUrl) {
+      return;
     }
+
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      setImage(img);
+      setHistory([imageUrl]);
+      setHistoryIndex(0);
+    };
+    img.src = imageUrl;
   }, [imageUrl]);
 
-  // 绘制图片到 Canvas
-  const drawImage = () => {
+  useEffect(() => {
+    if (!image) {
+      return;
+    }
+
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext("2d");
-    if (!canvas || !ctx || !image) return;
+    if (!canvas || !ctx) {
+      return;
+    }
 
-    canvas.width = image.width;
-    canvas.height = image.height;
-
-    // 应用滤镜
+    canvas.width = image.naturalWidth || image.width;
+    canvas.height = image.naturalHeight || image.height;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.filter = `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturation}%)`;
-    ctx.drawImage(image, 0, 0);
+    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
     ctx.filter = "none";
 
-    // 绘制文字
     textOverlays.forEach((overlay) => {
       ctx.font = `${overlay.fontSize}px ${overlay.fontFamily}`;
       ctx.fillStyle = overlay.color;
-      ctx.fillText(overlay.text, overlay.x, overlay.y);
+      ctx.textBaseline = "top";
+
+      const lines = overlay.text.split("\n");
+      lines.forEach((line, index) => {
+        ctx.fillText(line, overlay.x, overlay.y + index * overlay.fontSize * 1.3);
+      });
+    });
+  }, [image, brightness, contrast, saturation, textOverlays]);
+
+  const pushHistorySnapshot = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const snapshot = canvas.toDataURL("image/png");
+    setHistory((current) => {
+      const next = current.slice(0, historyIndex + 1);
+      next.push(snapshot);
+      setHistoryIndex(next.length - 1);
+      return next;
     });
   };
 
-  // 保存到历史记录
-  const saveToHistory = () => {
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext("2d");
-    if (!canvas || !ctx) return;
-    
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const newHistory = history.slice(0, historyIndex + 1);
-    newHistory.push(imageData);
-    setHistory(newHistory);
-    setHistoryIndex(newHistory.length - 1);
+  const applyHistoryImage = (url: string) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      setImage(img);
+      setTextOverlays([]);
+      setSelectedTextId(null);
+    };
+    img.src = url;
   };
 
-  // 撤销
-  const undo = () => {
-    if (historyIndex > 0) {
-      const canvas = canvasRef.current;
-      const ctx = canvas?.getContext("2d");
-      if (!canvas || !ctx) return;
-      ctx.putImageData(history[historyIndex - 1], 0, 0);
-      setHistoryIndex(historyIndex - 1);
-    }
+  const handleUndo = () => {
+    if (historyIndex <= 0) return;
+    const nextIndex = historyIndex - 1;
+    setHistoryIndex(nextIndex);
+    applyHistoryImage(history[nextIndex]);
   };
 
-  // 重做
-  const redo = () => {
-    if (historyIndex < history.length - 1) {
-      const canvas = canvasRef.current;
-      const ctx = canvas?.getContext("2d");
-      if (!canvas || !ctx) return;
-      ctx.putImageData(history[historyIndex + 1], 0, 0);
-      setHistoryIndex(historyIndex + 1);
-    }
+  const handleRedo = () => {
+    if (historyIndex >= history.length - 1) return;
+    const nextIndex = historyIndex + 1;
+    setHistoryIndex(nextIndex);
+    applyHistoryImage(history[nextIndex]);
   };
 
-  // 添加文字
   const addText = () => {
-    const newText: TextOverlay = {
+    const overlay: TextOverlay = {
       id: Date.now().toString(),
-      text: "双击编辑文字",
-      x: 100,
-      y: 100,
+      text: "双击修改文字",
+      x: 60,
+      y: 60,
       fontSize: 48,
       color: "#ffffff",
-      fontFamily: "Arial"
+      fontFamily: DEFAULT_FONT,
     };
-    setTextOverlays([...textOverlays, newText]);
-    setSelectedText(newText.id);
-    saveToHistory();
+    setTextOverlays((current) => [...current, overlay]);
+    setSelectedTextId(overlay.id);
   };
 
-  // 更新文字
   const updateText = (id: string, updates: Partial<TextOverlay>) => {
-    setTextOverlays(textOverlays.map(t => 
-      t.id === id ? { ...t, ...updates } : t
-    ));
-    drawImage();
+    setTextOverlays((current) =>
+      current.map((overlay) => (overlay.id === id ? { ...overlay, ...updates } : overlay)),
+    );
   };
 
-  // 删除文字
   const deleteText = (id: string) => {
-    setTextOverlays(textOverlays.filter(t => t.id !== id));
-    setSelectedText(null);
-    drawImage();
+    setTextOverlays((current) => current.filter((overlay) => overlay.id !== id));
+    setSelectedTextId(null);
   };
 
-  // 下载图片
   const downloadImage = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    
+
     const link = document.createElement("a");
     link.download = `edited-${Date.now()}.png`;
     link.href = canvas.toDataURL("image/png");
     link.click();
   };
 
+  const handleSaveCurrent = () => {
+    pushHistorySnapshot();
+  };
+
   if (!imageUrl) {
     return (
-      <div className="p-6 text-center">
-        <p className="text-muted-foreground">没有图片可编辑</p>
-        <Button onClick={() => navigate("/dashboard/images")} className="mt-4">
-          返回图片库
-        </Button>
+      <div className="flex h-full min-h-[60vh] items-center justify-center p-6">
+        <div className="text-center">
+          <p className="text-sm text-muted-foreground">没有可编辑的图片</p>
+          <Button onClick={() => navigate("/dashboard/detail-design")} className="mt-4">
+            返回 AI 详情页
+          </Button>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-screen bg-background">
-      {/* 顶部工具栏 */}
-      <div className="flex items-center justify-between p-4 border-b bg-card">
+    <div className="flex h-[calc(100vh-4rem)] flex-col bg-background">
+      <div className="flex items-center justify-between border-b bg-card px-4 py-3">
         <div className="flex items-center gap-2">
           <Button variant="ghost" size="sm" onClick={() => navigate(-1)}>
-            ← 返回
+            <ArrowLeft className="mr-1.5 h-4 w-4" />
+            返回
           </Button>
-          <h1 className="font-display font-semibold">图片编辑</h1>
+          <h1 className="text-base font-semibold text-foreground">图片编辑</h1>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" onClick={undo} disabled={historyIndex <= 0}>
+          <Button variant="ghost" size="icon" onClick={handleUndo} disabled={historyIndex <= 0}>
             <Undo className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="icon" onClick={redo} disabled={historyIndex >= history.length - 1}>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleRedo}
+            disabled={historyIndex < 0 || historyIndex >= history.length - 1}
+          >
             <Redo className="h-4 w-4" />
           </Button>
+          <Button variant="outline" onClick={handleSaveCurrent}>
+            保存当前
+          </Button>
           <Button variant="hero" onClick={downloadImage}>
-            <Download className="h-4 w-4 mr-2" />
+            <Download className="mr-1.5 h-4 w-4" />
             下载
           </Button>
         </div>
       </div>
 
       <div className="flex flex-1 overflow-hidden">
-        {/* 左侧工具栏 */}
-        <div className="w-16 border-r bg-card flex flex-col items-center py-4 gap-4">
-          <Button
-            variant={selectedText ? "default" : "ghost"}
-            size="icon"
-            onClick={addText}
-            title="添加文字"
-          >
-            <Type className="h-5 w-5" />
-          </Button>
-          <Button
-            variant={cropMode ? "default" : "ghost"}
-            size="icon"
-            onClick={() => setCropMode(!cropMode)}
-            title="裁剪"
-          >
-            <Crop className="h-5 w-5" />
-          </Button>
-          <Button variant="ghost" size="icon" title="旋转">
-            <RotateCw className="h-5 w-5" />
-          </Button>
-        </div>
-
-        {/* 中间画布 */}
-        <div className="flex-1 overflow-auto p-4 bg-muted flex items-center justify-center">
-          <div className="relative">
-            <canvas
-              ref={canvasRef}
-              className="max-w-full max-h-full shadow-lg"
-              style={{ maxHeight: "70vh" }}
-            />
-            {textOverlays.map((overlay) => (
-              <div
-                key={overlay.id}
-                className={`absolute cursor-move ${selectedText === overlay.id ? "border-2 border-primary" : ""}`}
-                style={{
-                  left: overlay.x,
-                  top: overlay.y,
-                  fontSize: overlay.fontSize,
-                  color: overlay.color,
-                  fontFamily: overlay.fontFamily,
-                }}
-                onClick={() => setSelectedText(overlay.id)}
-              >
-                {overlay.text}
-              </div>
-            ))}
+        <div className="w-20 border-r bg-card p-3">
+          <div className="space-y-3">
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-11 w-11 rounded-2xl"
+              onClick={addText}
+              title="添加文字"
+            >
+              <Type className="h-5 w-5" />
+            </Button>
           </div>
         </div>
 
-        {/* 右侧属性面板 */}
-        <div className="w-64 border-l bg-card p-4 overflow-y-auto">
-          {/* 滤镜 */}
-          <div className="mb-6">
-            <h3 className="font-semibold mb-3 flex items-center gap-2">
-              <Sun className="h-4 w-4" />
-              滤镜
-            </h3>
+        <div className="flex flex-1 items-center justify-center overflow-auto bg-muted/40 p-4">
+          <div className="rounded-2xl border border-border bg-card p-3 shadow-sm">
+            <canvas
+              ref={canvasRef}
+              className="max-h-[72vh] max-w-full rounded-xl object-contain"
+            />
+          </div>
+        </div>
+
+        <div className="w-[320px] space-y-6 overflow-y-auto border-l bg-card p-4">
+          <div>
+            <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
+              <SlidersHorizontal className="h-4 w-4" />
+              基础调整
+            </h2>
             <div className="space-y-3">
               <div>
-                <label className="text-sm text-muted-foreground">亮度</label>
+                <label className="text-xs text-muted-foreground">亮度</label>
                 <input
                   type="range"
                   min="0"
                   max="200"
                   value={brightness}
-                  onChange={(e) => setBrightness(Number(e.target.value))}
-                  onMouseUp={drawImage}
-                  className="w-full"
+                  onChange={(event) => setBrightness(Number(event.target.value))}
+                  className="mt-1 w-full"
                 />
               </div>
               <div>
-                <label className="text-sm text-muted-foreground">对比度</label>
+                <label className="text-xs text-muted-foreground">对比度</label>
                 <input
                   type="range"
                   min="0"
                   max="200"
                   value={contrast}
-                  onChange={(e) => setContrast(Number(e.target.value))}
-                  onMouseUp={drawImage}
-                  className="w-full"
+                  onChange={(event) => setContrast(Number(event.target.value))}
+                  className="mt-1 w-full"
                 />
               </div>
               <div>
-                <label className="text-sm text-muted-foreground">饱和度</label>
+                <label className="text-xs text-muted-foreground">饱和度</label>
                 <input
                   type="range"
                   min="0"
                   max="200"
                   value={saturation}
-                  onChange={(e) => setSaturation(Number(e.target.value))}
-                  onMouseUp={drawImage}
-                  className="w-full"
+                  onChange={(event) => setSaturation(Number(event.target.value))}
+                  className="mt-1 w-full"
                 />
               </div>
-              <Button size="sm" variant="outline" onClick={() => {
-                setBrightness(100);
-                setContrast(100);
-                setSaturation(100);
-                drawImage();
-              }}>
-                重置滤镜
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setBrightness(100);
+                  setContrast(100);
+                  setSaturation(100);
+                }}
+              >
+                重置基础调整
               </Button>
             </div>
           </div>
 
-          {/* 文字属性 */}
-          {selectedText && (
-            <div className="mb-6">
-              <h3 className="font-semibold mb-3 flex items-center gap-2">
+          {selectedText ? (
+            <div>
+              <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
                 <Type className="h-4 w-4" />
-                文字属性
-              </h3>
+                文字编辑
+              </h2>
               <div className="space-y-3">
                 <div>
-                  <label className="text-sm text-muted-foreground">文字内容</label>
-                  <input
-                    type="text"
-                    value={textOverlays.find(t => t.id === selectedText)?.text || ""}
-                    onChange={(e) => updateText(selectedText, { text: e.target.value })}
-                    className="w-full mt-1 px-2 py-1 border rounded"
+                  <label className="text-xs text-muted-foreground">文字内容</label>
+                  <textarea
+                    rows={4}
+                    value={selectedText.text}
+                    onChange={(event) =>
+                      updateText(selectedText.id, { text: event.target.value })
+                    }
+                    className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/25"
                   />
                 </div>
                 <div>
-                  <label className="text-sm text-muted-foreground">字体大小</label>
+                  <label className="text-xs text-muted-foreground">文字大小</label>
                   <input
                     type="range"
-                    min="12"
+                    min="16"
                     max="120"
-                    value={textOverlays.find(t => t.id === selectedText)?.fontSize || 48}
-                    onChange={(e) => updateText(selectedText, { fontSize: Number(e.target.value) })}
-                    onMouseUp={drawImage}
-                    className="w-full"
+                    value={selectedText.fontSize}
+                    onChange={(event) =>
+                      updateText(selectedText.id, { fontSize: Number(event.target.value) })
+                    }
+                    className="mt-1 w-full"
                   />
                 </div>
                 <div>
-                  <label className="text-sm text-muted-foreground">颜色</label>
+                  <label className="text-xs text-muted-foreground">字体颜色</label>
                   <input
                     type="color"
-                    value={textOverlays.find(t => t.id === selectedText)?.color || "#ffffff"}
-                    onChange={(e) => updateText(selectedText, { color: e.target.value })}
-                    className="w-full h-8 mt-1"
+                    value={selectedText.color}
+                    onChange={(event) =>
+                      updateText(selectedText.id, { color: event.target.value })
+                    }
+                    className="mt-1 h-10 w-full rounded-lg border border-border bg-background"
                   />
                 </div>
-                <Button 
-                  size="sm" 
-                  variant="destructive" 
-                  onClick={() => deleteText(selectedText)}
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="number"
+                    value={selectedText.x}
+                    onChange={(event) =>
+                      updateText(selectedText.id, { x: Number(event.target.value) })
+                    }
+                    className="rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/25"
+                    placeholder="X"
+                  />
+                  <input
+                    type="number"
+                    value={selectedText.y}
+                    onChange={(event) =>
+                      updateText(selectedText.id, { y: Number(event.target.value) })
+                    }
+                    className="rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/25"
+                    placeholder="Y"
+                  />
+                </div>
+                <Button
+                  variant="destructive"
+                  size="sm"
                   className="w-full"
+                  onClick={() => deleteText(selectedText.id)}
                 >
-                  删除文字
+                  删除这段文字
                 </Button>
               </div>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-border p-4 text-sm text-muted-foreground">
+              先点左侧 `T` 按钮添加文字，或在已有文字上继续编辑。
             </div>
           )}
         </div>
