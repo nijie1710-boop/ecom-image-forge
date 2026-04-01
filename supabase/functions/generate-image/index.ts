@@ -321,6 +321,8 @@ serve(async (req: Request) => {
 
     const productSource = coerceImageInput(imageBase64) || coerceImageInput(referenceImageUrl);
     const productImage = productSource ? await resolveImageToBase64(productSource) : null;
+    const modelSource = coerceImageInput(modelImage);
+    const modelReferenceImage = modelSource ? await resolveImageToBase64(modelSource) : null;
     const galleryLimit = modelReferenceImage ? 1 : 2;
     const gallerySources = coerceImageList(referenceGallery).slice(0, galleryLimit);
     const galleryImages = (
@@ -328,8 +330,6 @@ serve(async (req: Request) => {
     ).filter(Boolean) as Array<{ mimeType: string; base64: string }>;
     const styleSource = coerceImageInput(referenceStyleUrl);
     const styleImage = styleSource ? await resolveImageToBase64(styleSource) : null;
-    const modelSource = coerceImageInput(modelImage);
-    const modelReferenceImage = modelSource ? await resolveImageToBase64(modelSource) : null;
 
     const normalizedImageType = normalizeImageType(imageType);
     const normalizedTextLanguage = normalizeTextLanguage(textLanguage);
