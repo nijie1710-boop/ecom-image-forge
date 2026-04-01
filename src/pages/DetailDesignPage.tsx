@@ -409,7 +409,7 @@ async function composePosterImage(args: {
 const DetailDesignPage = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { startDetailGeneration, cancelJob, getJob } = useGeneration();
+  const { startDetailGeneration, cancelJob, getJob, jobs } = useGeneration();
   const [productImages, setProductImages] = useState<string[]>([]);
   const [styleReferenceImage, setStyleReferenceImage] = useState<string>("");
   const [styleReferenceText, setStyleReferenceText] = useState("");
@@ -442,6 +442,7 @@ const DetailDesignPage = () => {
   const [previewTitle, setPreviewTitle] = useState("");
   const [isPreparingPreview, setIsPreparingPreview] = useState(false);
   const [detailJobId, setDetailJobId] = useState<string | null>(null);
+  const [hasRestoredDraft, setHasRestoredDraft] = useState(false);
 
   const activePlan = useMemo(
     () => planOptions[selectedOptionIndex] || null,
@@ -449,7 +450,7 @@ const DetailDesignPage = () => {
   );
   const activeDetailJob = useMemo(
     () => (detailJobId ? getJob(detailJobId) : null),
-    [detailJobId, getJob],
+    [detailJobId, getJob, jobs],
   );
 
   useEffect(() => {
@@ -458,12 +459,22 @@ const DetailDesignPage = () => {
       setDetailJobId(savedJobId);
     }
     const rawDraft = sessionStorage.getItem(DETAIL_DRAFT_KEY);
-    if (!rawDraft) return;
+    if (!rawDraft) {
+      setHasRestoredDraft(true);
+      return;
+    }
     try {
       const draft = JSON.parse(rawDraft) as Partial<{
         productInfo: string;
         styleReferenceText: string;
         modelMode: ModelMode;
+        productImages: string[];
+        styleReferenceImage: string;
+        modelImage: string;
+        selectedRatio: string;
+        selectedResolution: OutputResolution;
+        generationLanguage: string;
+        selectedModel: GenerationModel;
         targetPlatform: string;
         targetLanguage: string;
         screenCount: string;
@@ -474,9 +485,16 @@ const DetailDesignPage = () => {
         planOptions: DetailPlanOption[];
         selectedOptionIndex: number;
       }>;
+      setProductImages(draft.productImages || []);
       setProductInfo(draft.productInfo || "");
+      setStyleReferenceImage(draft.styleReferenceImage || "");
       setStyleReferenceText(draft.styleReferenceText || "");
       setModelMode(draft.modelMode || "none");
+      setModelImage(draft.modelImage || "");
+      setSelectedRatio(draft.selectedRatio || "3:4");
+      setSelectedResolution(draft.selectedResolution || "2k");
+      setGenerationLanguage(draft.generationLanguage || "zh");
+      setSelectedModel(draft.selectedModel || "gemini-3.1-flash-image-preview");
       setTargetPlatform(draft.targetPlatform || platformOptions[0]);
       setTargetLanguage(draft.targetLanguage || "zh");
       setScreenCount(draft.screenCount || "4");
@@ -488,6 +506,8 @@ const DetailDesignPage = () => {
       setSelectedOptionIndex(draft.selectedOptionIndex || 0);
     } catch {
       sessionStorage.removeItem(DETAIL_DRAFT_KEY);
+    } finally {
+      setHasRestoredDraft(true);
     }
   }, []);
 
@@ -588,12 +608,20 @@ const DetailDesignPage = () => {
   }, [activeDetailJob, detailJobId, getJob]);
 
   useEffect(() => {
+    if (!hasRestoredDraft) return;
     sessionStorage.setItem(
       DETAIL_DRAFT_KEY,
       JSON.stringify({
+        productImages,
         productInfo,
+        styleReferenceImage,
         styleReferenceText,
         modelMode,
+        modelImage,
+        selectedRatio,
+        selectedResolution,
+        generationLanguage,
+        selectedModel,
         targetPlatform,
         targetLanguage,
         screenCount,
@@ -606,13 +634,20 @@ const DetailDesignPage = () => {
       }),
     );
   }, [
+    hasRestoredDraft,
     planOptions,
     modelMode,
+    modelImage,
+    productImages,
     productInfo,
     productSummary,
     screenCount,
     screenIdeas,
     selectedOptionIndex,
+    selectedModel,
+    selectedRatio,
+    selectedResolution,
+    styleReferenceImage,
     styleReferenceText,
     targetLanguage,
     targetPlatform,

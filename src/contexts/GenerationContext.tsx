@@ -534,11 +534,6 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             style: params.styleReferenceText,
           };
 
-          await Promise.all([
-            saveLocalHistory(results, payload),
-            saveCloudHistory(params.userId, results, payload),
-          ]);
-
           updateJob(jobId, {
             status: "done",
             step: "完成",
@@ -546,6 +541,13 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             results,
           });
           params.onComplete?.(results);
+
+          void Promise.all([
+            saveLocalHistory(results, payload),
+            saveCloudHistory(params.userId, results, payload),
+          ]).catch((error) => {
+            console.error("save image generation history failed:", error);
+          });
         } catch (error) {
           updateJob(jobId, {
             status: "error",
@@ -693,10 +695,8 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             style: params.styleReferenceText,
           };
 
-          await Promise.all([
-            saveLocalHistory(completedImages, payload),
-            saveCloudHistory(params.userId, completedImages, payload),
-          ]);
+          const finalScreens =
+            (jobsRef.current.find((job) => job.id === jobId)?.detailScreens || []) as DetailScreenJobResult[];
 
           updateJob(jobId, {
             status: "done",
@@ -704,9 +704,14 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             current: params.screens.length,
             results: completedImages,
           });
-          params.onComplete?.(
-            (jobsRef.current.find((job) => job.id === jobId)?.detailScreens || []) as DetailScreenJobResult[],
-          );
+          params.onComplete?.(finalScreens);
+
+          void Promise.all([
+            saveLocalHistory(completedImages, payload),
+            saveCloudHistory(params.userId, completedImages, payload),
+          ]).catch((error) => {
+            console.error("save detail generation history failed:", error);
+          });
         } catch (error) {
           updateJob(jobId, {
             status: "error",
