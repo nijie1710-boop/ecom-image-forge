@@ -46,6 +46,13 @@ function coerceImageInput(value: unknown): string {
   return "";
 }
 
+function coerceImageList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => coerceImageInput(item))
+    .filter(Boolean);
+}
+
 async function resolveImageToBase64(
   source: string,
 ): Promise<{ mimeType: string; base64: string } | null> {
@@ -86,6 +93,10 @@ function normalizeImageType(value: string | undefined): "main" | "detail" {
 
 function normalizeTextLanguage(value: string | undefined): string {
   return (value || "zh").toLowerCase();
+}
+
+function normalizeModelMode(value: string | undefined): "none" | "with_model" {
+  return value === "with_model" ? "with_model" : "none";
 }
 
 function normalizeModel(value: string | undefined): SupportedModel {
@@ -293,6 +304,10 @@ serve(async (req: Request) => {
       imageBase64,
       referenceImageUrl,
       referenceStyleUrl,
+      referenceGallery,
+      styleReferenceText,
+      modelMode,
+      modelImage,
       imageType,
       textLanguage,
       model,
@@ -306,13 +321,20 @@ serve(async (req: Request) => {
 
     const productSource = coerceImageInput(imageBase64) || coerceImageInput(referenceImageUrl);
     const productImage = productSource ? await resolveImageToBase64(productSource) : null;
+    const gallerySources = coerceImageList(referenceGallery);
+    const galleryImages = (
+      await Promise.all(gallerySources.map((item) => resolveImageToBase64(item)))
+    ).filter(Boolean) as Array<{ mimeType: string; base64: string }>;
     const styleSource = coerceImageInput(referenceStyleUrl);
     const styleImage = styleSource ? await resolveImageToBase64(styleSource) : null;
+    const modelSource = coerceImageInput(modelImage);
+    const modelReferenceImage = modelSource ? await resolveImageToBase64(modelSource) : null;
 
     const normalizedImageType = normalizeImageType(imageType);
     const normalizedTextLanguage = normalizeTextLanguage(textLanguage);
     const normalizedModel = normalizeModel(model);
     const normalizedResolution = normalizeResolution(resolution);
+    const normalizedModelMode = normalizeModelMode(modelMode);
 
     const absoluteRules = [
       "=== ABSOLUTE RULES ===",
@@ -328,19 +350,33 @@ serve(async (req: Request) => {
       "If the product proportions or material appearance changes, the result is a total failure.",
     ].join(". ");
 
-    const roleInstruction = styleImage
-      ? [
-        "ROLE ASSIGNMENT:",
-        "Image 1 is the product to preserve exactly.",
-        "Image 2 is style reference only for lighting, atmosphere, and color mood.",
-        "Apply only the scene mood from Image 2 while keeping Image 1's product unchanged.",
-      ].join(". ")
-      : [
-        "ROLE ASSIGNMENT:",
-        "Image 1 is the only product reference and must be preserved exactly.",
-        "Re-photograph the same product in a better e-commerce setup.",
-        "If the source image is a poster, banner, lifestyle shot, or already contains scene props, extract the core product and rebuild a clean product-focused composition around it.",
-      ].join(". ");
+    const roleInstructions = [
+      "ROLE ASSIGNMENT:",
+      "Image 1 is the primary product reference and must be preserved exactly.",
+    ];
+    if (galleryImages.length) {
+      roleInstructions.push(
+        `Images 2 to ${galleryImages.length + 1} are additional product angle references of the same item. Use them to lock structure, ports, seams, print, texture, and color consistency.`,
+      );
+    } else {
+      roleInstructions.push(
+        "There are no additional product-angle references. Re-photograph the same product in a better e-commerce setup.",
+      );
+    }
+    if (normalizedModelMode === "with_model" && modelReferenceImage) {
+      roleInstructions.push(
+        "One reference image is a model/person reference. Use it only to guide pose, hand placement, body presence, and natural wearing context. Do not let the model hide the product.",
+      );
+    }
+    if (styleImage) {
+      roleInstructions.push(
+        "One reference image is style reference only for lighting, atmosphere, composition rhythm, and color mood. Do not copy the style image's product.",
+      );
+    }
+    roleInstructions.push(
+      "If the source image is a poster, banner, lifestyle shot, or already contains scene props, extract the core product and rebuild a clean product-focused composition around it.",
+    );
+    const roleInstruction = roleInstructions.join(". ");
 
     const promptSections = extractPromptSections(String(prompt || ""));
     const hasExplicitScene = Boolean(
@@ -376,6 +412,22 @@ serve(async (req: Request) => {
     const textInstruction = buildTextInstruction(normalizedTextLanguage);
     const resolutionInstruction = buildResolutionInstruction(normalizedResolution);
     const modelInstruction = `MODEL TARGET: Prefer visual behavior suitable for ${normalizedModel}.`;
+    const modelPresenceInstruction =
+      normalizedModelMode === "with_model"
+        ? [
+            "MODEL PRESENCE:",
+            modelReferenceImage
+              ? "A real model should appear in the composition when helpful, following the model reference naturally while keeping the product fully visible."
+              : "A tasteful model presence is allowed, but the product must remain the primary hero.",
+            "Do not crop the product awkwardly and do not let hair, hands, or clothing cover the key selling points.",
+          ].join(". ")
+        : [
+            "MODEL PRESENCE:",
+            "Do not add a human model, hands, or mannequin unless the prompt explicitly demands a hand-held close-up.",
+          ].join(". ");
+    const styleReferenceInstruction = styleReferenceText
+      ? `STYLE NOTES FROM USER: ${String(styleReferenceText).trim()}.`
+      : "";
     const structuredPromptInstruction = [
       promptSections.styleName ? `STYLE NAME: ${promptSections.styleName}.` : "",
       promptSections.visualStyle ? `VISUAL STYLE: ${promptSections.visualStyle}.` : "",
@@ -404,6 +456,8 @@ serve(async (req: Request) => {
       textInstruction,
       resolutionInstruction,
       modelInstruction,
+      modelPresenceInstruction,
+      styleReferenceInstruction,
       structuredPromptInstruction,
       sceneLockInstruction,
       userRequest,
@@ -418,6 +472,22 @@ serve(async (req: Request) => {
         },
       });
     }
+    galleryImages.forEach((image) => {
+      parts.push({
+        inlineData: {
+          mimeType: image.mimeType,
+          data: image.base64,
+        },
+      });
+    });
+    if (modelReferenceImage) {
+      parts.push({
+        inlineData: {
+          mimeType: modelReferenceImage.mimeType,
+          data: modelReferenceImage.base64,
+        },
+      });
+    }
     if (styleImage) {
       parts.push({
         inlineData: {
@@ -429,11 +499,14 @@ serve(async (req: Request) => {
 
     console.error("generate-image request:", {
       hasProduct: !!productImage,
+      galleryCount: galleryImages.length,
+      hasModel: !!modelReferenceImage,
       hasStyle: !!styleImage,
       imageType: normalizedImageType,
       textLanguage: normalizedTextLanguage,
       model: normalizedModel,
       resolution: normalizedResolution,
+      modelMode: normalizedModelMode,
       parts: parts.length,
     });
 

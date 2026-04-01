@@ -2,16 +2,21 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
+  Ban,
   CheckCircle2,
   Download,
   Edit3,
   FileImage,
+  Images,
   ImagePlus,
   LayoutPanelTop,
   Loader2,
+  Palette,
   RefreshCw,
   Sparkles,
+  StopCircle,
   Upload,
+  UserRound,
   Wand2,
   X,
   ZoomIn,
@@ -24,14 +29,16 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { useAuth } from "@/contexts/AuthContext";
+import { useGeneration } from "@/contexts/GenerationContext";
 import {
   generateDetailPlan,
   type DetailPlanOption,
   type DetailPlanScreen,
 } from "@/lib/detail-plan";
 import {
-  generateImage,
   type GenerationModel,
+  type ModelMode,
   type OutputResolution,
 } from "@/lib/ai-generator";
 
@@ -101,7 +108,7 @@ const resolutionOptions: { value: OutputResolution; label: string }[] = [
   { value: "4k", label: "4K 超清" },
 ];
 
-type ScreenStatus = "idle" | "running" | "done" | "error";
+type ScreenStatus = "idle" | "running" | "done" | "error" | "canceled";
 
 type GeneratedScreenState = {
   screen: number;
@@ -117,6 +124,8 @@ type GeneratedScreenState = {
 
 const POSTER_FONT_FAMILY =
   '"Microsoft YaHei","PingFang SC","Noto Sans SC","Helvetica Neue",Arial,sans-serif';
+const DETAIL_JOB_ID_KEY = "detail-design-active-job-id";
+const DETAIL_DRAFT_KEY = "detail-design-draft";
 
 const SelectField = ({
   label,
@@ -399,7 +408,13 @@ async function composePosterImage(args: {
 }
 const DetailDesignPage = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const { startDetailGeneration, cancelJob, getJob } = useGeneration();
   const [productImages, setProductImages] = useState<string[]>([]);
+  const [styleReferenceImage, setStyleReferenceImage] = useState<string>("");
+  const [styleReferenceText, setStyleReferenceText] = useState("");
+  const [modelMode, setModelMode] = useState<ModelMode>("none");
+  const [modelImage, setModelImage] = useState<string>("");
   const [productInfo, setProductInfo] = useState("");
   const [targetPlatform, setTargetPlatform] = useState(platformOptions[0]);
   const [targetLanguage, setTargetLanguage] = useState("zh");
@@ -426,11 +441,55 @@ const DetailDesignPage = () => {
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   const [previewTitle, setPreviewTitle] = useState("");
   const [isPreparingPreview, setIsPreparingPreview] = useState(false);
+  const [detailJobId, setDetailJobId] = useState<string | null>(null);
 
   const activePlan = useMemo(
     () => planOptions[selectedOptionIndex] || null,
     [planOptions, selectedOptionIndex],
   );
+  const activeDetailJob = useMemo(
+    () => (detailJobId ? getJob(detailJobId) : null),
+    [detailJobId, getJob],
+  );
+
+  useEffect(() => {
+    const savedJobId = sessionStorage.getItem(DETAIL_JOB_ID_KEY);
+    if (savedJobId) {
+      setDetailJobId(savedJobId);
+    }
+    const rawDraft = sessionStorage.getItem(DETAIL_DRAFT_KEY);
+    if (!rawDraft) return;
+    try {
+      const draft = JSON.parse(rawDraft) as Partial<{
+        productInfo: string;
+        styleReferenceText: string;
+        modelMode: ModelMode;
+        targetPlatform: string;
+        targetLanguage: string;
+        screenCount: string;
+        useScreenIdeas: boolean;
+        screenIdeas: string[];
+        productSummary: string;
+        visibleText: string;
+        planOptions: DetailPlanOption[];
+        selectedOptionIndex: number;
+      }>;
+      setProductInfo(draft.productInfo || "");
+      setStyleReferenceText(draft.styleReferenceText || "");
+      setModelMode(draft.modelMode || "none");
+      setTargetPlatform(draft.targetPlatform || platformOptions[0]);
+      setTargetLanguage(draft.targetLanguage || "zh");
+      setScreenCount(draft.screenCount || "4");
+      setUseScreenIdeas(Boolean(draft.useScreenIdeas));
+      setScreenIdeas(draft.screenIdeas || []);
+      setProductSummary(draft.productSummary || "");
+      setVisibleText(draft.visibleText || "NONE");
+      setPlanOptions(draft.planOptions || []);
+      setSelectedOptionIndex(draft.selectedOptionIndex || 0);
+    } catch {
+      sessionStorage.removeItem(DETAIL_DRAFT_KEY);
+    }
+  }, []);
 
   useEffect(() => {
     if (!activePlan) {
@@ -438,19 +497,27 @@ const DetailDesignPage = () => {
       return;
     }
 
-    setGeneratedScreens(
-      activePlan.screens.map((screen) => ({
-        screen: screen.screen,
-        title: screen.title,
-        status: "idle",
-        prompt: "",
-        overlayTitle: screen.title,
-        overlayBody: screen.copyPoints.join("\n"),
-        overlayEnabled: generationLanguage !== "pure",
-      })),
+    setGeneratedScreens((current) =>
+      activePlan.screens.map((screen) => {
+        const existing = current.find((item) => item.screen === screen.screen);
+        return {
+          screen: screen.screen,
+          title: screen.title,
+          status: existing?.status || "idle",
+          prompt: existing?.prompt || "",
+          imageUrl: existing?.imageUrl,
+          error: existing?.error,
+          overlayTitle: existing?.overlayTitle || screen.title,
+          overlayBody: existing?.overlayBody || screen.copyPoints.join("\n"),
+          overlayEnabled:
+            generationLanguage === "pure"
+              ? false
+              : existing?.overlayEnabled ?? true,
+        };
+      }),
     );
     setGenerationError(null);
-  }, [activePlan]);
+  }, [activePlan, generationLanguage]);
 
   useEffect(() => {
     const desired = Number(screenCount) || 4;
@@ -461,13 +528,97 @@ const DetailDesignPage = () => {
   }, [screenCount]);
 
   useEffect(() => {
-    setGeneratedScreens((current) =>
-      current.map((screen) => ({
-        ...screen,
-        overlayEnabled: generationLanguage === "pure" ? false : screen.overlayEnabled,
-      })),
+    if (!activeDetailJob || activeDetailJob.kind !== "detail") {
+      if (detailJobId && !getJob(detailJobId)) {
+        sessionStorage.removeItem(DETAIL_JOB_ID_KEY);
+        setDetailJobId(null);
+      }
+      return;
+    }
+
+    setProductImages((current) =>
+      current.length ? current : activeDetailJob.uploadedImages.slice(0, 5),
     );
-  }, [generationLanguage]);
+    setStyleReferenceImage((current) => current || activeDetailJob.detailSettings?.styleReferenceImage || "");
+    setStyleReferenceText((current) => current || activeDetailJob.detailSettings?.styleReferenceText || "");
+    setModelMode((current) => {
+      if (current !== "none") return current;
+      return activeDetailJob.detailSettings?.modelMode || "none";
+    });
+    setModelImage((current) => current || activeDetailJob.detailSettings?.modelImage || "");
+    if (activeDetailJob.detailSettings?.aspectRatio) {
+      setSelectedRatio(activeDetailJob.detailSettings.aspectRatio);
+    }
+    if (activeDetailJob.detailSettings?.textLanguage) {
+      setGenerationLanguage(activeDetailJob.detailSettings.textLanguage);
+    }
+    if (activeDetailJob.detailSettings?.model) {
+      setSelectedModel(activeDetailJob.detailSettings.model);
+    }
+    if (activeDetailJob.detailSettings?.resolution) {
+      setSelectedResolution(activeDetailJob.detailSettings.resolution);
+    }
+    if (activeDetailJob.detailScreens?.length) {
+      setGeneratedScreens((current) => {
+        if (!current.length) {
+          return activeDetailJob.detailScreens || [];
+        }
+        const merged = [...current];
+        activeDetailJob.detailScreens?.forEach((screen) => {
+          const index = merged.findIndex((item) => item.screen === screen.screen);
+          if (index >= 0) {
+            merged[index] = { ...merged[index], ...screen };
+          } else {
+            merged.push(screen);
+          }
+        });
+        return merged.sort((a, b) => a.screen - b.screen);
+      });
+    }
+    setIsGeneratingScreens(activeDetailJob.status === "running");
+    if (activeDetailJob.status === "error") {
+      setGenerationError(activeDetailJob.error || "逐屏生成失败");
+    } else if (activeDetailJob.status === "canceled") {
+      setGenerationError("后台任务已取消");
+    }
+
+    if (activeDetailJob.status !== "running") {
+      sessionStorage.removeItem(DETAIL_JOB_ID_KEY);
+    }
+  }, [activeDetailJob, detailJobId, getJob]);
+
+  useEffect(() => {
+    sessionStorage.setItem(
+      DETAIL_DRAFT_KEY,
+      JSON.stringify({
+        productInfo,
+        styleReferenceText,
+        modelMode,
+        targetPlatform,
+        targetLanguage,
+        screenCount,
+        useScreenIdeas,
+        screenIdeas,
+        productSummary,
+        visibleText,
+        planOptions,
+        selectedOptionIndex,
+      }),
+    );
+  }, [
+    planOptions,
+    modelMode,
+    productInfo,
+    productSummary,
+    screenCount,
+    screenIdeas,
+    selectedOptionIndex,
+    styleReferenceText,
+    targetLanguage,
+    targetPlatform,
+    useScreenIdeas,
+    visibleText,
+  ]);
 
   const compressImage = (file: File): Promise<string> =>
     new Promise((resolve, reject) => {
@@ -530,14 +681,49 @@ const DetailDesignPage = () => {
     resetPlan();
   };
 
+  const handleSingleAsset = async (
+    files: FileList | null,
+    setter: (value: string) => void,
+  ) => {
+    if (!files?.length) return;
+    const file = Array.from(files).find((item) => item.type.match(/image\/(jpeg|png|webp)/));
+    if (!file) return;
+    const compressed = await compressImage(file);
+    setter(compressed);
+    resetPlan();
+  };
+
   const removeImage = (index: number) => {
     setProductImages((current) => current.filter((_, currentIndex) => currentIndex !== index));
     resetPlan();
   };
 
+  const appendPlanningContext = () => {
+    const chunks = [productInfo.trim()];
+
+    if (styleReferenceText.trim()) {
+      chunks.push(`风格补充：${styleReferenceText.trim()}`);
+    }
+    if (modelMode === "with_model") {
+      chunks.push(
+        modelImage
+          ? "模特要求：使用上传模特图作为人物参考，保证产品主体完整可见。"
+          : "模特要求：需要模特感场景，但目前未上传模特图。",
+      );
+    } else {
+      chunks.push("模特要求：无模特，避免人物出镜。");
+    }
+
+    return chunks.filter(Boolean).join("\n");
+  };
+
   const handleGeneratePlan = async () => {
     if (!productImages.length) {
       setError("请先上传至少 1 张商品图");
+      return;
+    }
+    if (modelMode === "with_model" && !modelImage) {
+      setError("已选择有模特模式，请先上传模特图");
       return;
     }
 
@@ -547,7 +733,7 @@ const DetailDesignPage = () => {
     try {
       const result = await generateDetailPlan({
         productImages,
-        productInfo,
+        productInfo: appendPlanningContext(),
         targetPlatform,
         targetLanguage,
         screenCount: Number(screenCount),
@@ -641,74 +827,87 @@ const DetailDesignPage = () => {
     }
   };
 
-  const generateOneScreen = async (screen: DetailPlanScreen) => {
-    if (!activePlan || !productImages.length) return;
+  const createScreenJobPayload = (screens: DetailPlanScreen[]): GeneratedScreenState[] => {
+    if (!activePlan) return [];
 
-    const prompt = buildScreenPrompt({
-      plan: activePlan,
-      screen,
-      productSummary,
-      visibleText,
-      productInfo,
-      targetPlatform,
-      targetLanguage: generationLanguage,
-      screenIdea: useScreenIdeas ? screenIdeas[screen.screen - 1] : "",
+    return screens.map((screen) => {
+      const current = generatedScreens.find((item) => item.screen === screen.screen);
+      const prompt = buildScreenPrompt({
+        plan: activePlan,
+        screen,
+        productSummary,
+        visibleText,
+        productInfo: appendPlanningContext(),
+        targetPlatform,
+        targetLanguage: generationLanguage,
+        screenIdea: useScreenIdeas ? screenIdeas[screen.screen - 1] : "",
+      });
+
+      return {
+        screen: screen.screen,
+        title: screen.title,
+        status: "idle",
+        prompt,
+        imageUrl: current?.imageUrl,
+        error: undefined,
+        overlayTitle: current?.overlayTitle || screen.title,
+        overlayBody: current?.overlayBody || screen.copyPoints.join("\n"),
+        overlayEnabled:
+          generationLanguage === "pure" ? false : current?.overlayEnabled ?? true,
+      };
     });
-
-    updateGeneratedScreen(screen.screen, (current) => ({
-      ...current,
-      status: "running",
-      error: undefined,
-      prompt,
-    }));
-
-    const result = await generateImage({
-      prompt,
-      aspectRatio: selectedRatio,
-      n: 1,
-      imageBase64: productImages[0],
-      imageType: "详情图",
-      textLanguage: generationLanguage,
-      model: selectedModel,
-      resolution: selectedResolution,
-    });
-
-    if (!result.images.length) {
-      updateGeneratedScreen(screen.screen, (current) => ({
-        ...current,
-        status: "error",
-        error: result.error || "本屏生成失败",
-      }));
-      return;
-    }
-
-    updateGeneratedScreen(screen.screen, (current) => ({
-      ...current,
-      status: "done",
-      imageUrl: result.images[0],
-      error: undefined,
-    }));
   };
 
-  const handleGenerateAllScreens = async () => {
+  const launchDetailGeneration = (screens: DetailPlanScreen[]) => {
     if (!activePlan || !productImages.length) {
       setGenerationError("请先完成方案策划并保留至少 1 张商品图");
       return;
     }
-
-    setIsGeneratingScreens(true);
-    setGenerationError(null);
-
-    for (const screen of activePlan.screens) {
-      await generateOneScreen(screen);
+    if (modelMode === "with_model" && !modelImage) {
+      setGenerationError("已选择有模特模式，请先上传模特图");
+      return;
     }
 
-    setIsGeneratingScreens(false);
+    const nextScreens = createScreenJobPayload(screens);
+    setGeneratedScreens((current) => {
+      const merged = [...current];
+      nextScreens.forEach((screen) => {
+        const index = merged.findIndex((item) => item.screen === screen.screen);
+        if (index >= 0) {
+          merged[index] = { ...merged[index], ...screen, status: "idle", error: undefined };
+        } else {
+          merged.push(screen);
+        }
+      });
+      return merged.sort((a, b) => a.screen - b.screen);
+    });
+
+    setGenerationError(null);
+    setIsGeneratingScreens(true);
+    const jobId = startDetailGeneration({
+      aspectRatio: selectedRatio,
+      textLanguage: generationLanguage,
+      model: selectedModel,
+      resolution: selectedResolution,
+      productImages,
+      styleReferenceImage: styleReferenceImage || undefined,
+      styleReferenceText: styleReferenceText.trim() || undefined,
+      modelMode,
+      modelImage: modelImage || undefined,
+      screens: nextScreens,
+      userId: user?.id,
+    });
+    setDetailJobId(jobId);
+    sessionStorage.setItem(DETAIL_JOB_ID_KEY, jobId);
+  };
+
+  const handleGenerateAllScreens = async () => {
+    if (!activePlan) return;
+    launchDetailGeneration(activePlan.screens);
   };
 
   const handleRegenerateScreen = async (screen: DetailPlanScreen) => {
-    setGenerationError(null);
-    await generateOneScreen(screen);
+    launchDetailGeneration([screen]);
   };
 
   const currentModelHint =
@@ -809,6 +1008,168 @@ const DetailDesignPage = () => {
                 )}
               </div>
             )}
+
+            <div className="mt-5 space-y-4 border-t border-border pt-5">
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  产品信息
+                </label>
+                <Textarea
+                  value={productInfo}
+                  onChange={(event) => setProductInfo(event.target.value)}
+                  placeholder="填写产品介绍、核心卖点、材质、尺寸、适用人群和你希望画面保留的信息。信息越完整，AI 误识别和文字乱码的概率越低。"
+                  className="min-h-28 rounded-2xl"
+                />
+              </div>
+
+              <div className="rounded-2xl border border-border bg-background p-4">
+                <div className="mb-3 flex items-center justify-between">
+                  <div>
+                    <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                      <UserRound className="h-4 w-4 text-primary" />
+                      模特模式
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      有模特时可上传模特图，逐屏生成会参考人物气质和姿态。
+                    </p>
+                  </div>
+                  <div className="inline-flex rounded-xl bg-muted p-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setModelMode("none");
+                        setModelImage("");
+                        resetPlan();
+                      }}
+                      className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+                        modelMode === "none"
+                          ? "bg-primary text-primary-foreground"
+                          : "text-muted-foreground"
+                      }`}
+                    >
+                      <Ban className="mr-1 inline h-3.5 w-3.5" />
+                      无模特
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setModelMode("with_model");
+                        resetPlan();
+                      }}
+                      className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+                        modelMode === "with_model"
+                          ? "bg-primary text-primary-foreground"
+                          : "text-muted-foreground"
+                      }`}
+                    >
+                      <UserRound className="mr-1 inline h-3.5 w-3.5" />
+                      有模特
+                    </button>
+                  </div>
+                </div>
+
+                {modelMode === "with_model" && (
+                  <div className="space-y-3">
+                    <label className="flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-border px-4 text-center transition-colors hover:border-primary/40 hover:bg-muted/40">
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        className="hidden"
+                        onChange={(event) =>
+                          void handleSingleAsset(event.target.files, setModelImage)
+                        }
+                      />
+                      {modelImage ? (
+                        <div className="relative w-full">
+                          <img
+                            src={modelImage}
+                            alt="model-reference"
+                            className="h-36 w-full rounded-xl object-cover"
+                          />
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.preventDefault();
+                              setModelImage("");
+                              resetPlan();
+                            }}
+                            className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          <UserRound className="mb-2 h-5 w-5 text-primary" />
+                          <div className="text-sm font-medium text-foreground">上传模特图</div>
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            用于参考人物姿态、气质和出镜方式
+                          </div>
+                        </>
+                      )}
+                    </label>
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-2xl border border-border bg-background p-4">
+                <div className="mb-3">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                    <Palette className="h-4 w-4 text-primary" />
+                    风格参考
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    可选上传风格参考图，生成时只参考氛围、构图、光线和色调，不替换你的商品。
+                  </p>
+                </div>
+
+                <label className="flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-border px-4 text-center transition-colors hover:border-primary/40 hover:bg-muted/40">
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    onChange={(event) =>
+                      void handleSingleAsset(event.target.files, setStyleReferenceImage)
+                    }
+                  />
+                  {styleReferenceImage ? (
+                    <div className="relative w-full">
+                      <img
+                        src={styleReferenceImage}
+                        alt="style-reference"
+                        className="h-36 w-full rounded-xl object-cover"
+                      />
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          setStyleReferenceImage("");
+                          resetPlan();
+                        }}
+                        className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <Images className="mb-2 h-5 w-5 text-primary" />
+                      <div className="text-sm font-medium text-foreground">上传风格参考图</div>
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        参考风格，不改商品本体
+                      </div>
+                    </>
+                  )}
+                </label>
+
+                <Textarea
+                  value={styleReferenceText}
+                  onChange={(event) => setStyleReferenceText(event.target.value)}
+                  placeholder="可再补充风格要求，例如：暖色高级感、极简留白、轻奢桌面、通透阳光感。"
+                  className="mt-3 min-h-24 rounded-2xl"
+                />
+              </div>
+            </div>
           </section>
           <section className="rounded-3xl border border-border bg-card p-5 shadow-sm">
             <div className="mb-4">
@@ -837,18 +1198,6 @@ const DetailDesignPage = () => {
                   value: String(count),
                   label: `${count} 屏`,
                 }))}
-              />
-            </div>
-
-            <div className="mt-4 space-y-1.5">
-              <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                补充卖点 / 风格要求
-              </label>
-              <Textarea
-                value={productInfo}
-                onChange={(event) => setProductInfo(event.target.value)}
-                placeholder="例如：想突出材质质感、防摔保护、镜头位保护和送礼感；整体页面偏轻奢、干净、带一点生活方式感。"
-                className="min-h-32 rounded-2xl"
               />
             </div>
 
@@ -962,30 +1311,66 @@ const DetailDesignPage = () => {
                 />
               </div>
 
+              <div className="mt-4 space-y-2 rounded-2xl border border-border bg-background p-4 text-xs text-muted-foreground">
+                <div className="flex items-center justify-between">
+                  <span>模特模式</span>
+                  <span className="font-medium text-foreground">
+                    {modelMode === "with_model" ? "有模特" : "无模特"}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>风格参考图</span>
+                  <span className="font-medium text-foreground">
+                    {styleReferenceImage ? "已上传" : "未上传"}
+                  </span>
+                </div>
+                {styleReferenceText.trim() && (
+                  <div className="rounded-xl bg-muted/60 px-3 py-2 leading-5 text-foreground">
+                    风格补充：{styleReferenceText.trim()}
+                  </div>
+                )}
+                <p>
+                  当前流程会优先用商品图锁定产品本体，再用风格图控制氛围，用后贴真实文字减少乱码。
+                </p>
+              </div>
+
               {generationError && (
                 <div className="mt-4 rounded-2xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
                   {generationError}
                 </div>
               )}
 
-              <Button
-                type="button"
-                onClick={handleGenerateAllScreens}
-                disabled={isGeneratingScreens}
-                className="mt-5 h-12 w-full rounded-2xl text-sm font-semibold"
-              >
-                {isGeneratingScreens ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    正在逐屏生成
-                  </>
-                ) : (
-                  <>
-                    <ImagePlus className="mr-2 h-4 w-4" />
-                    生成当前方案 {activePlan.screens.length} 屏
-                  </>
+              <div className="mt-5 grid gap-2">
+                <Button
+                  type="button"
+                  onClick={handleGenerateAllScreens}
+                  disabled={isGeneratingScreens}
+                  className="h-12 w-full rounded-2xl text-sm font-semibold"
+                >
+                  {isGeneratingScreens ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      后台逐屏生成中
+                    </>
+                  ) : (
+                    <>
+                      <ImagePlus className="mr-2 h-4 w-4" />
+                      生成当前方案 {activePlan.screens.length} 屏
+                    </>
+                  )}
+                </Button>
+                {isGeneratingScreens && detailJobId && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => cancelJob(detailJobId)}
+                    className="h-11 w-full rounded-2xl text-sm font-semibold"
+                  >
+                    <StopCircle className="mr-2 h-4 w-4" />
+                    取消后台任务
+                  </Button>
                 )}
-              </Button>
+              </div>
             </section>
           )}
         </div>

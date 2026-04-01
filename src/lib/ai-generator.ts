@@ -6,6 +6,7 @@ export type GenerationModel =
   | "gemini-2.5-flash-image";
 
 export type OutputResolution = "0.5k" | "1k" | "2k" | "4k";
+export type ModelMode = "none" | "with_model";
 
 export interface GenerateImageParams {
   prompt: string;
@@ -16,6 +17,11 @@ export interface GenerateImageParams {
   textLanguage?: string;
   model?: GenerationModel;
   resolution?: OutputResolution;
+  referenceGallery?: string[];
+  styleReferenceImage?: string;
+  styleReferenceText?: string;
+  modelMode?: ModelMode;
+  modelImage?: string;
 }
 
 export interface GenerateImageResult {
@@ -25,14 +31,18 @@ export interface GenerateImageResult {
 
 function isFatalError(message: string | undefined): boolean {
   if (!message) return false;
-  return (
-    message.includes("余额不足") ||
-    message.includes("未授权") ||
-    message.includes("请先登录") ||
-    message.includes("认证失败") ||
-    message.includes("INSUFFICIENT_BALANCE") ||
-    message.includes("权限不足")
-  );
+
+  const normalized = message.toLowerCase();
+  return [
+    "insufficient_balance",
+    "unauthorized",
+    "forbidden",
+    "authentication",
+    "quota",
+    "billing",
+    "login",
+    "not authenticated",
+  ].some((keyword) => normalized.includes(keyword));
 }
 
 async function generateSingleImage(
@@ -48,26 +58,35 @@ async function generateSingleImage(
       textLanguage: params.textLanguage || "zh",
       model: params.model || "nano-banana-pro-preview",
       resolution: params.resolution || "2k",
+      referenceGallery: params.referenceGallery || [],
+      referenceStyleUrl: params.styleReferenceImage || undefined,
+      styleReferenceText: params.styleReferenceText || undefined,
+      modelMode: params.modelMode || "none",
+      modelImage: params.modelImage || undefined,
     },
   });
 
   if (error) {
-    console.error(`[attempt ${attempt}] Edge function error:`, error);
-    return { url: null, error: error.message || "服务暂时不可用，请稍后重试" };
+    console.error(`[attempt ${attempt}] generate-image edge function error:`, error);
+    return {
+      url: null,
+      error: error.message || "图片生成服务暂时不可用，请稍后重试",
+    };
   }
 
   if (data?.error) {
-    const errorMsg =
+    const errorMessage =
       typeof data.error === "string"
         ? data.error
-        : data.error?.error || "生成失败";
-    console.error(`[attempt ${attempt}] Generation error:`, errorMsg);
-    return { url: null, error: errorMsg };
+        : data.error?.message || data.error?.error || "生成失败";
+
+    console.error(`[attempt ${attempt}] generate-image returned error:`, errorMessage);
+    return { url: null, error: errorMessage };
   }
 
   const imageUrl = data?.images?.[0];
   if (!imageUrl) {
-    return { url: null, error: "未能生成图片，请重试" };
+    return { url: null, error: "未能生成图片，请稍后重试" };
   }
 
   return { url: imageUrl, error: null };
@@ -77,13 +96,12 @@ export async function generateImage(
   params: GenerateImageParams,
 ): Promise<GenerateImageResult> {
   try {
-    const count = Math.min(Math.max(params.n || 1, 1), 9);
+    const total = Math.min(Math.max(params.n || 1, 1), 9);
     const images: string[] = [];
     let lastError: string | undefined;
 
-    for (let i = 0; i < count; i++) {
-      const result = await generateSingleImage(params, i + 1);
-
+    for (let index = 0; index < total; index += 1) {
+      const result = await generateSingleImage(params, index + 1);
       if (result.url) {
         images.push(result.url);
         continue;
@@ -94,19 +112,26 @@ export async function generateImage(
         if (isFatalError(result.error)) {
           break;
         }
-        if (i < count - 1) {
-          await new Promise((resolve) => setTimeout(resolve, 2500));
-        }
+      }
+
+      if (index < total - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1600));
       }
     }
 
-    if (images.length === 0) {
-      return { images: [], error: lastError || "未能生成图片，请重试" };
+    if (!images.length) {
+      return {
+        images: [],
+        error: lastError || "未能生成图片，请稍后重试",
+      };
     }
 
     return { images };
-  } catch (error: any) {
-    console.error("Generation error:", error);
-    return { images: [], error: error.message || "未知错误" };
+  } catch (error) {
+    console.error("generateImage unexpected error:", error);
+    return {
+      images: [],
+      error: error instanceof Error ? error.message : "未知错误",
+    };
   }
 }

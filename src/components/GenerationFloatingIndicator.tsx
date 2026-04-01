@@ -1,87 +1,115 @@
-import { GenerationContext } from "@/contexts/GenerationContext";
+import { useContext, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Loader2, CheckCircle2, AlertCircle, X, Sparkles } from "lucide-react";
-import { useState, useContext } from "react";
+import {
+  AlertCircle,
+  CheckCircle2,
+  Loader2,
+  Sparkles,
+  StopCircle,
+  X,
+} from "lucide-react";
+import { GenerationContext } from "@/contexts/GenerationContext";
+
+function targetPath(kind: "copy" | "image" | "detail") {
+  return kind === "detail" ? "/dashboard/detail-design" : "/dashboard/generate";
+}
 
 export function GenerationFloatingIndicator() {
   const ctx = useContext(GenerationContext);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
 
-  if (!ctx) return null;
-  const { jobs, clearJob } = ctx;
+  const visibleJobs = useMemo(() => {
+    if (!ctx) return [];
+    return ctx.jobs.filter((job) => !dismissed.has(job.id));
+  }, [ctx, dismissed]);
 
-  const visibleJobs = jobs.filter(
-    (j) => !dismissed.has(j.id) && (j.status === "running" || j.status === "done" || j.status === "error")
-  );
-
-  if (visibleJobs.length === 0) return null;
+  if (!ctx || !visibleJobs.length) {
+    return null;
+  }
 
   const latestJob = visibleJobs[0];
 
-  const handleDismiss = (id: string) => {
+  const dismiss = (id: string) => {
     setDismissed((prev) => new Set([...prev, id]));
-    if (latestJob.status !== "running") clearJob(id);
+    if (latestJob.status !== "running") {
+      ctx.clearJob(id);
+    }
   };
 
-  return (
-    <div className="fixed bottom-20 md:bottom-6 right-4 z-[60] max-w-xs w-full animate-in slide-in-from-bottom-4 duration-300">
-      <div className="bg-card border border-border rounded-xl shadow-xl p-3.5 backdrop-blur-sm">
-        <div className="flex items-start gap-3">
-          {latestJob.status === "running" && (
-            <div className="mt-0.5 flex-shrink-0">
-              <Loader2 className="h-5 w-5 text-primary animate-spin" />
-            </div>
-          )}
-          {latestJob.status === "done" && (
-            <div className="mt-0.5 flex-shrink-0">
-              <CheckCircle2 className="h-5 w-5 text-primary" />
-            </div>
-          )}
-          {latestJob.status === "error" && (
-            <div className="mt-0.5 flex-shrink-0">
-              <AlertCircle className="h-5 w-5 text-destructive" />
-            </div>
-          )}
+  const progress = latestJob.total
+    ? Math.max(6, Math.min(100, (latestJob.current / latestJob.total) * 100))
+    : 0;
 
-          <div className="flex-1 min-w-0">
+  return (
+    <div className="fixed bottom-20 right-4 z-[60] w-full max-w-xs animate-in slide-in-from-bottom-4 duration-300 md:bottom-6">
+      <div className="rounded-xl border border-border bg-card p-3.5 shadow-xl backdrop-blur-sm">
+        <div className="flex items-start gap-3">
+          <div className="mt-0.5 flex-shrink-0">
+            {latestJob.status === "running" ? (
+              <Loader2 className="h-5 w-5 animate-spin text-primary" />
+            ) : latestJob.status === "done" ? (
+              <CheckCircle2 className="h-5 w-5 text-primary" />
+            ) : (
+              <AlertCircle className="h-5 w-5 text-destructive" />
+            )}
+          </div>
+
+          <div className="min-w-0 flex-1">
             <div className="flex items-center justify-between gap-2">
-              <p className="text-sm font-medium text-foreground truncate">
-                {latestJob.status === "running" && `${latestJob.step}...`}
-                {latestJob.status === "done" && `已生成 ${latestJob.results.length} 张图片`}
+              <p className="truncate text-sm font-medium text-foreground">
+                {latestJob.status === "running" && latestJob.step}
+                {latestJob.status === "done" &&
+                  `已完成 ${latestJob.results.length} 张${latestJob.kind === "detail" ? "详情页分屏" : "图片"}`}
                 {latestJob.status === "error" && "生成失败"}
+                {latestJob.status === "canceled" && "已取消"}
               </p>
               <button
-                onClick={() => handleDismiss(latestJob.id)}
-                className="flex-shrink-0 p-0.5 rounded hover:bg-muted transition-colors"
+                onClick={() => dismiss(latestJob.id)}
+                className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted"
               >
-                <X className="h-3.5 w-3.5 text-muted-foreground" />
+                <X className="h-3.5 w-3.5" />
               </button>
             </div>
 
             {latestJob.status === "running" && (
-              <div className="mt-2">
-                <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+              <>
+                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
                   <div
-                    className="h-full bg-primary rounded-full transition-all duration-500 ease-out"
-                    style={{ width: `${Math.max(5, (latestJob.current / latestJob.total) * 100)}%` }}
+                    className="h-full rounded-full bg-primary transition-all duration-500"
+                    style={{ width: `${progress}%` }}
                   />
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {latestJob.current}/{latestJob.total} · 切换页面不会中断
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {latestJob.current}/{latestJob.total}，切换页面不会中断
                 </p>
-              </div>
+              </>
             )}
 
-            {latestJob.status === "done" && (
-              <Link
-                to="/dashboard/generate"
-                className="inline-flex items-center gap-1 text-xs text-primary hover:underline mt-1"
-                onClick={() => handleDismiss(latestJob.id)}
-              >
-                <Sparkles className="h-3 w-3" />
-                查看结果
-              </Link>
+            {latestJob.error && latestJob.status !== "running" && (
+              <p className="mt-1 text-xs leading-5 text-destructive">{latestJob.error}</p>
             )}
+
+            <div className="mt-3 flex flex-wrap gap-2">
+              {latestJob.status === "running" ? (
+                <button
+                  type="button"
+                  onClick={() => ctx.cancelJob(latestJob.id)}
+                  className="inline-flex items-center gap-1 rounded-lg border border-destructive/20 bg-destructive/5 px-2.5 py-1 text-xs font-medium text-destructive transition hover:bg-destructive/10"
+                >
+                  <StopCircle className="h-3.5 w-3.5" />
+                  取消任务
+                </button>
+              ) : (
+                <Link
+                  to={targetPath(latestJob.kind)}
+                  className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                  onClick={() => dismiss(latestJob.id)}
+                >
+                  <Sparkles className="h-3 w-3" />
+                  查看结果
+                </Link>
+              )}
+            </div>
           </div>
         </div>
       </div>

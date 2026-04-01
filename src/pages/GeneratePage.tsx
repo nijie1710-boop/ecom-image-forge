@@ -9,12 +9,15 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  Ban,
   Download,
   Globe,
   Loader2,
+  Palette,
   RefreshCw,
   Sparkles,
   Upload,
+  UserRound,
   X,
   ZoomIn,
   Edit3,
@@ -22,7 +25,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { GenerationContext } from "@/contexts/GenerationContext";
-import type { GenerationModel, OutputResolution } from "@/lib/ai-generator";
+import type { GenerationModel, ModelMode, OutputResolution } from "@/lib/ai-generator";
 
 const imageTypes = ["主图", "详情图"];
 
@@ -124,7 +127,12 @@ const GeneratePage = () => {
   const templateId = searchParams.get("template");
 
   const [uploadedImages, setUploadedImages] = useState<string[]>([]);
+  const [productBrief, setProductBrief] = useState("");
   const [textPrompt, setTextPrompt] = useState("");
+  const [styleReferenceImage, setStyleReferenceImage] = useState("");
+  const [styleReferenceText, setStyleReferenceText] = useState("");
+  const [modelMode, setModelMode] = useState<ModelMode>("none");
+  const [modelImage, setModelImage] = useState("");
   const [imageType, setImageType] = useState(imageTypes[0]);
   const [selectedRatio, setSelectedRatio] = useState("3:4");
   const [textLanguage, setTextLanguage] = useState("zh");
@@ -238,6 +246,17 @@ const GeneratePage = () => {
     setUploadedImages([dataUrl]);
   };
 
+  const handleSingleAsset = async (
+    files: FileList | null,
+    setter: (value: string) => void,
+  ) => {
+    if (!files?.length) return;
+    const file = Array.from(files).find((item) => item.type.match(/image\/(jpeg|png|webp)/));
+    if (!file) return;
+    const dataUrl = await compressImage(file);
+    setter(dataUrl);
+  };
+
   const fetchSceneSuggestions = async (imageDataUrl: string, openDialog = true) => {
     setIsLoadingSuggestions(true);
     setSuggestionError(null);
@@ -331,7 +350,7 @@ const GeneratePage = () => {
       setErrorMessage("系统初始化中，请刷新页面后重试");
       return;
     }
-    if (uploadedImages.length === 0 && !textPrompt.trim()) {
+    if (uploadedImages.length === 0 && !textPrompt.trim() && !productBrief.trim()) {
       return;
     }
 
@@ -339,9 +358,18 @@ const GeneratePage = () => {
     setResults([]);
     setErrorMessage(null);
 
+    if (modelMode === "with_model" && !modelImage) {
+      setIsGenerating(false);
+      setErrorMessage("已选择有模特模式，请先上传模特图");
+      return;
+    }
+
     const totalImages = Math.min(Math.max(Number(selectedCount), 1), 9);
+    const finalPrompt = [productBrief.trim() ? `产品信息：${productBrief.trim()}` : "", textPrompt.trim()]
+      .filter(Boolean)
+      .join("\n");
     const params = {
-      prompt: textPrompt.trim(),
+      prompt: finalPrompt,
       aspectRatio: selectedRatio,
       n: totalImages,
       imageBase64: uploadedImages.length > 0 ? uploadedImages[0] : undefined,
@@ -349,6 +377,11 @@ const GeneratePage = () => {
       textLanguage,
       model: selectedModel,
       resolution: selectedResolution,
+      referenceGallery: uploadedImages.slice(1),
+      styleReferenceImage: styleReferenceImage || undefined,
+      styleReferenceText: styleReferenceText.trim() || undefined,
+      modelMode,
+      modelImage: modelImage || undefined,
       userId: user?.id,
       onComplete: (images: string[]) => {
         setResults(images);
@@ -522,6 +555,137 @@ const GeneratePage = () => {
               </label>
             )}
           </div>
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            产品信息
+          </label>
+          <Textarea
+            value={productBrief}
+            onChange={(event) => setProductBrief(event.target.value)}
+            placeholder="填写产品介绍、核心卖点、材质或不允许改动的细节。信息越完整，AI 识别跑偏和乱码概率越低。"
+            className="min-h-24 rounded-xl"
+          />
+        </div>
+
+        <div className="space-y-3 rounded-2xl border border-border bg-background/60 p-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                <UserRound className="h-3.5 w-3.5" />
+                模特模式
+              </div>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                需要人物出镜时，建议上传模特图作为参考
+              </p>
+            </div>
+            <div className="inline-flex rounded-lg bg-muted p-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setModelMode("none");
+                  setModelImage("");
+                }}
+                className={`rounded-md px-2 py-1 text-[11px] font-medium transition ${
+                  modelMode === "none"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground"
+                }`}
+              >
+                <Ban className="mr-1 inline h-3 w-3" />
+                无模特
+              </button>
+              <button
+                type="button"
+                onClick={() => setModelMode("with_model")}
+                className={`rounded-md px-2 py-1 text-[11px] font-medium transition ${
+                  modelMode === "with_model"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground"
+                }`}
+              >
+                <UserRound className="mr-1 inline h-3 w-3" />
+                有模特
+              </button>
+            </div>
+          </div>
+
+          {modelMode === "with_model" && (
+            <label className="flex min-h-24 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-border px-3 text-center transition-colors hover:border-primary/40">
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="hidden"
+                onChange={(event) => void handleSingleAsset(event.target.files, setModelImage)}
+              />
+              {modelImage ? (
+                <div className="relative w-full">
+                  <img src={modelImage} alt="model" className="h-28 w-full rounded-lg object-cover" />
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      setModelImage("");
+                    }}
+                    className="absolute right-2 top-2 rounded-full bg-black/60 p-1 text-white"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <UserRound className="mb-2 h-4 w-4 text-primary" />
+                  <p className="text-xs text-muted-foreground">上传模特图</p>
+                </>
+              )}
+            </label>
+          )}
+        </div>
+
+        <div className="space-y-2 rounded-2xl border border-border bg-background/60 p-3">
+          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <Palette className="h-3.5 w-3.5" />
+            风格参考（可选）
+          </div>
+          <label className="flex min-h-24 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-border px-3 text-center transition-colors hover:border-primary/40">
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="hidden"
+              onChange={(event) => void handleSingleAsset(event.target.files, setStyleReferenceImage)}
+            />
+            {styleReferenceImage ? (
+              <div className="relative w-full">
+                <img
+                  src={styleReferenceImage}
+                  alt="style-reference"
+                  className="h-28 w-full rounded-lg object-cover"
+                />
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    setStyleReferenceImage("");
+                  }}
+                  className="absolute right-2 top-2 rounded-full bg-black/60 p-1 text-white"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            ) : (
+              <>
+                <Palette className="mb-2 h-4 w-4 text-primary" />
+                <p className="text-xs text-muted-foreground">上传风格参考图</p>
+              </>
+            )}
+          </label>
+          <Textarea
+            value={styleReferenceText}
+            onChange={(event) => setStyleReferenceText(event.target.value)}
+            placeholder="可补充风格要求，例如：暖色轻奢、极简白底、日落通透感。"
+            className="min-h-20 rounded-xl"
+          />
         </div>
 
         <div className="space-y-2">
