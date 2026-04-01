@@ -1,4 +1,4 @@
-import { useCallback, useContext, useEffect, useState } from "react";
+﻿import { useCallback, useContext, useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,16 +22,21 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { GenerationContext } from "@/contexts/GenerationContext";
+import type { GenerationModel, OutputResolution } from "@/lib/ai-generator";
 
 const imageTypes = ["主图", "详情图"];
 
 const ratioOptions = [
-  { value: "1:1", label: "1:1 淘宝/天猫/京东" },
-  { value: "3:4", label: "3:4 小红书" },
-  { value: "9:16", label: "9:16 抖音/快手" },
-  { value: "16:9", label: "16:9 横图/Banner" },
-  { value: "4:5", label: "4:5 Instagram" },
-  { value: "2:3", label: "2:3 竖版海报" },
+  { value: "1:1", label: "1:1 正方形" },
+  { value: "2:3", label: "2:3 竖版" },
+  { value: "3:2", label: "3:2 横版" },
+  { value: "3:4", label: "3:4 竖版" },
+  { value: "4:3", label: "4:3 横版" },
+  { value: "4:5", label: "4:5 竖版" },
+  { value: "5:4", label: "5:4 横版" },
+  { value: "9:16", label: "9:16 手机竖屏" },
+  { value: "16:9", label: "16:9 宽屏" },
+  { value: "21:9", label: "21:9 超宽屏" },
 ];
 
 const languageOptions = [
@@ -50,6 +55,24 @@ const languageOptions = [
   { value: "vi", label: "VI Tiếng Việt" },
   { value: "pure", label: "纯图片（无新增文字）" },
 ];
+
+const modelOptions: { value: GenerationModel; label: string }[] = [
+  { value: "gemini-3.1-flash-image-preview", label: "Nano Banana 2" },
+  { value: "nano-banana-pro-preview", label: "Nano Banana Pro" },
+  { value: "gemini-2.5-flash-image", label: "Nano Banana" },
+];
+
+const resolutionOptions: { value: OutputResolution; label: string }[] = [
+  { value: "0.5k", label: "0.5K 快速" },
+  { value: "1k", label: "1K 标准" },
+  { value: "2k", label: "2K 高清" },
+  { value: "4k", label: "4K 超清" },
+];
+
+const imageCountOptions = Array.from({ length: 9 }, (_, index) => ({
+  value: String(index + 1),
+  label: `${index + 1} 张`,
+}));
 
 const SelectField = ({
   label,
@@ -103,8 +126,13 @@ const GeneratePage = () => {
   const [uploadedImages, setUploadedImages] = useState<string[]>([]);
   const [textPrompt, setTextPrompt] = useState("");
   const [imageType, setImageType] = useState(imageTypes[0]);
-  const [selectedRatio, setSelectedRatio] = useState("1:1");
+  const [selectedRatio, setSelectedRatio] = useState("3:4");
   const [textLanguage, setTextLanguage] = useState("zh");
+  const [selectedModel, setSelectedModel] =
+    useState<GenerationModel>("nano-banana-pro-preview");
+  const [selectedResolution, setSelectedResolution] =
+    useState<OutputResolution>("2k");
+  const [selectedCount, setSelectedCount] = useState("1");
   const [sceneSuggestions, setSceneSuggestions] = useState<
     { scene: string; description: string }[]
   >([]);
@@ -311,7 +339,7 @@ const GeneratePage = () => {
     setResults([]);
     setErrorMessage(null);
 
-    const totalImages = isBatchMode ? Math.min(uploadedImages.length * 3, 9) : 3;
+    const totalImages = Math.min(Math.max(Number(selectedCount), 1), 9);
     const params = {
       prompt: textPrompt.trim(),
       aspectRatio: selectedRatio,
@@ -319,6 +347,8 @@ const GeneratePage = () => {
       imageBase64: uploadedImages.length > 0 ? uploadedImages[0] : undefined,
       imageType,
       textLanguage,
+      model: selectedModel,
+      resolution: selectedResolution,
       userId: user?.id,
       onComplete: (images: string[]) => {
         setResults(images);
@@ -603,12 +633,35 @@ const GeneratePage = () => {
           />
         </div>
 
-        <SelectField
-          label="文字语言"
-          options={languageOptions}
-          value={textLanguage}
-          onChange={setTextLanguage}
-        />
+        <div className="grid grid-cols-2 gap-2">
+          <SelectField
+            label="模型"
+            options={modelOptions}
+            value={selectedModel}
+            onChange={(value) => setSelectedModel(value as GenerationModel)}
+          />
+          <SelectField
+            label="生成数量"
+            options={imageCountOptions}
+            value={selectedCount}
+            onChange={setSelectedCount}
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <SelectField
+            label="清晰度"
+            options={resolutionOptions}
+            value={selectedResolution}
+            onChange={(value) => setSelectedResolution(value as OutputResolution)}
+          />
+          <SelectField
+            label="文字语言"
+            options={languageOptions}
+            value={textLanguage}
+            onChange={setTextLanguage}
+          />
+        </div>
 
         <Button
           variant="hero"
@@ -660,7 +713,7 @@ const GeneratePage = () => {
             </div>
             <p className="text-xs text-muted-foreground">AI 正在生成电商图片，请稍候...</p>
             <div className="mt-6 grid w-full grid-cols-2 gap-3 md:grid-cols-3">
-              {Array.from({ length: isBatchMode ? Math.min(uploadedImages.length * 3, 9) : 3 }).map(
+              {Array.from({ length: Math.min(Math.max(Number(selectedCount), 1), 9) }).map(
                 (_, index) => (
                   <div key={index} className="aspect-square rounded-lg bg-muted animate-pulse" />
                 ),

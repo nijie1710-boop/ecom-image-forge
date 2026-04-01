@@ -7,14 +7,20 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+type SupportedModel =
+  | "gemini-3.1-flash-image-preview"
+  | "nano-banana-pro-preview"
+  | "gemini-2.5-flash-image";
+
+type SupportedResolution = "0.5k" | "1k" | "2k" | "4k";
+
 function parseJwtPayload(token: string): Record<string, unknown> | null {
   try {
     const parts = token.split(".");
     if (parts.length !== 3) return null;
     const payload = parts[1].replace(/-/g, "+").replace(/_/g, "/");
     const padded = payload + "=".repeat((4 - (payload.length % 4)) % 4);
-    const decoded = atob(padded);
-    return JSON.parse(decoded);
+    return JSON.parse(atob(padded));
   } catch {
     return null;
   }
@@ -47,25 +53,25 @@ async function resolveImageToBase64(
   if (parsed) return parsed;
 
   try {
-    const resp = await fetch(source);
-    if (!resp.ok) {
-      console.error("fetch image failed:", resp.status, "url:", source);
+    const response = await fetch(source);
+    if (!response.ok) {
+      console.error("fetch image failed:", response.status, source);
       return null;
     }
 
-    const buf = await resp.arrayBuffer();
-    const bytes = new Uint8Array(buf);
+    const buffer = await response.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
     let binary = "";
     for (let i = 0; i < bytes.length; i++) {
       binary += String.fromCharCode(bytes[i]);
     }
 
     return {
-      mimeType: resp.headers.get("Content-Type") || "image/jpeg",
+      mimeType: response.headers.get("Content-Type") || "image/jpeg",
       base64: btoa(binary),
     };
-  } catch (err) {
-    console.error("fetch image error:", err, "url:", source);
+  } catch (error) {
+    console.error("fetch image error:", error);
     return null;
   }
 }
@@ -80,6 +86,25 @@ function normalizeImageType(value: string | undefined): "main" | "detail" {
 
 function normalizeTextLanguage(value: string | undefined): string {
   return (value || "zh").toLowerCase();
+}
+
+function normalizeModel(value: string | undefined): SupportedModel {
+  const normalized = (value || "").toLowerCase();
+  if (normalized.includes("3.1") || normalized.includes("banana 2")) {
+    return "gemini-3.1-flash-image-preview";
+  }
+  if (normalized.includes("2.5") || normalized.includes("nano banana")) {
+    return "gemini-2.5-flash-image";
+  }
+  return "nano-banana-pro-preview";
+}
+
+function normalizeResolution(value: string | undefined): SupportedResolution {
+  const normalized = (value || "").toLowerCase();
+  if (normalized === "0.5k" || normalized === "1k" || normalized === "2k" || normalized === "4k") {
+    return normalized;
+  }
+  return "2k";
 }
 
 function buildTextInstruction(language: string): string {
@@ -114,6 +139,102 @@ function buildTextInstruction(language: string): string {
     "Preserve any existing logo, printed words, numbers, or graphics that are already part of the physical product exactly as-is.",
     "Do not translate or redesign text that is physically printed on the product.",
   ].join(". ");
+}
+
+function buildResolutionInstruction(resolution: SupportedResolution): string {
+  const mapping: Record<SupportedResolution, string> = {
+    "0.5k": "QUALITY TARGET: fast draft quality, acceptable structure, lighter detail density.",
+    "1k": "QUALITY TARGET: standard balanced quality for quick commercial drafts.",
+    "2k": "QUALITY TARGET: high detail e-commerce quality with clear texture, edges, and print fidelity.",
+    "4k": "QUALITY TARGET: ultra-detailed premium render with maximum texture fidelity, crisp edges, and refined lighting.",
+  };
+  return mapping[resolution];
+}
+
+function buildModelFallbacks(model: SupportedModel): string[] {
+  if (model === "gemini-3.1-flash-image-preview") {
+    return ["gemini-3.1-flash-image-preview", "nano-banana-pro-preview", "gemini-2.5-flash-image"];
+  }
+  if (model === "gemini-2.5-flash-image") {
+    return ["gemini-2.5-flash-image", "nano-banana-pro-preview", "gemini-3.1-flash-image-preview"];
+  }
+  return ["gemini-3-pro-image-preview", "nano-banana-pro-preview", "gemini-2.5-flash-image"];
+}
+
+async function callImageModel(
+  apiKey: string,
+  model: SupportedModel,
+  parts: Array<Record<string, unknown>>,
+): Promise<{ imageUrl: string; modelUsed: string }> {
+  const fallbacks = buildModelFallbacks(model);
+  let lastError = "Unknown model error";
+
+  for (const modelName of fallbacks) {
+    const apiUrl =
+      `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+
+    const response = await fetch(apiUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts }],
+        generationConfig: {
+          responseModalities: ["text", "image"],
+          maxOutputTokens: 1024,
+        },
+        safetySettings: [
+          { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+          { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+          { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+          { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
+        ],
+      }),
+    });
+
+    const rawResponse = await response.text();
+    console.error("generate-image model response:", modelName, response.status, rawResponse.substring(0, 280));
+
+    if (!response.ok) {
+      let detail = rawResponse.substring(0, 240);
+      try {
+        const parsed = JSON.parse(rawResponse);
+        detail = parsed?.error?.message || detail;
+      } catch {
+        // ignore
+      }
+      lastError = `${modelName}: ${detail}`;
+      continue;
+    }
+
+    let data: Record<string, unknown>;
+    try {
+      data = JSON.parse(rawResponse);
+    } catch {
+      lastError = `${modelName}: invalid JSON response`;
+      continue;
+    }
+
+    const candidates = (data as {
+      candidates?: Array<{
+        content?: {
+          parts?: Array<{ inlineData?: { mimeType: string; data: string } }>;
+        };
+      }>;
+    }).candidates;
+    const partsOut = candidates?.[0]?.content?.parts || [];
+    const imagePart = partsOut.find((part) => part.inlineData?.data);
+
+    if (imagePart?.inlineData?.data) {
+      return {
+        imageUrl: `data:${imagePart.inlineData.mimeType};base64,${imagePart.inlineData.data}`,
+        modelUsed: modelName,
+      };
+    }
+
+    lastError = `${modelName}: no image returned`;
+  }
+
+  throw new Error(lastError);
 }
 
 serve(async (req: Request) => {
@@ -157,6 +278,8 @@ serve(async (req: Request) => {
       referenceStyleUrl,
       imageType,
       textLanguage,
+      model,
+      resolution,
     } = await req.json();
 
     const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
@@ -165,21 +288,21 @@ serve(async (req: Request) => {
     }
 
     const productSource = coerceImageInput(imageBase64) || coerceImageInput(referenceImageUrl);
-    const productImg = productSource ? await resolveImageToBase64(productSource) : null;
+    const productImage = productSource ? await resolveImageToBase64(productSource) : null;
     const styleSource = coerceImageInput(referenceStyleUrl);
-    const styleImg = styleSource
-      ? await resolveImageToBase64(styleSource)
-      : null;
+    const styleImage = styleSource ? await resolveImageToBase64(styleSource) : null;
 
     const normalizedImageType = normalizeImageType(imageType);
     const normalizedTextLanguage = normalizeTextLanguage(textLanguage);
+    const normalizedModel = normalizeModel(model);
+    const normalizedResolution = normalizeResolution(resolution);
 
     const absoluteRules = [
       "=== ABSOLUTE RULES ===",
       "This is a product-preserving image generation task, not a redesign.",
       "The first image contains the exact product that must remain the same product in the output.",
       "The reference image may already include props, background, scenery, text overlays, or decorative layout. Ignore those distractions and preserve only the main sellable product.",
-      "Never replace the product with another category. A garment must stay a garment. A speaker must stay a speaker. A bag must stay a bag.",
+      "Never replace the product with another category. A garment must stay a garment. A speaker must stay a speaker. A bag must stay a bag. A phone case must stay a phone case.",
       "Copy the exact silhouette, structure, proportions, color palette, material appearance, and surface texture.",
       "Preserve logos, printed artwork, letters, graphics, seams, collar shape, sleeves, hems, ports, buttons, zippers, stitching, and distinctive details exactly as they appear on the original product.",
       "The only acceptable changes are lighting, shadows, background, composition, camera distance, and supporting scene elements.",
@@ -188,7 +311,7 @@ serve(async (req: Request) => {
       "If the product proportions or material appearance changes, the result is a total failure.",
     ].join(". ");
 
-    const roleInstruction = styleImg
+    const roleInstruction = styleImage
       ? [
         "ROLE ASSIGNMENT:",
         "Image 1 is the product to preserve exactly.",
@@ -207,6 +330,8 @@ serve(async (req: Request) => {
       : "SHOT TYPE: main image. Use clean studio composition, centered product, professional e-commerce listing style, white or soft neutral background.";
 
     const textInstruction = buildTextInstruction(normalizedTextLanguage);
+    const resolutionInstruction = buildResolutionInstruction(normalizedResolution);
+    const modelInstruction = `MODEL TARGET: Prefer visual behavior suitable for ${normalizedModel}.`;
     const userRequest = `USER REQUEST: ${prompt || ""}`;
 
     const systemInstruction = [
@@ -214,106 +339,58 @@ serve(async (req: Request) => {
       roleInstruction,
       typeInstruction,
       textInstruction,
+      resolutionInstruction,
+      modelInstruction,
       userRequest,
     ].join(". ");
 
     const parts: Array<Record<string, unknown>> = [{ text: systemInstruction }];
-    if (productImg) {
+    if (productImage) {
       parts.push({
         inlineData: {
-          mimeType: productImg.mimeType,
-          data: productImg.base64,
+          mimeType: productImage.mimeType,
+          data: productImage.base64,
         },
       });
     }
-    if (styleImg) {
+    if (styleImage) {
       parts.push({
         inlineData: {
-          mimeType: styleImg.mimeType,
-          data: styleImg.base64,
+          mimeType: styleImage.mimeType,
+          data: styleImage.base64,
         },
       });
     }
 
-    console.error("=== Gemini Request ===");
-    console.error("hasProduct:", !!productImg, "hasStyle:", !!styleImg);
-    console.error("imageType:", normalizedImageType, "textLanguage:", normalizedTextLanguage);
-    console.error("parts:", parts.length);
-    console.error("prompt:", systemInstruction.substring(0, 500));
-
-    const apiUrl =
-      `https://generativelanguage.googleapis.com/v1beta/models/nano-banana-pro-preview:generateContent?key=${geminiApiKey}`;
-
-    const apiResponse = await fetch(apiUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts }],
-        generationConfig: {
-          responseModalities: ["text", "image"],
-          maxOutputTokens: 1024,
-        },
-        safetySettings: [
-          { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
-          { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
-          {
-            category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-            threshold: "BLOCK_NONE",
-          },
-          { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
-        ],
-      }),
+    console.error("generate-image request:", {
+      hasProduct: !!productImage,
+      hasStyle: !!styleImage,
+      imageType: normalizedImageType,
+      textLanguage: normalizedTextLanguage,
+      model: normalizedModel,
+      resolution: normalizedResolution,
+      parts: parts.length,
     });
 
-    const rawResponse = await apiResponse.text();
-    console.error("=== Gemini Response ===");
-    console.error("status:", apiResponse.status, "body:", rawResponse.substring(0, 300));
+    const { imageUrl, modelUsed } = await callImageModel(geminiApiKey, normalizedModel, parts);
 
-    if (!apiResponse.ok) {
-      const s = apiResponse.status;
-      let failureReason = `AI generation failed (${s})`;
-      if (s === 429) failureReason = "请求过于频繁，请稍后重试";
-      if (s === 400) failureReason = `请求格式错误 (${s})`;
-      if (s === 403) failureReason = `权限或额度不足 (${s})`;
-      return new Response(JSON.stringify({ error: failureReason }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    let data: Record<string, unknown>;
-    try {
-      data = JSON.parse(rawResponse);
-    } catch {
-      return new Response(JSON.stringify({ error: "AI 返回了无效响应" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const candidates = (data as { candidates?: Array<{ content?: { parts?: Array<{ inlineData?: { mimeType: string; data: string } }> } }> }).candidates;
-    const partsOut = candidates?.[0]?.content?.parts || [];
-    const imagePart = partsOut.find((part) => part.inlineData?.data);
-
-    if (!imagePart?.inlineData?.data) {
-      return new Response(JSON.stringify({ error: "AI 未返回图片结果" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const imageUrl = `data:${imagePart.inlineData.mimeType};base64,${imagePart.inlineData.data}`;
-    return new Response(JSON.stringify({ images: [imageUrl] }), {
+    return new Response(JSON.stringify({
+      images: [imageUrl],
+      meta: {
+        modelRequested: normalizedModel,
+        modelUsed,
+        resolution: normalizedResolution,
+      },
+    }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
-  } catch (e) {
-    console.error("generate-image error:", e);
-    return new Response(
-      JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      },
-    );
+  } catch (error) {
+    console.error("generate-image error:", error);
+    return new Response(JSON.stringify({
+      error: error instanceof Error ? error.message : "Unknown error",
+    }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 });

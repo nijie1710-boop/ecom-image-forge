@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useCallback, useRef } from 
 import { generateImage } from "@/lib/ai-generator";
 import { overlayTextOnImage, type OverlayStyle } from "@/lib/image-text-overlay";
 import { supabase } from "@/integrations/supabase/client";
+import type { GenerationModel, OutputResolution } from "@/lib/ai-generator";
 
 export type GenerationJobKind = "copy" | "image";
 
@@ -52,6 +53,8 @@ export interface ImageGenParams {
   imageType?: string;
   textLanguage?: string;
   n: number;
+  model?: GenerationModel;
+  resolution?: OutputResolution;
   userId?: string;
   onComplete?: (images: string[]) => void;
 }
@@ -346,6 +349,8 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             imageBase64: productImageUrl,
             imageType: params.imageType,
             textLanguage: params.textLanguage,
+            model: params.model,
+            resolution: params.resolution,
           });
 
           if (result.error) {
