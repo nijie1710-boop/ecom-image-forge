@@ -90,6 +90,14 @@ function clampScreenCount(value: unknown): number {
   return 4;
 }
 
+function normalizeScreenIdeas(value: unknown, screenCount: number): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .slice(0, screenCount)
+    .map((item) => String(item ?? "").trim())
+    .map((item) => item.slice(0, 200));
+}
+
 function buildFallbackPlan(
   planName: string,
   summary: string,
@@ -319,6 +327,7 @@ serve(async (req: Request) => {
     const targetPlatform = safeString(body.targetPlatform, "淘宝/天猫");
     const targetLanguage = safeString(body.targetLanguage, "zh");
     const screenCount = clampScreenCount(body.screenCount);
+    const screenIdeas = normalizeScreenIdeas(body.screenIdeas, screenCount);
 
     if (!productImages.length) {
       return new Response(JSON.stringify({ error: "请上传至少 1 张商品图" }), {
@@ -350,11 +359,17 @@ serve(async (req: Request) => {
       productInfo
         ? `User notes and selling points: ${productInfo}.`
         : "No extra notes were provided by the user.",
+      screenIdeas.some(Boolean)
+        ? `The user also provided optional per-screen ideas: ${screenIdeas
+            .map((idea, index) => `screen ${index + 1}: ${idea || "no extra idea"}`)
+            .join(" | ")}.`
+        : "No manual per-screen ideas were provided.",
       "Focus on the actual sellable product only.",
       "If the uploaded image is a screenshot or a composition, ignore UI chrome, editor panels, browser frame, generated examples, and poster text that are not part of the physical product.",
       "You must identify product category, material, shape, surface details, printed pattern, color palette, and visible product text.",
       "Then output exactly 3 detail-page plan options for the same product.",
       "Each option must include a distinct visual angle and merchandising strategy, but all must remain practical for Chinese e-commerce detail pages.",
+      "When the user provides screen ideas, merge them into the corresponding screens instead of ignoring them.",
       "Do not output generic filler. The plans must clearly relate to the actual product.",
       "Return JSON only with this schema:",
       '{"productSummary":"中文商品总结","visibleText":"商品上可见文字，没有则写NONE","planOptions":[{"planName":"方案名","tone":"整体调性","audience":"目标人群","summary":"整版总结","designSpec":{"mainColors":["主色1","主色2"],"accentColors":["辅助色1","辅助色2"],"typography":"字体建议","layoutTone":"版式风格","imageStyle":"画面风格","languageGuidelines":"文案规范"},"screens":[{"screen":1,"title":"分屏标题","goal":"该屏目标","visualDirection":"该屏视觉方向","copyPoints":["文案点1","文案点2","文案点3"]}]}]}',

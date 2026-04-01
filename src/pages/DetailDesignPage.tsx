@@ -167,8 +167,18 @@ function buildScreenPrompt(args: {
   productInfo: string;
   targetPlatform: string;
   targetLanguage: string;
+  screenIdea?: string;
 }): string {
-  const { plan, screen, productSummary, visibleText, productInfo, targetPlatform, targetLanguage } =
+  const {
+    plan,
+    screen,
+    productSummary,
+    visibleText,
+    productInfo,
+    targetPlatform,
+    targetLanguage,
+    screenIdea,
+  } =
     args;
 
   return `
@@ -207,13 +217,18 @@ ${targetPlatform}
 - 目标：${screen.goal}
 - 视觉方向：${screen.visualDirection}
 - 重点卖点：${screen.copyPoints.join("；")}
+- 用户补充的分屏构思：${screenIdea?.trim() || "无"}
 
 生成要求：
 1. 这是电商详情页分屏，不要回退成单纯主图白底棚拍。
 2. 画面必须明显体现当前分屏的目标和视觉方向。
-3. 如果需要出现说明性元素，优先用版式留白、局部结构和材质细节表达。
-4. ${languageRule(targetLanguage)}
-5. 保持商品真实、可售、适合电商详情页，不做无关艺术化改造。
+3. 如果用户提供了分屏构思，必须优先吸收并融入当前这一屏，而不是忽略它。
+4. 如果需要出现说明性元素，优先用版式留白、局部结构和材质细节表达。
+5. 如需渲染文字，必须使用可读、标准、常见的商业无衬线字体风格，字形完整、笔画正确、排版干净。
+6. 严禁出现乱码、伪文字、无法识别的字形、奇怪符号、拼写错误或装饰性怪字体。
+7. 如果模型无法稳定渲染正确文字，宁可减少文字或只保留极短标题，也不要输出错误文字。
+8. ${languageRule(targetLanguage)}
+9. 保持商品真实、可售、适合电商详情页，不做无关艺术化改造。
 `.trim();
 }
 const DetailDesignPage = () => {
@@ -222,6 +237,8 @@ const DetailDesignPage = () => {
   const [targetPlatform, setTargetPlatform] = useState(platformOptions[0]);
   const [targetLanguage, setTargetLanguage] = useState("zh");
   const [screenCount, setScreenCount] = useState("4");
+  const [useScreenIdeas, setUseScreenIdeas] = useState(false);
+  const [screenIdeas, setScreenIdeas] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [productSummary, setProductSummary] = useState("");
@@ -262,6 +279,14 @@ const DetailDesignPage = () => {
     setGenerationError(null);
   }, [activePlan]);
 
+  useEffect(() => {
+    const desired = Number(screenCount) || 4;
+    setScreenIdeas((current) => {
+      const next = Array.from({ length: desired }, (_, index) => current[index] || "");
+      return next;
+    });
+  }, [screenCount]);
+
   const compressImage = (file: File): Promise<string> =>
     new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -300,6 +325,14 @@ const DetailDesignPage = () => {
     setGenerationError(null);
   };
 
+  const updateScreenIdea = (index: number, value: string) => {
+    setScreenIdeas((current) => {
+      const next = [...current];
+      next[index] = value;
+      return next;
+    });
+  };
+
   const handleFiles = async (files: FileList | null) => {
     if (!files?.length) return;
 
@@ -335,6 +368,7 @@ const DetailDesignPage = () => {
         targetPlatform,
         targetLanguage,
         screenCount: Number(screenCount),
+        screenIdeas: useScreenIdeas ? screenIdeas : [],
       });
 
       setProductSummary(result.productSummary);
@@ -368,6 +402,7 @@ const DetailDesignPage = () => {
       productInfo,
       targetPlatform,
       targetLanguage: generationLanguage,
+      screenIdea: useScreenIdeas ? screenIdeas[screen.screen - 1] : "",
     });
 
     updateGeneratedScreen(screen.screen, (current) => ({
@@ -576,6 +611,50 @@ const DetailDesignPage = () => {
                 </>
               )}
             </Button>
+          </section>
+
+          <section className="rounded-3xl border border-border bg-card p-5 shadow-sm">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-base font-semibold text-foreground">分屏构思</h2>
+                <p className="text-xs text-muted-foreground">
+                  这部分是可选项。你可以给某几屏补充自己的画面想法，AI 会在策划和生成时优先参考。
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setUseScreenIdeas((current) => !current)}
+                className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+                  useScreenIdeas
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground"
+                }`}
+              >
+                {useScreenIdeas ? "已启用" : "可选关闭"}
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              {Array.from({ length: Number(screenCount) || 4 }, (_, index) => (
+                <div key={`screen-idea-${index}`} className="space-y-1.5">
+                  <label className="text-xs font-medium text-foreground">第 {index + 1} 屏</label>
+                  <input
+                    type="text"
+                    value={screenIdeas[index] || ""}
+                    onChange={(event) => updateScreenIdea(index, event.target.value)}
+                    disabled={!useScreenIdeas}
+                    placeholder={
+                      index === 0
+                        ? "例如：首屏突出高级材质和主视觉氛围"
+                        : index === 1
+                          ? "例如：第二屏放大材质细节和工艺说明"
+                          : "例如：补充这一屏希望呈现的重点"
+                    }
+                    className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none transition focus:ring-2 focus:ring-primary/25 disabled:cursor-not-allowed disabled:opacity-60"
+                  />
+                </div>
+              ))}
+            </div>
           </section>
 
           {activePlan && (

@@ -36,6 +36,7 @@ export type DetailPlanParams = {
   targetPlatform: string;
   targetLanguage: string;
   screenCount: number;
+  screenIdeas?: string[];
 };
 
 export async function generateDetailPlan(
