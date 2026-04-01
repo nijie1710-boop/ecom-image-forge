@@ -194,8 +194,7 @@ const GeneratePage = () => {
       if (uploadedImages.length < 10) setUploadedImages(prev => [...prev, dataUrl]);
     } else {
       setUploadedImages([dataUrl]);
-      // 触发 AI 场景推荐（单图模式）
-      fetchSceneSuggestions(dataUrl);
+      // 注意：不再自动触发场景推荐，用户可手动点「生成推荐场景」按钮
     }
   };
 
