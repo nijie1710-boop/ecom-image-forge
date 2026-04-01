@@ -12,16 +12,19 @@ serve(async (req: Request) => {
   }
 
   try {
-    const DISABLE_AUTH = Deno.env.get("DISABLE_AUTH") === "true";
+    const disableAuth = Deno.env.get("DISABLE_AUTH") === "true";
 
-    if (!DISABLE_AUTH) {
+    if (!disableAuth) {
       const authHeader = req.headers.get("Authorization");
       if (authHeader) {
         const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
         const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
         const supabase = createClient(supabaseUrl, supabaseServiceKey);
         const token = authHeader.replace("Bearer ", "");
-        const { data: { user } } = await supabase.auth.getUser(token);
+        const {
+          data: { user },
+        } = await supabase.auth.getUser(token);
+
         if (!user) {
           return new Response(JSON.stringify({ error: "Unauthorized" }), {
             status: 401,
@@ -32,25 +35,27 @@ serve(async (req: Request) => {
     }
 
     const body = await req.json();
-    console.error("suggest-scenes: received body keys:", Object.keys(body).join(', '));
-    console.error("suggest-scenes: imageBase64 present:", !!body.imageBase64, "length:", body.imageBase64?.length || 0);
+    const imageBase64 = body.imageBase64 as string | undefined;
+    console.error("suggest-scenes: received body keys:", Object.keys(body).join(", "));
+    console.error(
+      "suggest-scenes: imageBase64 present:",
+      !!imageBase64,
+      "length:",
+      imageBase64?.length || 0,
+    );
 
-    const { imageBase64 } = body;
-
-    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
-    if (!GEMINI_API_KEY) {
+    const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
+    if (!geminiApiKey) {
       throw new Error("GEMINI_API_KEY is not configured");
     }
 
     if (!imageBase64 || imageBase64.length < 100) {
-      console.error("suggest-scenes: imageBase64 too short or empty, length:", imageBase64?.length || 0);
-      return new Response(JSON.stringify({ error: "请上传产品图片或图片太小" }), {
+      return new Response(JSON.stringify({ error: "请上传有效的产品图片" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // 解析 base64
     let mimeType = "image/jpeg";
     let base64Data = "";
     if (imageBase64.includes(",")) {
@@ -62,41 +67,48 @@ serve(async (req: Request) => {
       base64Data = imageBase64;
     }
 
-    console.error("suggest-scenes: parsed base64 length:", base64Data.length, "mime:", mimeType);
+    const promptText = `You are a senior e-commerce art director and product photographer.
 
-    const promptText = `You are an expert e-commerce product photographer and scene designer.
+Analyze the uploaded product image first. Then produce exactly 3 scene suggestions in Chinese for photographing THIS SAME product.
 
-Analyze the product image and generate exactly 2 diverse scene suggestions for this product in Chinese.
+Return ONLY valid JSON with this exact shape:
+{
+  "product_summary": "一句中文总结，说明产品类别、材质、颜色、关键外观特征",
+  "visible_text": "图片上能看到的文字，没有就写 NONE",
+  "suggestions": [
+    { "scene": "场景标题1", "description": "完整场景提示词1" },
+    { "scene": "场景标题2", "description": "完整场景提示词2" },
+    { "scene": "场景标题3", "description": "完整场景提示词3" }
+  ]
+}
 
-Output ONLY a valid JSON array with exactly 2 items like this (no markdown, no code blocks):
-[{"scene":"场景名称1","description":"详细场景描述1"},{"scene":"场景名称2","description":"详细场景描述2"}]
+Strict requirements:
+- The suggestions must be grounded in the actual product category. Never misidentify the product.
+- The product must remain the same product. Never imply replacing it with another object.
+- Mention specific visual traits from the image such as color, material, print, structure, or visible graphics.
+- Avoid generic empty labels like “现代简约风” unless the description includes a concrete photography setup.
+- Each description must be a production-ready Chinese prompt, not a slogan.
+- For apparel, prioritize apparel-friendly setups such as hanger display, flat lay, folded merchandising, torso mannequin, wardrobe scene, or detail close-up.
+- For non-apparel products, adapt the scene naturally to the product category.
+- Keep the 3 options meaningfully different in composition or merchandising direction.`;
 
-Requirements:
-- Each scene must be specific to this product's type, color, material, and style
-- Each scene should have a different mood/direction
-- Be practical for e-commerce product photography`;
-
-    const parts: any[] = [
-      { text: promptText },
-      {
-        inlineData: {
-          mimeType,
-          data: base64Data,
-        },
-      },
-    ];
-
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${GEMINI_API_KEY}`;
+    const apiUrl =
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${geminiApiKey}`;
 
     const apiResponse = await fetch(apiUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        contents: [{ parts }],
+        contents: [{
+          parts: [
+            { text: promptText },
+            { inlineData: { mimeType, data: base64Data } },
+          ],
+        }],
         generationConfig: {
-          temperature: 0.8,
-          topP: 0.9,
-          maxOutputTokens: 1024,
+          temperature: 0.5,
+          topP: 0.8,
+          maxOutputTokens: 1200,
         },
       }),
     });
@@ -108,51 +120,67 @@ Requirements:
       try {
         const errJson = JSON.parse(rawText);
         errorDetail = errJson.error?.message || errJson.error?.details || errorDetail;
-      } catch {}
+      } catch {
+        // ignore
+      }
       console.error("Gemini API error:", apiResponse.status, errorDetail);
       throw new Error(`AI 服务暂时不可用 (${apiResponse.status})`);
     }
 
-    let apiData;
+    let apiData: Record<string, unknown>;
     try {
       apiData = JSON.parse(rawText);
     } catch {
       throw new Error("AI 返回格式错误，请稍后重试");
     }
 
-    const text = apiData?.candidates?.[0]?.content?.parts?.[0]?.text;
+    const text = (
+      apiData as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> }
+    )?.candidates?.[0]?.content?.parts?.[0]?.text;
+
     if (!text) {
       throw new Error("AI 未能生成场景建议");
     }
 
-    console.error("suggest-scenes: AI response:", text.substring(0, 200));
+    console.error("suggest-scenes: AI response:", text.substring(0, 300));
 
-    // 解析 JSON
-    let analysis: any = { product_summary: "", visible_text: "NONE", suggestions: [] };
+    let analysis: {
+      product_summary?: string;
+      visible_text?: string;
+      suggestions?: Array<{ scene?: string; description?: string }>;
+    } = { product_summary: "", visible_text: "NONE", suggestions: [] };
+
     try {
       const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        analysis = JSON.parse(jsonMatch[0]);
-      } else {
-        analysis = JSON.parse(text);
-      }
-    } catch (parseErr: any) {
-      console.error("Parse error:", parseErr.message, "text:", text.substring(0, 200));
-      // 解析失败时使用默认
+      analysis = JSON.parse(jsonMatch ? jsonMatch[0] : text);
+    } catch (parseErr) {
+      console.error("Parse error:", parseErr, "text:", text.substring(0, 300));
       analysis = {
         product_summary: "产品分析失败",
         visible_text: "NONE",
         suggestions: [
-          { scene: "现代简约风", description: "纯白背景，专业棚拍，展示产品全貌和细节" },
-          { scene: "生活场景图", description: "温馨室内环境，自然光线，融入真实生活场景" },
-          { scene: "创意展示图", description: "艺术感布景，戏剧性灯光，突出产品设计感" },
-        ]
+          {
+            scene: "白底主图",
+            description:
+              "纯白背景，正面完整展示同一件产品，专业棚拍光线，突出颜色、版型和图案细节，不添加无关道具。",
+          },
+          {
+            scene: "生活化陈列",
+            description:
+              "围绕同一件产品搭建简洁生活化陈列场景，保留产品原有颜色、材质和印花，使用柔和自然光与干净背景，强调真实电商展示感。",
+          },
+          {
+            scene: "细节卖点展示",
+            description:
+              "聚焦同一件产品的材质、纹理、图案和做工细节，使用近景或半身陈列构图，突出产品卖点但不改变商品本体。",
+          },
+        ],
       };
     }
 
-    const suggestions = (analysis.suggestions || []).slice(0, 3).map((s: any) => ({
-      scene: String(s.scene || "场景"),
-      description: String(s.description || ""),
+    const suggestions = (analysis.suggestions || []).slice(0, 3).map((item) => ({
+      scene: String(item.scene || "场景建议"),
+      description: String(item.description || ""),
     }));
 
     return new Response(JSON.stringify({
@@ -162,12 +190,10 @@ Requirements:
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
-
-  } catch (e: any) {
-    console.error("suggest-scenes error:", e.message);
-    return new Response(JSON.stringify({
-      error: e.message || "未知错误"
-    }), {
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : "未知错误";
+    console.error("suggest-scenes error:", message);
+    return new Response(JSON.stringify({ error: message }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

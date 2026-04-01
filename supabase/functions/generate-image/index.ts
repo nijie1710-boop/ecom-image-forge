@@ -3,18 +3,21 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-function parseJwtPayload(token: string): Record<string, any> | null {
+function parseJwtPayload(token: string): Record<string, unknown> | null {
   try {
     const parts = token.split(".");
     if (parts.length !== 3) return null;
     const payload = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-    const padded = payload + "=".repeat((4 - payload.length % 4) % 4);
+    const padded = payload + "=".repeat((4 - (payload.length % 4)) % 4);
     const decoded = atob(padded);
     return JSON.parse(decoded);
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 function parseDataUrl(url: string): { mimeType: string; base64: string } | null {
@@ -24,29 +27,91 @@ function parseDataUrl(url: string): { mimeType: string; base64: string } | null 
   return { mimeType: match[1], base64: match[2] };
 }
 
-async function resolveImageToBase64(url: string): Promise<{ mimeType: string; base64: string } | null> {
-  const parsed = parseDataUrl(url);
+async function resolveImageToBase64(
+  source: string,
+): Promise<{ mimeType: string; base64: string } | null> {
+  const parsed = parseDataUrl(source);
   if (parsed) return parsed;
+
   try {
-    const resp = await fetch(url);
-    if (!resp.ok) { console.error("fetch image failed:", resp.status, "url:", url); return null; }
+    const resp = await fetch(source);
+    if (!resp.ok) {
+      console.error("fetch image failed:", resp.status, "url:", source);
+      return null;
+    }
+
     const buf = await resp.arrayBuffer();
     const bytes = new Uint8Array(buf);
     let binary = "";
-    for (let i = 0; i < bytes.length; i++) { binary += String.fromCharCode(bytes[i]); }
-    const b64 = btoa(binary);
-    const mimeType = resp.headers.get("Content-Type") || "image/jpeg";
-    return { mimeType, base64: b64 };
-  } catch (err) { console.error("fetch image error:", err, "url:", url); return null; }
+    for (let i = 0; i < bytes.length; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+
+    return {
+      mimeType: resp.headers.get("Content-Type") || "image/jpeg",
+      base64: btoa(binary),
+    };
+  } catch (err) {
+    console.error("fetch image error:", err, "url:", source);
+    return null;
+  }
+}
+
+function normalizeImageType(value: string | undefined): "main" | "detail" {
+  const normalized = (value || "").toLowerCase();
+  if (normalized.includes("detail") || normalized.includes("详情")) {
+    return "detail";
+  }
+  return "main";
+}
+
+function normalizeTextLanguage(value: string | undefined): string {
+  return (value || "zh").toLowerCase();
+}
+
+function buildTextInstruction(language: string): string {
+  const languageMap: Record<string, string> = {
+    zh: "Simplified Chinese",
+    en: "English",
+    ja: "Japanese",
+    ko: "Korean",
+    de: "German",
+    fr: "French",
+    es: "Spanish",
+    it: "Italian",
+    pt: "Portuguese",
+    ru: "Russian",
+    ar: "Arabic",
+    th: "Thai",
+    vi: "Vietnamese",
+  };
+
+  if (language === "pure") {
+    return [
+      "TEXT POLICY: Do not add any new scene text, poster text, labels, slogans, captions, watermarks, or decorative typography.",
+      "Preserve any existing logo, printed words, numbers, or graphics that are already part of the physical product exactly as-is.",
+      "Do not erase, translate, rewrite, or redesign product print.",
+    ].join(". ");
+  }
+
+  const targetLanguage = languageMap[language] || "Simplified Chinese";
+  return [
+    `TEXT POLICY: Any newly introduced scene text must be only in ${targetLanguage}.`,
+    "Do not mix multiple languages in newly added scene text.",
+    "Preserve any existing logo, printed words, numbers, or graphics that are already part of the physical product exactly as-is.",
+    "Do not translate or redesign text that is physically printed on the product.",
+  ].join(". ");
 }
 
 serve(async (req: Request) => {
-  if (req.method === "OPTIONS") { return new Response(null, { headers: corsHeaders }); }
+  if (req.method === "OPTIONS") {
+    return new Response(null, { headers: corsHeaders });
+  }
 
   try {
-    // ========== JWT 验证 ==========
     const authHeader = req.headers.get("Authorization");
     let userId: string | null = null;
+
     if (authHeader && authHeader.startsWith("Bearer ")) {
       const token = authHeader.replace("Bearer ", "");
       const payload = parseJwtPayload(token);
@@ -54,88 +119,115 @@ serve(async (req: Request) => {
         const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
         const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
         const supabase = createClient(supabaseUrl, supabaseServiceKey);
-        const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-        if (!authError && user) { userId = user.id; }
+        const {
+          data: { user },
+          error: authError,
+        } = await supabase.auth.getUser(token);
+
+        if (!authError && user) {
+          userId = user.id;
+        }
       }
     }
+
     if (!userId) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
-    const { prompt, referenceImageUrl, referenceStyleUrl, aspectRatio, imageType } = await req.json();
-    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
-    if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is not configured");
+    const {
+      prompt,
+      imageBase64,
+      referenceImageUrl,
+      referenceStyleUrl,
+      imageType,
+      textLanguage,
+    } = await req.json();
 
-    // ========== 解析图片 ==========
-    const productImg = referenceImageUrl ? await resolveImageToBase64(referenceImageUrl) : null;
-    const styleImg = referenceStyleUrl ? await resolveImageToBase64(referenceStyleUrl) : null;
-    const hasProduct = !!productImg;
-    const hasStyle = !!styleImg;
-    const isSceneImage = imageType === '场景图' || imageType === '买家秀';
+    const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
+    if (!geminiApiKey) {
+      throw new Error("GEMINI_API_KEY is not configured");
+    }
 
-    // ========== 构建超级严格的 system prompt ==========
-    const ABSOLUTE_RULES = [
-      "=== ABSOLUTE RULE - DO NOT IGNORE ===",
-      "THE OUTPUT IMAGE MUST HAVE ZERO TEXT. THIS IS NON-NEGOTIABLE.",
-      "NO WATERMARK. NO LABEL. NO SLOGAN. NO BRAND NAME IN TEXT FORM.",
-      "NO CHINESE CHARACTERS. NO ENGLISH WORDS. NO NUMBERS.",
-      "=== PRODUCT PRESERVATION - ABSOLUTE - THIS IS YOUR PRIMARY TASK ===",
-      "The first image contains the PRODUCT. You MUST reproduce this product EXACTLY in the output.",
-      "PHYSICAL IDENTITY: Copy exactly - shape, 3D contour, volume, size, proportions, angle.",
-      "COLOR IDENTITY: Copy exactly - every color, shade, hue, saturation, gloss level.",
-      "MATERIAL IDENTITY: Copy exactly - metal = metal, plastic = plastic, leather = leather, fabric = fabric. Do NOT change material appearance.",
-      "DETAIL IDENTITY: Copy exactly - logo, brand mark, buttons, zipper, stitching, seams, speaker grill, port layout, joints, hinges, screws.",
-      "TEXTURE IDENTITY: Copy exactly - matte/glossy surface, brushed/polished finish, leather grain, fabric weave pattern.",
-      "PERSPECTIVE: You MAY rotate the product by up to 15 degrees max. Do NOT redesign it.",
-      "=== FAILURE CONDITIONS (output will be rejected if) ===",
-      "IF the logo shape, size, or position changes = TOTAL FAILURE",
-      "IF the material looks different (metal looks like plastic, etc.) = TOTAL FAILURE",
-      "IF the product proportions/silhouette changes = TOTAL FAILURE",
-      "IF any new elements appear on the product that were not in the original = TOTAL FAILURE",
-      "The ONLY acceptable change is: placing the exact product into a new scene/background.",
+    const productSource = imageBase64 || referenceImageUrl;
+    const productImg = productSource ? await resolveImageToBase64(productSource) : null;
+    const styleImg = referenceStyleUrl
+      ? await resolveImageToBase64(referenceStyleUrl)
+      : null;
+
+    const normalizedImageType = normalizeImageType(imageType);
+    const normalizedTextLanguage = normalizeTextLanguage(textLanguage);
+
+    const absoluteRules = [
+      "=== ABSOLUTE RULES ===",
+      "This is a product-preserving image generation task, not a redesign.",
+      "The first image contains the exact product that must remain the same product in the output.",
+      "Never replace the product with another category. A garment must stay a garment. A speaker must stay a speaker. A bag must stay a bag.",
+      "Copy the exact silhouette, structure, proportions, color palette, material appearance, and surface texture.",
+      "Preserve logos, printed artwork, letters, graphics, seams, collar shape, sleeves, hems, ports, buttons, zippers, stitching, and distinctive details exactly as they appear on the original product.",
+      "The only acceptable changes are lighting, shadows, background, composition, camera distance, and supporting scene elements.",
+      "If the product category changes, the result is a total failure.",
+      "If the printed artwork or logo changes, the result is a total failure.",
+      "If the product proportions or material appearance changes, the result is a total failure.",
     ].join(". ");
 
-    let roleInstruction = "";
-    if (hasProduct && hasStyle) {
-      roleInstruction = [
+    const roleInstruction = styleImg
+      ? [
         "ROLE ASSIGNMENT:",
-        "Image 1 (first image) = THE PRODUCT TO PRESERVE. Do NOT copy this product.",
-        "Image 2 (second image) = STYLE REFERENCE ONLY. Extract ONLY lighting, color tone, mood, atmosphere.",
-        "YOUR TASK: Place Image 1's product INTO the scene/style of Image 2.",
-        "KEEP Image 1's product COMPLETELY UNCHANGED.",
-      ].join(". ");
-    } else if (hasProduct) {
-      roleInstruction = [
+        "Image 1 is the product to preserve exactly.",
+        "Image 2 is style reference only for lighting, atmosphere, and color mood.",
+        "Apply only the scene mood from Image 2 while keeping Image 1's product unchanged.",
+      ].join(". ")
+      : [
         "ROLE ASSIGNMENT:",
-        "Image 1 (the only image) = THE PRODUCT TO PRESERVE EXACTLY.",
-        "YOUR TASK: Re-photograph this product with better studio lighting and backdrop.",
-        "KEEP THE PRODUCT 100% IDENTICAL. Only improve: lighting, shadows, backdrop.",
+        "Image 1 is the only product reference and must be preserved exactly.",
+        "Re-photograph the same product in a better e-commerce setup.",
       ].join(". ");
-    } else {
-      roleInstruction = "Generate a professional e-commerce product photo with no text whatsoever.";
+
+    const typeInstruction = normalizedImageType === "detail"
+      ? "SHOT TYPE: detail image. Use a realistic merchandising or lifestyle setup that highlights product usage, fabric, craftsmanship, and selling points while keeping the same product fully recognizable."
+      : "SHOT TYPE: main image. Use clean studio composition, centered product, professional e-commerce listing style, white or soft neutral background.";
+
+    const textInstruction = buildTextInstruction(normalizedTextLanguage);
+    const userRequest = `USER REQUEST: ${prompt || ""}`;
+
+    const systemInstruction = [
+      absoluteRules,
+      roleInstruction,
+      typeInstruction,
+      textInstruction,
+      userRequest,
+    ].join(". ");
+
+    const parts: Array<Record<string, unknown>> = [{ text: systemInstruction }];
+    if (productImg) {
+      parts.push({
+        inlineData: {
+          mimeType: productImg.mimeType,
+          data: productImg.base64,
+        },
+      });
+    }
+    if (styleImg) {
+      parts.push({
+        inlineData: {
+          mimeType: styleImg.mimeType,
+          data: styleImg.base64,
+        },
+      });
     }
 
-    let typeInstruction = isSceneImage
-      ? "Type: LIFESTYLE SCENE IMAGE. The product should appear naturally in a real-world scene."
-      : "Type: MAIN PRODUCT SHOT. Clean white or gradient backdrop, studio lighting, product centered.";
-
-    const userRequest = `User wants: ${prompt}`;
-
-    const systemInstruction = [ABSOLUTE_RULES, roleInstruction, typeInstruction, userRequest].join(". ");
-
-    // ========== 构造 Gemini parts ==========
-    const parts: any[] = [{ text: systemInstruction }];
-    if (productImg) { parts.push({ inlineData: { mimeType: productImg.mimeType, data: productImg.base64 } }); }
-    if (styleImg) { parts.push({ inlineData: { mimeType: styleImg.mimeType, data: styleImg.base64 } }); }
-
     console.error("=== Gemini Request ===");
-    console.error("hasProduct:", hasProduct, "hasStyle:", hasStyle, "isScene:", isSceneImage);
-    console.error("parts:", parts.length, "(1=text, 2=product, 3=style)");
-    console.error("prompt:", systemInstruction.substring(0, 400));
+    console.error("hasProduct:", !!productImg, "hasStyle:", !!styleImg);
+    console.error("imageType:", normalizedImageType, "textLanguage:", normalizedTextLanguage);
+    console.error("parts:", parts.length);
+    console.error("prompt:", systemInstruction.substring(0, 500));
 
-    // nano-banana-pro-preview = gemini-3-pro-image-preview（专业级）
-    // 回滚原因：gemini-3-pro-image-preview 预览版不稳定，恢复使用 nano-banana-pro-preview
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/nano-banana-pro-preview:generateContent?key=${GEMINI_API_KEY}`;
+    const apiUrl =
+      `https://generativelanguage.googleapis.com/v1beta/models/nano-banana-pro-preview:generateContent?key=${geminiApiKey}`;
+
     const apiResponse = await fetch(apiUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -143,14 +235,15 @@ serve(async (req: Request) => {
         contents: [{ parts }],
         generationConfig: {
           responseModalities: ["text", "image"],
-          // 限制 token 让模型更专注产品保真
           maxOutputTokens: 1024,
         },
-        // 加上 safety settings 避免误过滤
         safetySettings: [
           { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
           { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
-          { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+          {
+            category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+            threshold: "BLOCK_NONE",
+          },
           { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
         ],
       }),
@@ -160,40 +253,51 @@ serve(async (req: Request) => {
     console.error("=== Gemini Response ===");
     console.error("status:", apiResponse.status, "body:", rawResponse.substring(0, 300));
 
-    let imageUrl = "";
-    let generationFailed = false;
-    let failureReason = "";
-
     if (!apiResponse.ok) {
-      generationFailed = true;
       const s = apiResponse.status;
+      let failureReason = `AI generation failed (${s})`;
       if (s === 429) failureReason = "请求过于频繁，请稍后重试";
-      else if (s === 400) failureReason = `请求格式错误(${s})：${rawResponse.substring(0, 300)}`;
-      else if (s === 403) failureReason = `权限/额度不足(${s})：${rawResponse.substring(0, 300)}`;
-      else failureReason = `AI 生成失败(${s})：${rawResponse.substring(0, 300)}`;
-    } else {
-      let data: any;
-      try { data = JSON.parse(rawResponse); }
-      catch { generationFailed = true; failureReason = "AI 返回了无效 JSON：" + rawResponse.substring(0, 200); }
-      if (!generationFailed) {
-        const candidate = data?.candidates?.[0];
-        if (candidate?.content?.parts) {
-          for (const part of candidate.content.parts) {
-            if (part.inlineData) { imageUrl = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`; break; }
-          }
-        }
-        if (!imageUrl) { generationFailed = true; failureReason = "AI 未返回图片：" + rawResponse.substring(0, 300); }
-      }
+      if (s === 400) failureReason = `请求格式错误 (${s})`;
+      if (s === 403) failureReason = `权限或额度不足 (${s})`;
+      return new Response(JSON.stringify({ error: failureReason }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
-    if (generationFailed) {
-      return new Response(JSON.stringify({ error: failureReason }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    let data: Record<string, unknown>;
+    try {
+      data = JSON.parse(rawResponse);
+    } catch {
+      return new Response(JSON.stringify({ error: "AI 返回了无效响应" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
-    return new Response(JSON.stringify({ images: [imageUrl] }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    const candidates = (data as { candidates?: Array<{ content?: { parts?: Array<{ inlineData?: { mimeType: string; data: string } }> } }> }).candidates;
+    const partsOut = candidates?.[0]?.content?.parts || [];
+    const imagePart = partsOut.find((part) => part.inlineData?.data);
 
+    if (!imagePart?.inlineData?.data) {
+      return new Response(JSON.stringify({ error: "AI 未返回图片结果" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const imageUrl = `data:${imagePart.inlineData.mimeType};base64,${imagePart.inlineData.data}`;
+    return new Response(JSON.stringify({ images: [imageUrl] }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   } catch (e) {
     console.error("generate-image error:", e);
-    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    return new Response(
+      JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
   }
 });

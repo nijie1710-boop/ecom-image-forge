@@ -160,8 +160,8 @@ const GeneratePage = () => {
         const img = new Image();
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          const TARGET_WIDTH = 400;  // 提高到 400px
-          const quality = 0.6;        // 提高质量到 0.6
+          const TARGET_WIDTH = 768;
+          const quality = 0.82;
           let width = TARGET_WIDTH;
           let height = Math.round((img.height * TARGET_WIDTH) / img.width);
           canvas.width = width;
@@ -173,10 +173,10 @@ const GeneratePage = () => {
             resolve(compressed);
           } catch(err) {
             console.error('Compression error:', err);
-            resolve(''); // 失败时返回空字符串
+            resolve('');
           }
         };
-        img.onerror = () => resolve(''); // 图片加载失败返回空
+        img.onerror = () => resolve('');
         img.src = dataUrl;
       };
       reader.onerror = () => reject(new Error('文件读取失败'));
@@ -194,7 +194,7 @@ const GeneratePage = () => {
       if (uploadedImages.length < 10) setUploadedImages(prev => [...prev, dataUrl]);
     } else {
       setUploadedImages([dataUrl]);
-      // 注意：不再自动触发场景推荐，用户可手动点「生成推荐场景」按钮
+      fetchSceneSuggestions(dataUrl);
     }
   };
 
