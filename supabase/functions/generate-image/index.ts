@@ -151,6 +151,23 @@ function buildResolutionInstruction(resolution: SupportedResolution): string {
   return mapping[resolution];
 }
 
+function extractPromptSections(prompt: string) {
+  const take = (label: string) => {
+    const regex = new RegExp(`${label}[：:]\\s*([\\s\\S]*?)(?=\\n(?:风格名称|视觉风格|场景关键词|产品信息|产品卖点|画面要求)[：:]|$)`);
+    const match = prompt.match(regex);
+    return match?.[1]?.trim() || "";
+  };
+
+  return {
+    styleName: take("风格名称"),
+    visualStyle: take("视觉风格"),
+    sceneKeywords: take("场景关键词"),
+    productInfo: take("产品信息"),
+    sellingPoints: take("产品卖点"),
+    composition: take("画面要求"),
+  };
+}
+
 function buildModelFallbacks(model: SupportedModel): string[] {
   if (model === "gemini-3.1-flash-image-preview") {
     return ["gemini-3.1-flash-image-preview", "nano-banana-pro-preview", "gemini-2.5-flash-image"];
@@ -325,22 +342,70 @@ serve(async (req: Request) => {
         "If the source image is a poster, banner, lifestyle shot, or already contains scene props, extract the core product and rebuild a clean product-focused composition around it.",
       ].join(". ");
 
+    const promptSections = extractPromptSections(String(prompt || ""));
+    const hasExplicitScene = Boolean(
+      promptSections.sceneKeywords ||
+        promptSections.composition ||
+        /咖啡馆|办公室|办公桌|客厅|卧室|阳台|海边|沙滩|花园|户外|书店|餐厅|工作室|桌面|自然光|场景|背景|室内|室外/i.test(
+          String(prompt || ""),
+        ),
+    );
+
+    const sceneExecutionInstruction = [
+      "SCENE EXECUTION RULES:",
+      "The USER REQUEST is the primary creative directive for the scene, background, atmosphere, props, and styling.",
+      "If the USER REQUEST specifies a location or environment such as cafe, office, beach, garden, bedroom, studio, desktop, or outdoor setting, that scene must be clearly visible in the final image.",
+      "Do not ignore the requested scene and fall back to an empty white background unless the USER REQUEST explicitly asks for white background or pure studio background.",
+      "Keep the product as the visual hero, but the requested scene must still be obvious and readable.",
+      "Main image means hero-product composition, not mandatory white background.",
+    ].join(". ");
+
     const typeInstruction = normalizedImageType === "detail"
-      ? "SHOT TYPE: detail image. Use a realistic merchandising or lifestyle setup that highlights product usage, fabric, craftsmanship, and selling points while keeping the same product fully recognizable."
-      : "SHOT TYPE: main image. Use clean studio composition, centered product, professional e-commerce listing style, white or soft neutral background.";
+      ? [
+        "SHOT TYPE: detail image.",
+        "Use a realistic merchandising or lifestyle setup that highlights product usage, fabric, craftsmanship, and selling points while keeping the same product fully recognizable.",
+        "Follow the requested scene closely and use composition that helps communicate usage and detail.",
+      ].join(". ")
+      : [
+        "SHOT TYPE: main image.",
+        "Use hero-product composition with the product as the clear focal point.",
+        "If the USER REQUEST includes a concrete scene, render that scene clearly while keeping the layout clean and commercially usable.",
+        "Only use white background or neutral studio background when the USER REQUEST explicitly asks for it or when no scene is provided at all.",
+      ].join(". ");
 
     const textInstruction = buildTextInstruction(normalizedTextLanguage);
     const resolutionInstruction = buildResolutionInstruction(normalizedResolution);
     const modelInstruction = `MODEL TARGET: Prefer visual behavior suitable for ${normalizedModel}.`;
-    const userRequest = `USER REQUEST: ${prompt || ""}`;
+    const structuredPromptInstruction = [
+      promptSections.styleName ? `STYLE NAME: ${promptSections.styleName}.` : "",
+      promptSections.visualStyle ? `VISUAL STYLE: ${promptSections.visualStyle}.` : "",
+      promptSections.sceneKeywords ? `REQUIRED SCENE KEYWORDS: ${promptSections.sceneKeywords}.` : "",
+      promptSections.productInfo ? `PRODUCT INFO FROM USER: ${promptSections.productInfo}.` : "",
+      promptSections.sellingPoints ? `SELLING POINTS: ${promptSections.sellingPoints}.` : "",
+      promptSections.composition ? `REQUIRED COMPOSITION: ${promptSections.composition}.` : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+    const sceneLockInstruction = hasExplicitScene
+      ? [
+        "SCENE LOCK:",
+        "A concrete scene is explicitly requested.",
+        "White background, empty studio background, or plain cutout output is forbidden unless the prompt explicitly says white background.",
+        "The final image must visibly include the requested environment and scene mood.",
+      ].join(". ")
+      : "";
+    const userRequest = `USER REQUEST RAW: ${prompt || ""}`;
 
     const systemInstruction = [
       absoluteRules,
       roleInstruction,
+      sceneExecutionInstruction,
       typeInstruction,
       textInstruction,
       resolutionInstruction,
       modelInstruction,
+      structuredPromptInstruction,
+      sceneLockInstruction,
       userRequest,
     ].join(". ");
 
