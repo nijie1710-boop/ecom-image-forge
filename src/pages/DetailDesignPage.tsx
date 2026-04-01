@@ -1,7 +1,10 @@
 ﻿
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   CheckCircle2,
+  Download,
+  Edit3,
   FileImage,
   ImagePlus,
   LayoutPanelTop,
@@ -11,8 +14,15 @@ import {
   Upload,
   Wand2,
   X,
+  ZoomIn,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import {
   generateDetailPlan,
@@ -100,7 +110,13 @@ type GeneratedScreenState = {
   prompt: string;
   imageUrl?: string;
   error?: string;
+  overlayTitle: string;
+  overlayBody: string;
+  overlayEnabled: boolean;
 };
+
+const POSTER_FONT_FAMILY =
+  '"Microsoft YaHei","PingFang SC","Noto Sans SC","Helvetica Neue",Arial,sans-serif';
 
 const SelectField = ({
   label,
@@ -231,7 +247,158 @@ ${targetPlatform}
 9. 保持商品真实、可售、适合电商详情页，不做无关艺术化改造。
 `.trim();
 }
+
+function wrapCanvasText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+  maxLines: number,
+): string[] {
+  const paragraphs = text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (!paragraphs.length) {
+    return [];
+  }
+
+  const lines: string[] = [];
+  for (const paragraph of paragraphs) {
+    let current = "";
+    for (const char of paragraph) {
+      const next = current + char;
+      if (ctx.measureText(next).width <= maxWidth) {
+        current = next;
+        continue;
+      }
+      if (current) {
+        lines.push(current);
+      }
+      current = char;
+      if (lines.length >= maxLines) {
+        break;
+      }
+    }
+    if (current && lines.length < maxLines) {
+      lines.push(current);
+    }
+    if (lines.length >= maxLines) {
+      break;
+    }
+  }
+
+  if (lines.length > maxLines) {
+    return lines.slice(0, maxLines);
+  }
+
+  if (paragraphs.length && lines.length === maxLines) {
+    const last = lines[maxLines - 1];
+    if (!last.endsWith("…")) {
+      lines[maxLines - 1] = `${last.slice(0, Math.max(0, last.length - 1))}…`;
+    }
+  }
+
+  return lines;
+}
+
+async function loadImageElement(src: string): Promise<HTMLImageElement> {
+  return await new Promise((resolve, reject) => {
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("图片加载失败"));
+    image.src = src;
+  });
+}
+
+async function composePosterImage(args: {
+  imageUrl: string;
+  overlayTitle: string;
+  overlayBody: string;
+  overlayEnabled: boolean;
+}): Promise<string> {
+  const { imageUrl, overlayTitle, overlayBody, overlayEnabled } = args;
+  if (!overlayEnabled || (!overlayTitle.trim() && !overlayBody.trim())) {
+    return imageUrl;
+  }
+
+  const image = await loadImageElement(imageUrl);
+  const canvas = document.createElement("canvas");
+  canvas.width = image.naturalWidth || image.width;
+  canvas.height = image.naturalHeight || image.height;
+
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    throw new Error("无法创建画布");
+  }
+
+  ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+  const padding = Math.max(28, Math.round(canvas.width * 0.045));
+  const panelWidth = canvas.width - padding * 2;
+  const panelHeight = Math.round(canvas.height * 0.3);
+  const panelY = canvas.height - padding - panelHeight;
+
+  const gradient = ctx.createLinearGradient(0, panelY, 0, canvas.height);
+  gradient.addColorStop(0, "rgba(8, 12, 24, 0.05)");
+  gradient.addColorStop(0.18, "rgba(8, 12, 24, 0.35)");
+  gradient.addColorStop(1, "rgba(8, 12, 24, 0.88)");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, panelY - padding, canvas.width, canvas.height - panelY + padding);
+
+  ctx.fillStyle = "rgba(10, 16, 32, 0.78)";
+  ctx.beginPath();
+  const radius = Math.max(18, Math.round(canvas.width * 0.02));
+  ctx.moveTo(padding + radius, panelY);
+  ctx.lineTo(padding + panelWidth - radius, panelY);
+  ctx.quadraticCurveTo(padding + panelWidth, panelY, padding + panelWidth, panelY + radius);
+  ctx.lineTo(padding + panelWidth, panelY + panelHeight - radius);
+  ctx.quadraticCurveTo(
+    padding + panelWidth,
+    panelY + panelHeight,
+    padding + panelWidth - radius,
+    panelY + panelHeight,
+  );
+  ctx.lineTo(padding + radius, panelY + panelHeight);
+  ctx.quadraticCurveTo(padding, panelY + panelHeight, padding, panelY + panelHeight - radius);
+  ctx.lineTo(padding, panelY + radius);
+  ctx.quadraticCurveTo(padding, panelY, padding + radius, panelY);
+  ctx.closePath();
+  ctx.fill();
+
+  const titleFontSize = Math.max(28, Math.round(canvas.width * 0.045));
+  const bodyFontSize = Math.max(18, Math.round(canvas.width * 0.026));
+  const textX = padding + Math.round(canvas.width * 0.04);
+  const textWidth = panelWidth - Math.round(canvas.width * 0.08);
+
+  ctx.fillStyle = "#FFFFFF";
+  ctx.textBaseline = "top";
+
+  let currentY = panelY + Math.round(canvas.height * 0.04);
+  if (overlayTitle.trim()) {
+    ctx.font = `700 ${titleFontSize}px ${POSTER_FONT_FAMILY}`;
+    const titleLines = wrapCanvasText(ctx, overlayTitle.trim(), textWidth, 2);
+    titleLines.forEach((line) => {
+      ctx.fillText(line, textX, currentY);
+      currentY += titleFontSize * 1.2;
+    });
+  }
+
+  if (overlayBody.trim()) {
+    ctx.fillStyle = "rgba(255,255,255,0.92)";
+    ctx.font = `500 ${bodyFontSize}px ${POSTER_FONT_FAMILY}`;
+    const bodyLines = wrapCanvasText(ctx, overlayBody.trim(), textWidth, 4);
+    bodyLines.forEach((line) => {
+      ctx.fillText(line, textX, currentY);
+      currentY += bodyFontSize * 1.5;
+    });
+  }
+
+  return canvas.toDataURL("image/png");
+}
 const DetailDesignPage = () => {
+  const navigate = useNavigate();
   const [productImages, setProductImages] = useState<string[]>([]);
   const [productInfo, setProductInfo] = useState("");
   const [targetPlatform, setTargetPlatform] = useState(platformOptions[0]);
@@ -256,6 +423,9 @@ const DetailDesignPage = () => {
   const [generatedScreens, setGeneratedScreens] = useState<GeneratedScreenState[]>([]);
   const [isGeneratingScreens, setIsGeneratingScreens] = useState(false);
   const [generationError, setGenerationError] = useState<string | null>(null);
+  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
+  const [previewTitle, setPreviewTitle] = useState("");
+  const [isPreparingPreview, setIsPreparingPreview] = useState(false);
 
   const activePlan = useMemo(
     () => planOptions[selectedOptionIndex] || null,
@@ -274,6 +444,9 @@ const DetailDesignPage = () => {
         title: screen.title,
         status: "idle",
         prompt: "",
+        overlayTitle: screen.title,
+        overlayBody: screen.copyPoints.join("\n"),
+        overlayEnabled: generationLanguage !== "pure",
       })),
     );
     setGenerationError(null);
@@ -286,6 +459,15 @@ const DetailDesignPage = () => {
       return next;
     });
   }, [screenCount]);
+
+  useEffect(() => {
+    setGeneratedScreens((current) =>
+      current.map((screen) => ({
+        ...screen,
+        overlayEnabled: generationLanguage === "pure" ? false : screen.overlayEnabled,
+      })),
+    );
+  }, [generationLanguage]);
 
   const compressImage = (file: File): Promise<string> =>
     new Promise((resolve, reject) => {
@@ -389,6 +571,61 @@ const DetailDesignPage = () => {
     setGeneratedScreens((current) =>
       current.map((item) => (item.screen === screenNumber ? updater(item) : item)),
     );
+  };
+
+  const updateOverlayField = (
+    screenNumber: number,
+    field: "overlayTitle" | "overlayBody" | "overlayEnabled",
+    value: string | boolean,
+  ) => {
+    updateGeneratedScreen(screenNumber, (current) => ({
+      ...current,
+      [field]: value,
+    }));
+  };
+
+  const getComposedImageUrl = async (generated: GeneratedScreenState): Promise<string> => {
+    if (!generated.imageUrl) {
+      throw new Error("当前没有可预览图片");
+    }
+
+    return await composePosterImage({
+      imageUrl: generated.imageUrl,
+      overlayTitle: generated.overlayTitle,
+      overlayBody: generated.overlayBody,
+      overlayEnabled: generated.overlayEnabled && generationLanguage !== "pure",
+    });
+  };
+
+  const handlePreviewScreen = async (generated: GeneratedScreenState) => {
+    setIsPreparingPreview(true);
+    try {
+      const composed = await getComposedImageUrl(generated);
+      setPreviewImageUrl(composed);
+      setPreviewTitle(generated.overlayTitle || generated.title);
+    } catch (previewError) {
+      setGenerationError(
+        previewError instanceof Error ? previewError.message : "预览成品失败",
+      );
+    } finally {
+      setIsPreparingPreview(false);
+    }
+  };
+
+  const handleDownloadScreen = async (generated: GeneratedScreenState) => {
+    try {
+      const composed = await getComposedImageUrl(generated);
+      const link = document.createElement("a");
+      link.href = composed;
+      link.download = `detail-screen-${generated.screen}-${Date.now()}.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (downloadError) {
+      setGenerationError(
+        downloadError instanceof Error ? downloadError.message : "下载成品失败",
+      );
+    }
   };
 
   const generateOneScreen = async (screen: DetailPlanScreen) => {
@@ -932,6 +1169,22 @@ const DetailDesignPage = () => {
                               )}
                               {generated?.imageUrl ? "重生本屏" : "生成本屏"}
                             </Button>
+                            {generated?.imageUrl && (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="rounded-xl"
+                                onClick={() =>
+                                  navigate(
+                                    `/dashboard/edit?url=${encodeURIComponent(generated.imageUrl || "")}`,
+                                  )
+                                }
+                              >
+                                <Edit3 className="mr-1.5 h-4 w-4" />
+                                图片编辑
+                              </Button>
+                            )}
                           </div>
                         </div>
 
@@ -966,6 +1219,105 @@ const DetailDesignPage = () => {
                             </div>
                           )}
 
+                          {generated?.imageUrl && (
+                            <>
+                              <div className="rounded-2xl border border-border bg-muted/30 p-3">
+                                <div className="mb-3 flex items-center justify-between">
+                                  <div>
+                                    <div className="text-sm font-medium text-foreground">
+                                      后贴真实文字
+                                    </div>
+                                    <div className="text-xs text-muted-foreground">
+                                      用标准字体后贴文字，减少乱码和怪字体风险
+                                    </div>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      updateOverlayField(
+                                        screen.screen,
+                                        "overlayEnabled",
+                                        !generated.overlayEnabled,
+                                      )
+                                    }
+                                    disabled={generationLanguage === "pure"}
+                                    className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+                                      generated.overlayEnabled && generationLanguage !== "pure"
+                                        ? "bg-primary text-primary-foreground"
+                                        : "bg-muted text-muted-foreground"
+                                    } disabled:opacity-50`}
+                                  >
+                                    {generated.overlayEnabled && generationLanguage !== "pure"
+                                      ? "已启用"
+                                      : "已关闭"}
+                                  </button>
+                                </div>
+                                <div className="space-y-2">
+                                  <input
+                                    type="text"
+                                    value={generated.overlayTitle}
+                                    onChange={(event) =>
+                                      updateOverlayField(
+                                        screen.screen,
+                                        "overlayTitle",
+                                        event.target.value,
+                                      )
+                                    }
+                                    disabled={
+                                      !generated.overlayEnabled || generationLanguage === "pure"
+                                    }
+                                    placeholder="输入这屏的主标题"
+                                    className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none transition focus:ring-2 focus:ring-primary/25 disabled:cursor-not-allowed disabled:opacity-60"
+                                  />
+                                  <textarea
+                                    value={generated.overlayBody}
+                                    onChange={(event) =>
+                                      updateOverlayField(
+                                        screen.screen,
+                                        "overlayBody",
+                                        event.target.value,
+                                      )
+                                    }
+                                    disabled={
+                                      !generated.overlayEnabled || generationLanguage === "pure"
+                                    }
+                                    rows={4}
+                                    placeholder="每行一条副标题或卖点"
+                                    className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none transition focus:ring-2 focus:ring-primary/25 disabled:cursor-not-allowed disabled:opacity-60"
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="flex flex-wrap gap-2">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="rounded-xl"
+                                  disabled={isPreparingPreview}
+                                  onClick={() => void handlePreviewScreen(generated)}
+                                >
+                                  {isPreparingPreview ? (
+                                    <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <ZoomIn className="mr-1.5 h-4 w-4" />
+                                  )}
+                                  预览成品
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="rounded-xl"
+                                  onClick={() => void handleDownloadScreen(generated)}
+                                >
+                                  <Download className="mr-1.5 h-4 w-4" />
+                                  下载成品
+                                </Button>
+                              </div>
+                            </>
+                          )}
+
                           {generated?.prompt && (
                             <details className="rounded-2xl border border-border bg-card px-4 py-3 text-sm text-muted-foreground">
                               <summary className="cursor-pointer font-medium text-foreground">
@@ -984,6 +1336,29 @@ const DetailDesignPage = () => {
           )}
         </div>
       </div>
+
+      <Dialog
+        open={!!previewImageUrl}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPreviewImageUrl(null);
+            setPreviewTitle("");
+          }
+        }}
+      >
+        <DialogContent className="max-w-5xl">
+          <DialogHeader>
+            <DialogTitle>{previewTitle || "成品预览"}</DialogTitle>
+          </DialogHeader>
+          {previewImageUrl && (
+            <img
+              src={previewImageUrl}
+              alt={previewTitle || "成品预览"}
+              className="max-h-[80vh] w-full rounded-2xl object-contain"
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
