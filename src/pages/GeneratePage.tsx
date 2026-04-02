@@ -422,6 +422,14 @@ const GeneratePage = () => {
     });
   };
 
+  const selectedModelLabel =
+    modelOptions.find((option) => option.value === selectedModel)?.label || selectedModel;
+  const selectedResolutionLabel =
+    resolutionOptions.find((option) => option.value === selectedResolution)?.label ||
+    selectedResolution;
+  const selectedLanguageLabel =
+    languageOptions.find((option) => option.value === textLanguage)?.label || textLanguage;
+
   const isMobile = () =>
     /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
       navigator.userAgent,
@@ -921,42 +929,99 @@ const GeneratePage = () => {
           </div>
         ) : results.length > 0 ? (
           <>
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <h3 className="text-sm font-semibold text-foreground">生成结果 ({results.length})</h3>
-              <div className="flex gap-1.5">
-                <Button variant="outline" size="sm" className="h-7 text-xs" onClick={handleRegenerate}>
-                  <RefreshCw className="mr-1 h-3.5 w-3.5" />
-                  重新生成
-                </Button>
-                <Button variant="default" size="sm" className="h-7 text-xs" onClick={downloadAll}>
-                  <Download className="mr-1 h-3.5 w-3.5" />
-                  全部下载
-                </Button>
+            <div className="mb-4 rounded-3xl border border-border bg-card p-4 shadow-sm">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <div className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-[11px] font-medium text-primary">
+                    <Sparkles className="h-3.5 w-3.5" />
+                    本次已生成 {results.length} 张结果
+                  </div>
+                  <h3 className="mt-3 text-lg font-semibold text-foreground">结果已经准备好了</h3>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    先挑一张满意的结果预览或编辑，不满意再整体重生。
+                  </p>
+                </div>
+                <div className="flex gap-1.5">
+                  <Button variant="outline" size="sm" className="h-9 text-xs" onClick={handleRegenerate}>
+                    <RefreshCw className="mr-1 h-3.5 w-3.5" />
+                    重新生成
+                  </Button>
+                  <Button variant="default" size="sm" className="h-9 text-xs" onClick={downloadAll}>
+                    <Download className="mr-1 h-3.5 w-3.5" />
+                    全部下载
+                  </Button>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-2xl bg-muted/70 px-3 py-3">
+                  <div className="text-[11px] uppercase tracking-wider text-muted-foreground">图片类型</div>
+                  <div className="mt-1 text-sm font-medium text-foreground">{imageType}</div>
+                </div>
+                <div className="rounded-2xl bg-muted/70 px-3 py-3">
+                  <div className="text-[11px] uppercase tracking-wider text-muted-foreground">模型</div>
+                  <div className="mt-1 text-sm font-medium text-foreground">{selectedModelLabel}</div>
+                </div>
+                <div className="rounded-2xl bg-muted/70 px-3 py-3">
+                  <div className="text-[11px] uppercase tracking-wider text-muted-foreground">规格</div>
+                  <div className="mt-1 text-sm font-medium text-foreground">
+                    {selectedResolutionLabel} / {selectedRatio}
+                  </div>
+                </div>
+                <div className="rounded-2xl bg-muted/70 px-3 py-3">
+                  <div className="text-[11px] uppercase tracking-wider text-muted-foreground">文字语言</div>
+                  <div className="mt-1 text-sm font-medium text-foreground">{selectedLanguageLabel}</div>
+                </div>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
               {results.map((src, index) => (
-                <div key={index} className="group relative overflow-hidden rounded-lg border border-border bg-muted/20">
-                  <img src={src} alt={`Generated ${index + 1}`} className="aspect-square w-full object-cover" />
-                  <div className="absolute inset-0 flex items-center justify-center gap-1.5 bg-black/50 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
-                    <button
-                      onClick={() => setPreviewImage(src)}
-                      className="rounded-full bg-white/20 p-2 text-white transition-colors hover:bg-white/30"
-                    >
-                      <ZoomIn className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={() => navigate(`/dashboard/edit?url=${encodeURIComponent(src)}`)}
-                      className="rounded-full bg-white/20 p-2 text-white transition-colors hover:bg-white/30"
-                    >
-                      <Edit3 className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={() => downloadImage(src, `picspark-${Date.now()}-${index + 1}.jpg`)}
-                      className="rounded-full bg-white/20 p-2 text-white transition-colors hover:bg-white/30"
-                    >
-                      <Download className="h-4 w-4" />
-                    </button>
+                <div
+                  key={index}
+                  className="group overflow-hidden rounded-3xl border border-border bg-card shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md"
+                >
+                  <div className="relative">
+                    <img src={src} alt={`Generated ${index + 1}`} className="aspect-square w-full object-cover" />
+                    <div className="absolute left-3 top-3 rounded-full bg-black/55 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur-sm">
+                      方案 {index + 1}
+                    </div>
+                    <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/50 via-black/10 to-transparent opacity-0 transition-opacity duration-200 group-hover:opacity-100" />
+                  </div>
+                  <div className="space-y-3 p-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="text-sm font-semibold text-foreground">结果 {index + 1}</div>
+                        <div className="text-xs text-muted-foreground">{imageType} / {selectedRatio}</div>
+                      </div>
+                      <button
+                        onClick={() => setPreviewImage(src)}
+                        className="inline-flex items-center gap-1 rounded-full border border-border bg-background px-2.5 py-1 text-[11px] text-foreground transition hover:border-primary/40 hover:text-primary"
+                      >
+                        <ZoomIn className="h-3.5 w-3.5" />
+                        预览
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <button
+                        onClick={() => setPreviewImage(src)}
+                        className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-medium text-foreground transition hover:border-primary/40 hover:text-primary"
+                      >
+                        查看
+                      </button>
+                      <button
+                        onClick={() => navigate(`/dashboard/edit?url=${encodeURIComponent(src)}`)}
+                        className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-medium text-foreground transition hover:border-primary/40 hover:text-primary"
+                      >
+                        编辑
+                      </button>
+                      <button
+                        onClick={() => downloadImage(src, `picspark-${Date.now()}-${index + 1}.jpg`)}
+                        className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-medium text-foreground transition hover:border-primary/40 hover:text-primary"
+                      >
+                        下载
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}

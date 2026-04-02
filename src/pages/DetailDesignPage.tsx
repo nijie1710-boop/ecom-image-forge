@@ -1353,7 +1353,7 @@ const DetailDesignPage = () => {
                   <div>
                     <h2 className="text-lg font-semibold text-foreground">AI 详情页方案</h2>
                     <p className="text-sm text-muted-foreground">
-                      先从 3 套整体方向里选一套，再进入下方逐屏生成。
+                      先从 3 套整体方向里选一套。选中的方案会直接作为下面逐屏生成的执行蓝本。
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
@@ -1364,7 +1364,7 @@ const DetailDesignPage = () => {
                   </div>
                 </div>
 
-                <div className="mt-5 grid gap-3 lg:grid-cols-3">
+                <div className="mt-5 grid gap-4 lg:grid-cols-3">
                   {planOptions.map((option, index) => {
                     const active = index === selectedOptionIndex;
                     return (
@@ -1372,22 +1372,56 @@ const DetailDesignPage = () => {
                         type="button"
                         key={`${option.planName}-${index}`}
                         onClick={() => setSelectedOptionIndex(index)}
-                        className={`rounded-2xl border p-4 text-left transition-all ${
+                        className={`rounded-3xl border p-4 text-left transition-all ${
                           active
-                            ? "border-primary bg-primary/5 shadow-sm"
-                            : "border-border bg-background hover:border-primary/30"
+                            ? "border-primary bg-primary/5 shadow-md shadow-primary/5"
+                            : "border-border bg-background hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-sm"
                         }`}
                       >
-                        <div className="mb-2 flex items-center justify-between">
+                        <div className="mb-3 flex items-center justify-between">
                           <span className="text-sm font-semibold text-foreground">
                             {option.planName}
                           </span>
-                          {active && <CheckCircle2 className="h-4 w-4 text-primary" />}
+                          <span
+                            className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
+                              active
+                                ? "bg-primary text-primary-foreground"
+                                : "bg-muted text-muted-foreground"
+                            }`}
+                          >
+                            {active ? "当前方案" : `方案 ${index + 1}`}
+                          </span>
                         </div>
-                        <p className="text-xs text-muted-foreground">风格调性：{option.tone}</p>
-                        <p className="mt-2 line-clamp-3 text-sm leading-6 text-muted-foreground">
+                        <div className="flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+                          <span className="rounded-full bg-muted px-2.5 py-1">调性：{option.tone}</span>
+                          <span className="rounded-full bg-muted px-2.5 py-1">
+                            {option.screens.length} 屏
+                          </span>
+                        </div>
+                        <p className="mt-3 line-clamp-3 text-sm leading-6 text-muted-foreground">
                           {option.summary}
                         </p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {option.designSpec.mainColors.slice(0, 3).map((color) => (
+                            <span
+                              key={`${option.planName}-${color}`}
+                              className="rounded-full border border-border bg-background px-2.5 py-1 text-[11px] text-foreground"
+                            >
+                              {color}
+                            </span>
+                          ))}
+                        </div>
+                        <div className="mt-4 flex items-center justify-between text-xs">
+                          <span className="text-muted-foreground">目标人群：{option.audience}</span>
+                          {active ? (
+                            <span className="inline-flex items-center gap-1 font-medium text-primary">
+                              <CheckCircle2 className="h-3.5 w-3.5" />
+                              用于生成
+                            </span>
+                          ) : (
+                            <span className="font-medium text-foreground">点击切换</span>
+                          )}
+                        </div>
                       </button>
                     );
                   })}
@@ -1411,6 +1445,21 @@ const DetailDesignPage = () => {
                         {activePlan.designSpec.layoutTone}
                       </span>
                     </div>
+                  </div>
+                </div>
+
+                <div className="mt-5 grid gap-3 md:grid-cols-3">
+                  <div className="rounded-2xl bg-muted/70 px-4 py-3">
+                    <div className="text-[11px] uppercase tracking-wider text-muted-foreground">当前方案调性</div>
+                    <div className="mt-1 text-sm font-medium text-foreground">{activePlan.tone}</div>
+                  </div>
+                  <div className="rounded-2xl bg-muted/70 px-4 py-3">
+                    <div className="text-[11px] uppercase tracking-wider text-muted-foreground">目标人群</div>
+                    <div className="mt-1 text-sm font-medium text-foreground">{activePlan.audience}</div>
+                  </div>
+                  <div className="rounded-2xl bg-muted/70 px-4 py-3">
+                    <div className="text-[11px] uppercase tracking-wider text-muted-foreground">执行屏数</div>
+                    <div className="mt-1 text-sm font-medium text-foreground">{activePlan.screens.length} 屏</div>
                   </div>
                 </div>
 
@@ -1459,7 +1508,7 @@ const DetailDesignPage = () => {
                       {activePlan.screens.map((screen) => (
                         <div
                           key={`${activePlan.planName}-${screen.screen}`}
-                          className="rounded-2xl border border-border bg-card px-4 py-3"
+                          className="rounded-2xl border border-border bg-card px-4 py-3 transition hover:border-primary/20"
                         >
                           <div className="mb-1 flex items-center gap-2">
                             <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
@@ -1478,6 +1527,14 @@ const DetailDesignPage = () => {
                               : ` 优先纯商品展示，${screen.humanModelReason || "避免人物抢走主体注意力。"}`
                             }
                           </p>
+                          <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
+                            <span className="rounded-full bg-primary/10 px-2.5 py-1 text-primary">
+                              {screen.humanModelSuggested ? "建议人物辅助" : "建议纯商品表达"}
+                            </span>
+                            <span className="rounded-full bg-muted px-2.5 py-1 text-muted-foreground">
+                              标题：{screen.overlayTitle || screen.title}
+                            </span>
+                          </div>
                           <div className="mt-2 flex flex-wrap gap-2">
                             {screen.copyPoints.map((point, index) => (
                               <span
