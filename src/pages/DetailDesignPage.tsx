@@ -711,7 +711,7 @@ const DetailDesignPage = () => {
       })),
     );
 
-    const gap = 24;
+    const gap = 0;
     const width = Math.max(...loaded.map((item) => item.image.naturalWidth || item.image.width));
     const height =
       loaded.reduce((sum, item) => sum + (item.image.naturalHeight || item.image.height), 0) +
