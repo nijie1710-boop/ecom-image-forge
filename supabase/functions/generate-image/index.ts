@@ -144,9 +144,14 @@ function buildTextInstruction(language: string): string {
   }
 
   const targetLanguage = languageMap[language] || "Simplified Chinese";
+  const fontGuidance = language === "zh"
+    ? "Use a clean, modern, highly legible Chinese sans-serif font style inspired by free commercial fonts such as Source Han Sans SC, Alibaba PuHuiTi, or HarmonyOS Sans SC. Do not use calligraphy, handwriting, decorative novelty fonts, gibberish, or malformed Chinese glyphs."
+    : "Use a clean, modern, highly legible sans-serif font style. Do not use decorative novelty fonts, gibberish, malformed glyphs, or unreadable pseudo-text.";
   return [
     `TEXT POLICY: Any newly introduced scene text must be only in ${targetLanguage}.`,
     "Do not mix multiple languages in newly added scene text.",
+    fontGuidance,
+    "All newly generated text must use correct spelling, correct glyphs, and readable layout hierarchy.",
     "Preserve any existing logo, printed words, numbers, or graphics that are already part of the physical product exactly as-is.",
     "Do not translate or redesign text that is physically printed on the product.",
   ].join(". ");

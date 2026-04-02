@@ -120,8 +120,6 @@ type GeneratedScreenState = {
   overlayEnabled: boolean;
 };
 
-const POSTER_FONT_FAMILY =
-  '"Microsoft YaHei","PingFang SC","Noto Sans SC","Helvetica Neue",Arial,sans-serif';
 const DETAIL_JOB_ID_KEY = "detail-design-active-job-id";
 const DETAIL_DRAFT_KEY = "detail-design-draft";
 
@@ -182,6 +180,18 @@ function languageRule(language: string): string {
   return `如果画面中需要出现新增文字，只能使用 ${current}，不要混入其他语言。`;
 }
 
+function typographyRule(language: string): string {
+  if (language === "pure") {
+    return "纯图片模式下不要新增任何版式文字，也不要为了排版预留文案区。";
+  }
+
+  if (language === "zh") {
+    return "新增中文文字请使用清晰、端正、现代、易读的免费商用中文无衬线字体风格，优先参考思源黑体、阿里巴巴普惠体、HarmonyOS Sans SC 的视觉气质，不要花字、手写体、书法体、伪中文或乱码。";
+  }
+
+  return "新增文字请使用清晰、标准、现代的无衬线字体风格，字形必须完整可读，不要出现乱码、伪文字或错误字符。";
+}
+
 function buildScreenPrompt(args: {
   plan: DetailPlanOption;
   screen: DetailPlanScreen;
@@ -240,8 +250,8 @@ ${targetPlatform}
 - 目标：${screen.goal}
 - 视觉方向：${screen.visualDirection}
 - 重点卖点：${screen.copyPoints.join("；")}
-- 后贴标题：${screen.overlayTitle || screen.title}
-- 后贴正文：${screen.overlayBodyLines?.join("；") || screen.copyPoints.join("；")}
+- 画面内主标题：${screen.overlayTitle || screen.title}
+- 画面内卖点短句：${screen.overlayBodyLines?.join("；") || screen.copyPoints.join("；")}
 - 人物建议：${screen.humanModelSuggested ? "建议人物出镜" : "建议纯商品展示"}${screen.humanModelReason ? `；原因：${screen.humanModelReason}` : ""}
 - 用户补充的分屏构思：${screenIdea?.trim() || "无"}
 
@@ -249,85 +259,14 @@ ${targetPlatform}
 1. 这是电商详情页分屏，不要回退成单纯主图白底棚拍。
 2. 画面必须明显体现当前分屏的目标和视觉方向。
 3. 如果用户提供了分屏构思，必须优先吸收并融入当前这一屏，而不是忽略它。
-4. 如果需要出现说明性元素，优先用版式留白、局部结构和材质细节表达。
-5. 基础生成图里不要直接渲染任何嵌入式文字、标题字、卖点字、海报字或装饰字，所有最终文字会在后期使用真实字体叠加。
-6. 请主动为后期文字排版预留干净、安全、易读的留白区域，不要让主体商品挡住文案位置，并优先围绕“后贴标题/后贴正文”的排版需求安排留白。
-7. 严禁出现乱码、伪文字、无法识别的字形、奇怪符号、拼写错误或装饰性怪字体。
-8. ${languageRule(targetLanguage)}
-9. 如果当前分屏建议人物出镜，可以自然加入真人模特、手部交互或使用动作，但人物只能辅助解释卖点，不能盖住商品主体。
-10. 如果当前分屏建议纯商品展示，就不要额外加入真人模特，除非只是极轻微的手部辅助且明显更利于说明使用方式。
-11. 保持商品真实、可售、适合电商详情页，不做无关艺术化改造。
+4. 如果当前语言不是 pure，请把“画面内主标题”和“画面内卖点短句”直接生成在图片里，不要省略，不要留到后期再贴字。
+5. 画面中的文字必须层级清晰、字形正确、拼写正确、排版整洁，并与电商详情页视觉一致。
+6. ${typographyRule(targetLanguage)}
+7. ${languageRule(targetLanguage)}
+8. 如果当前分屏建议人物出镜，可以自然加入真人模特、手部交互或使用动作，但人物只能辅助解释卖点，不能盖住商品主体。
+9. 如果当前分屏建议纯商品展示，就不要额外加入真人模特，除非只是极轻微的手部辅助且明显更利于说明使用方式。
+10. 保持商品真实、可售、适合电商详情页，不做无关艺术化改造。
 `.trim();
-}
-
-function wrapCanvasText(
-  ctx: CanvasRenderingContext2D,
-  text: string,
-  maxWidth: number,
-  maxLines: number,
-): string[] {
-  const paragraphs = text
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  if (!paragraphs.length) {
-    return [];
-  }
-
-  const lines: string[] = [];
-  for (const paragraph of paragraphs) {
-    let current = "";
-    for (const char of paragraph) {
-      const next = current + char;
-      if (ctx.measureText(next).width <= maxWidth) {
-        current = next;
-        continue;
-      }
-      if (current) {
-        lines.push(current);
-      }
-      current = char;
-      if (lines.length >= maxLines) {
-        break;
-      }
-    }
-    if (current && lines.length < maxLines) {
-      lines.push(current);
-    }
-    if (lines.length >= maxLines) {
-      break;
-    }
-  }
-
-  if (lines.length > maxLines) {
-    return lines.slice(0, maxLines);
-  }
-
-  if (paragraphs.length && lines.length === maxLines) {
-    const last = lines[maxLines - 1];
-    if (!last.endsWith("…")) {
-      lines[maxLines - 1] = `${last.slice(0, Math.max(0, last.length - 1))}…`;
-    }
-  }
-
-  return lines;
-}
-
-function splitOverlayBodyLines(text: string): string[] {
-  return text
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .slice(0, 4);
-}
-
-function joinOverlayBodyLines(lines: string[]): string {
-  return lines
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .slice(0, 4)
-    .join("\n");
 }
 
 async function loadImageElement(src: string): Promise<HTMLImageElement> {
@@ -340,95 +279,6 @@ async function loadImageElement(src: string): Promise<HTMLImageElement> {
   });
 }
 
-async function composePosterImage(args: {
-  imageUrl: string;
-  overlayTitle: string;
-  overlayBody: string;
-  overlayEnabled: boolean;
-}): Promise<string> {
-  const { imageUrl, overlayTitle, overlayBody, overlayEnabled } = args;
-  if (!overlayEnabled || (!overlayTitle.trim() && !overlayBody.trim())) {
-    return imageUrl;
-  }
-  const overlayBodyLines = splitOverlayBodyLines(overlayBody);
-
-  const image = await loadImageElement(imageUrl);
-  const canvas = document.createElement("canvas");
-  canvas.width = image.naturalWidth || image.width;
-  canvas.height = image.naturalHeight || image.height;
-
-  const ctx = canvas.getContext("2d");
-  if (!ctx) {
-    throw new Error("无法创建画布");
-  }
-
-  ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-
-  const padding = Math.max(28, Math.round(canvas.width * 0.045));
-  const panelWidth = canvas.width - padding * 2;
-  const panelHeight = Math.round(canvas.height * 0.3);
-  const panelY = canvas.height - padding - panelHeight;
-
-  const gradient = ctx.createLinearGradient(0, panelY, 0, canvas.height);
-  gradient.addColorStop(0, "rgba(8, 12, 24, 0.05)");
-  gradient.addColorStop(0.18, "rgba(8, 12, 24, 0.35)");
-  gradient.addColorStop(1, "rgba(8, 12, 24, 0.88)");
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, panelY - padding, canvas.width, canvas.height - panelY + padding);
-
-  ctx.fillStyle = "rgba(10, 16, 32, 0.78)";
-  ctx.beginPath();
-  const radius = Math.max(18, Math.round(canvas.width * 0.02));
-  ctx.moveTo(padding + radius, panelY);
-  ctx.lineTo(padding + panelWidth - radius, panelY);
-  ctx.quadraticCurveTo(padding + panelWidth, panelY, padding + panelWidth, panelY + radius);
-  ctx.lineTo(padding + panelWidth, panelY + panelHeight - radius);
-  ctx.quadraticCurveTo(
-    padding + panelWidth,
-    panelY + panelHeight,
-    padding + panelWidth - radius,
-    panelY + panelHeight,
-  );
-  ctx.lineTo(padding + radius, panelY + panelHeight);
-  ctx.quadraticCurveTo(padding, panelY + panelHeight, padding, panelY + panelHeight - radius);
-  ctx.lineTo(padding, panelY + radius);
-  ctx.quadraticCurveTo(padding, panelY, padding + radius, panelY);
-  ctx.closePath();
-  ctx.fill();
-
-  const titleFontSize = Math.max(28, Math.round(canvas.width * 0.045));
-  const bodyFontSize = Math.max(18, Math.round(canvas.width * 0.026));
-  const textX = padding + Math.round(canvas.width * 0.04);
-  const textWidth = panelWidth - Math.round(canvas.width * 0.08);
-
-  ctx.fillStyle = "#FFFFFF";
-  ctx.textBaseline = "top";
-
-  let currentY = panelY + Math.round(canvas.height * 0.04);
-  if (overlayTitle.trim()) {
-    ctx.font = `700 ${titleFontSize}px ${POSTER_FONT_FAMILY}`;
-    const titleLines = wrapCanvasText(ctx, overlayTitle.trim(), textWidth, 2);
-    titleLines.forEach((line) => {
-      ctx.fillText(line, textX, currentY);
-      currentY += titleFontSize * 1.2;
-    });
-  }
-
-  if (overlayBodyLines.length) {
-    ctx.fillStyle = "rgba(255,255,255,0.92)";
-    ctx.font = `500 ${bodyFontSize}px ${POSTER_FONT_FAMILY}`;
-    overlayBodyLines.forEach((lineItem) => {
-      const bodyLines = wrapCanvasText(ctx, `• ${lineItem}`, textWidth, 2);
-      bodyLines.forEach((line) => {
-        ctx.fillText(line, textX, currentY);
-        currentY += bodyFontSize * 1.45;
-      });
-      currentY += bodyFontSize * 0.2;
-    });
-  }
-
-  return canvas.toDataURL("image/png");
-}
 const DetailDesignPage = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -834,57 +684,11 @@ const DetailDesignPage = () => {
     );
   };
 
-  const updateOverlayField = (
-    screenNumber: number,
-    field: "overlayTitle" | "overlayBody" | "overlayEnabled",
-    value: string | boolean,
-  ) => {
-    updateGeneratedScreen(screenNumber, (current) => ({
-      ...current,
-      [field]: value,
-    }));
-  };
-
-  const updateOverlayBodyLine = (
-    screenNumber: number,
-    lineIndex: number,
-    value: string,
-  ) => {
-    updateGeneratedScreen(screenNumber, (current) => {
-      const lines = splitOverlayBodyLines(current.overlayBody);
-      while (lines.length < 4) {
-        lines.push("");
-      }
-      lines[lineIndex] = value;
-      return {
-        ...current,
-        overlayBody: joinOverlayBodyLines(lines),
-      };
-    });
-  };
-
-  const resetOverlayCopy = (screenData: DetailPlanScreen) => {
-    updateGeneratedScreen(screenData.screen, (current) => ({
-      ...current,
-      overlayTitle: screenData.overlayTitle || screenData.title,
-      overlayBody: joinOverlayBodyLines(
-        screenData.overlayBodyLines?.length ? screenData.overlayBodyLines : screenData.copyPoints,
-      ),
-      overlayEnabled: generationLanguage === "pure" ? false : true,
-    }));
-  };
-
   const getComposedImageUrl = async (generated: GeneratedScreenState): Promise<string> => {
     if (!generated.imageUrl) {
       throw new Error("当前没有可预览图片");
     }
-
-    return await composePosterImage({
-      imageUrl: generated.imageUrl,
-      overlayTitle: generated.overlayTitle,
-      overlayBody: generated.overlayBody,
-      overlayEnabled: generated.overlayEnabled && generationLanguage !== "pure",
-    });
+    return generated.imageUrl;
   };
 
   const composeLongPosterImage = async (screens: GeneratedScreenState[]): Promise<string> => {
@@ -941,7 +745,7 @@ const DetailDesignPage = () => {
     try {
       const composed = await getComposedImageUrl(generated);
       setPreviewImageUrl(composed);
-      setPreviewTitle(generated.overlayTitle || generated.title);
+      setPreviewTitle(generated.title);
     } catch (previewError) {
       setGenerationError(
         previewError instanceof Error ? previewError.message : "预览成品失败",
@@ -1033,13 +837,9 @@ const DetailDesignPage = () => {
         prompt,
         imageUrl: current?.imageUrl,
         error: undefined,
-        overlayTitle: current?.overlayTitle || screen.overlayTitle || screen.title,
-        overlayBody:
-          current?.overlayBody ||
-          screen.overlayBodyLines?.join("\n") ||
-          screen.copyPoints.join("\n"),
-        overlayEnabled:
-          generationLanguage === "pure" ? false : current?.overlayEnabled ?? true,
+        overlayTitle: screen.overlayTitle || screen.title,
+        overlayBody: screen.overlayBodyLines?.join("\n") || screen.copyPoints.join("\n"),
+        overlayEnabled: generationLanguage !== "pure",
       };
     });
   };
@@ -1223,7 +1023,7 @@ const DetailDesignPage = () => {
                   className="min-h-28 rounded-2xl"
                 />
                 <p className="text-xs leading-5 text-muted-foreground">
-                  AI 会把商品信息整理成更适合详情页策划和后贴文案的结构化文本，你再微调即可。
+                  AI 会把商品信息整理成更适合详情页策划和画面内文案生成的结构化文本，你再微调即可。
                 </p>
               </div>
 
@@ -1667,7 +1467,7 @@ const DetailDesignPage = () => {
                   <div>
                     <h3 className="text-lg font-semibold text-foreground">逐屏生成结果</h3>
                     <p className="text-sm text-muted-foreground">
-                      现在支持逐屏生成、长图拼接、预览和下载。每屏文案也可以单独微调后再导出。
+                      现在支持逐屏生成、长图拼接、预览和下载。每一屏会直接把方案文案生成进图片里。
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -1808,97 +1608,43 @@ const DetailDesignPage = () => {
                           {generated?.imageUrl && (
                             <>
                               <div className="rounded-2xl border border-border bg-muted/30 p-3">
-                                <div className="mb-3 flex items-center justify-between">
-                                  <div>
-                                    <div className="text-sm font-medium text-foreground">
-                                      后贴真实文字
-                                    </div>
-                                    <div className="text-xs text-muted-foreground">
-                                      标题和卖点拆开编辑，预览和长图导出都会使用这里的文案
-                                    </div>
+                                <div className="mb-3">
+                                  <div className="text-sm font-medium text-foreground">
+                                    本屏直出文案
                                   </div>
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      updateOverlayField(
-                                        screen.screen,
-                                        "overlayEnabled",
-                                        !generated.overlayEnabled,
-                                      )
-                                    }
-                                    disabled={generationLanguage === "pure"}
-                                    className={`rounded-full px-3 py-1 text-xs font-medium transition ${
-                                      generated.overlayEnabled && generationLanguage !== "pure"
-                                        ? "bg-primary text-primary-foreground"
-                                        : "bg-muted text-muted-foreground"
-                                    } disabled:opacity-50`}
-                                  >
-                                    {generated.overlayEnabled && generationLanguage !== "pure"
-                                      ? "已启用"
-                                      : "已关闭"}
-                                  </button>
-                                </div>
-                                <div className="mb-3 flex flex-wrap gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={() => resetOverlayCopy(screen)}
-                                    disabled={!generated.overlayEnabled || generationLanguage === "pure"}
-                                    className="rounded-full border border-border bg-background px-3 py-1 text-xs text-foreground transition hover:border-primary/40 disabled:cursor-not-allowed disabled:opacity-50"
-                                  >
-                                    恢复 AI 推荐
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => updateOverlayField(screen.screen, "overlayBody", "")}
-                                    disabled={!generated.overlayEnabled || generationLanguage === "pure"}
-                                    className="rounded-full border border-border bg-background px-3 py-1 text-xs text-foreground transition hover:border-primary/40 disabled:cursor-not-allowed disabled:opacity-50"
-                                  >
-                                    清空正文
-                                  </button>
+                                  <div className="text-xs text-muted-foreground">
+                                    下面这些文案会直接按方案生成到图片里，字体会优先往思源黑体、阿里巴巴普惠体、HarmonyOS Sans SC 这类免费中文黑体风格靠。
+                                  </div>
                                 </div>
                                 <div className="space-y-3">
-                                  <input
-                                    type="text"
-                                    value={generated.overlayTitle}
-                                    onChange={(event) =>
-                                      updateOverlayField(
-                                        screen.screen,
-                                        "overlayTitle",
-                                        event.target.value,
-                                      )
-                                    }
-                                    disabled={
-                                      !generated.overlayEnabled || generationLanguage === "pure"
-                                    }
-                                    placeholder="输入这屏的主标题"
-                                    className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none transition focus:ring-2 focus:ring-primary/25 disabled:cursor-not-allowed disabled:opacity-60"
-                                  />
-                                  <div className="grid gap-2">
-                                    {Array.from({ length: 4 }, (_, lineIndex) => {
-                                      const lines = splitOverlayBodyLines(generated.overlayBody);
-                                      return (
-                                        <input
-                                          key={`overlay-${screen.screen}-${lineIndex}`}
-                                          type="text"
-                                          value={lines[lineIndex] || ""}
-                                          onChange={(event) =>
-                                            updateOverlayBodyLine(
-                                              screen.screen,
-                                              lineIndex,
-                                              event.target.value,
-                                            )
-                                          }
-                                          disabled={
-                                            !generated.overlayEnabled || generationLanguage === "pure"
-                                          }
-                                          placeholder={`卖点短句 ${lineIndex + 1}`}
-                                          className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none transition focus:ring-2 focus:ring-primary/25 disabled:cursor-not-allowed disabled:opacity-60"
-                                        />
-                                      );
-                                    })}
+                                  <div className="rounded-xl border border-border bg-background px-3 py-2.5">
+                                    <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                                      主标题
+                                    </div>
+                                    <div className="mt-1 text-sm font-medium text-foreground">
+                                      {screen.overlayTitle || screen.title}
+                                    </div>
+                                  </div>
+                                  <div className="rounded-xl border border-border bg-background px-3 py-2.5">
+                                    <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                                      卖点短句
+                                    </div>
+                                    <div className="mt-2 grid gap-2">
+                                      {(screen.overlayBodyLines?.length
+                                        ? screen.overlayBodyLines
+                                        : screen.copyPoints
+                                      ).slice(0, 4).map((line, lineIndex) => (
+                                        <div
+                                          key={`${screen.screen}-copy-${lineIndex}`}
+                                          className="rounded-lg bg-muted/50 px-2.5 py-2 text-sm text-foreground"
+                                        >
+                                          {line}
+                                        </div>
+                                      ))}
+                                    </div>
                                   </div>
                                   <p className="text-xs leading-5 text-muted-foreground">
-                                    建议每条控制在 8 到 18 个字，长图拼接时会自动按项目符号排版。
+                                    如果当前语言不是纯图片模式，系统会优先把这些文字直接生成到画面里，而不是再做后贴。
                                   </p>
                                 </div>
                               </div>
