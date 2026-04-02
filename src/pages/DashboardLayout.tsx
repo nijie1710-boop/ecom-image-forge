@@ -33,9 +33,9 @@ const DashboardLayout = () => {
 
   return (
     <SidebarProvider defaultOpen={false}>
-      <div className="min-h-screen flex w-full bg-background">
+      <div className="flex min-h-screen w-full bg-background">
         <AppSidebar />
-        <div className="flex-1 flex min-w-0 flex-col pb-16 md:pb-0">
+        <div className="flex min-w-0 flex-1 flex-col pb-16 md:pb-0">
           <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-border bg-card/95 px-4 backdrop-blur-sm">
             <div className="flex items-center gap-2.5">
               <SidebarTrigger className="hidden md:flex" />

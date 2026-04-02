@@ -3,6 +3,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Download,
   Edit3,
   FileImage,
@@ -315,6 +317,8 @@ const DetailDesignPage = () => {
   const [isPreparingPreview, setIsPreparingPreview] = useState(false);
   const [detailJobId, setDetailJobId] = useState<string | null>(null);
   const [hasRestoredDraft, setHasRestoredDraft] = useState(false);
+  const [showScreenIdeas, setShowScreenIdeas] = useState(false);
+  const [showGenerationSettings, setShowGenerationSettings] = useState(false);
   const resultsSectionRef = useRef<HTMLElement | null>(null);
 
   const activePlan = useMemo(
@@ -901,9 +905,11 @@ const DetailDesignPage = () => {
           AI 详情页
         </div>
         <h1 className="text-2xl font-bold text-foreground md:text-3xl">先策划，再逐屏生成</h1>
-        <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
-          这一版已经把详情页规划器跑通，并接入了逐屏生成。你可以先选一套整版方案，再按每一屏的目标生成对应视觉。
-        </p>
+        <div className="flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+          <span className="rounded-full bg-muted px-2.5 py-1">1. 上传商品</span>
+          <span className="rounded-full bg-muted px-2.5 py-1">2. 选方案</span>
+          <span className="rounded-full bg-muted px-2.5 py-1">3. 逐屏生成</span>
+        </div>
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
@@ -1106,7 +1112,7 @@ const DetailDesignPage = () => {
           <section className="rounded-3xl border border-border bg-card p-5 shadow-sm">
             <div className="mb-4">
               <h2 className="text-base font-semibold text-foreground">策划参数</h2>
-              <p className="text-xs text-muted-foreground">先让 AI 规划详情页结构和整版风格</p>
+              <p className="text-xs text-muted-foreground">先生成 3 套整版方案，再选一套往下走</p>
             </div>
 
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-1">
@@ -1160,88 +1166,118 @@ const DetailDesignPage = () => {
           </section>
 
           <section className="rounded-3xl border border-border bg-card p-5 shadow-sm">
-            <div className="mb-4 flex items-start justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => setShowScreenIdeas((current) => !current)}
+              className="flex w-full items-start justify-between gap-3 text-left"
+            >
               <div>
                 <h2 className="text-base font-semibold text-foreground">分屏构思</h2>
                 <p className="text-xs text-muted-foreground">
-                  这部分是可选项。你可以给某几屏补充自己的画面想法，AI 会在策划和生成时优先参考。
+                  可选项。有明确想法时再展开填写，没有也可以直接继续。
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => setUseScreenIdeas((current) => !current)}
-                className={`rounded-full px-3 py-1 text-xs font-medium transition ${
-                  useScreenIdeas
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted text-muted-foreground"
-                }`}
-              >
-                {useScreenIdeas ? "已启用" : "可选关闭"}
-              </button>
-            </div>
+              {showScreenIdeas ? (
+                <ChevronUp className="mt-1 h-4 w-4 text-muted-foreground" />
+              ) : (
+                <ChevronDown className="mt-1 h-4 w-4 text-muted-foreground" />
+              )}
+            </button>
 
-            <div className="space-y-3">
-              {Array.from({ length: Number(screenCount) || 4 }, (_, index) => (
-                <div key={`screen-idea-${index}`} className="space-y-1.5">
-                  <label className="text-xs font-medium text-foreground">第 {index + 1} 屏</label>
-                  <input
-                    type="text"
-                    value={screenIdeas[index] || ""}
-                    onChange={(event) => updateScreenIdea(index, event.target.value)}
-                    disabled={!useScreenIdeas}
-                    placeholder={
-                      index === 0
-                        ? "例如：首屏突出高级材质和主视觉氛围"
-                        : index === 1
-                          ? "例如：第二屏放大材质细节和工艺说明"
-                          : "例如：补充这一屏希望呈现的重点"
-                    }
-                    className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none transition focus:ring-2 focus:ring-primary/25 disabled:cursor-not-allowed disabled:opacity-60"
-                  />
+            {showScreenIdeas && (
+              <div className="mt-4 space-y-4 border-t border-border pt-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="text-xs text-muted-foreground">
+                    启用后，AI 会优先参考你对某几屏的指定构思。
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setUseScreenIdeas((current) => !current)}
+                    className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+                      useScreenIdeas
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-muted text-muted-foreground"
+                    }`}
+                  >
+                    {useScreenIdeas ? "已启用" : "点击启用"}
+                  </button>
                 </div>
-              ))}
-            </div>
+
+                <div className="space-y-3">
+                  {Array.from({ length: Number(screenCount) || 4 }, (_, index) => (
+                    <div key={`screen-idea-${index}`} className="space-y-1.5">
+                      <label className="text-xs font-medium text-foreground">第 {index + 1} 屏</label>
+                      <input
+                        type="text"
+                        value={screenIdeas[index] || ""}
+                        onChange={(event) => updateScreenIdea(index, event.target.value)}
+                        disabled={!useScreenIdeas}
+                        placeholder={
+                          index === 0
+                            ? "例如：首屏突出高级材质和主视觉氛围"
+                            : index === 1
+                              ? "例如：第二屏放大材质细节和工艺说明"
+                              : "例如：补充这一屏希望呈现的重点"
+                        }
+                        className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none transition focus:ring-2 focus:ring-primary/25 disabled:cursor-not-allowed disabled:opacity-60"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </section>
 
           {activePlan && (
             <section className="rounded-3xl border border-border bg-card p-5 shadow-sm">
-              <div className="mb-4">
-                <h2 className="text-base font-semibold text-foreground">逐屏生成设置</h2>
-                <p className="text-xs text-muted-foreground">
-                  这一步会按当前选中的整版方案，逐屏生成详情页视觉。
-                </p>
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-semibold text-foreground">逐屏生成设置</h2>
+                  <p className="text-xs text-muted-foreground">
+                    默认参数已经能直接生成，需要时再展开调整。
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowGenerationSettings((current) => !current)}
+                  className="rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground transition hover:text-foreground"
+                >
+                  {showGenerationSettings ? "收起高级项" : "展开高级项"}
+                </button>
               </div>
 
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-1">
-                <SelectField
-                  label="生成模型"
-                  value={selectedModel}
-                  onChange={(value) => setSelectedModel(value as GenerationModel)}
-                  options={modelOptions.map((option) => ({
-                    value: option.value,
-                    label: option.label,
-                  }))}
-                />
-                <div className="-mt-2 text-xs text-muted-foreground">{currentModelHint}</div>
-                <SelectField
-                  label="画面比例"
-                  value={selectedRatio}
-                  onChange={setSelectedRatio}
-                  options={ratioOptions}
-                />
-                <SelectField
-                  label="清晰度"
-                  value={selectedResolution}
-                  onChange={(value) => setSelectedResolution(value as OutputResolution)}
-                  options={resolutionOptions}
-                />
-                <SelectField
-                  label="文字语言"
-                  value={generationLanguage}
-                  onChange={setGenerationLanguage}
-                  options={generationLanguageOptions}
-                />
-              </div>
+              {showGenerationSettings && (
+                <div className="grid gap-4 border-b border-border pb-4 md:grid-cols-2 xl:grid-cols-1">
+                  <SelectField
+                    label="生成模型"
+                    value={selectedModel}
+                    onChange={(value) => setSelectedModel(value as GenerationModel)}
+                    options={modelOptions.map((option) => ({
+                      value: option.value,
+                      label: option.label,
+                    }))}
+                  />
+                  <div className="-mt-2 text-xs text-muted-foreground">{currentModelHint}</div>
+                  <SelectField
+                    label="画面比例"
+                    value={selectedRatio}
+                    onChange={setSelectedRatio}
+                    options={ratioOptions}
+                  />
+                  <SelectField
+                    label="清晰度"
+                    value={selectedResolution}
+                    onChange={(value) => setSelectedResolution(value as OutputResolution)}
+                    options={resolutionOptions}
+                  />
+                  <SelectField
+                    label="文字语言"
+                    value={generationLanguage}
+                    onChange={setGenerationLanguage}
+                    options={generationLanguageOptions}
+                  />
+                </div>
+              )}
 
               <div className="mt-4 space-y-2 rounded-2xl border border-border bg-background p-4 text-xs text-muted-foreground">
                 <div className="flex items-center justify-between">
@@ -1467,7 +1503,7 @@ const DetailDesignPage = () => {
                   <div>
                     <h3 className="text-lg font-semibold text-foreground">逐屏生成结果</h3>
                     <p className="text-sm text-muted-foreground">
-                      现在支持逐屏生成、长图拼接、预览和下载。每一屏会直接把方案文案生成进图片里。
+                      先看每屏结果，不满意就单独重生；全部满意后再预览或下载长图。
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">

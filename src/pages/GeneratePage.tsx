@@ -11,6 +11,8 @@ import {
 } from "@/components/ui/dialog";
 import {
   Ban,
+  ChevronDown,
+  ChevronUp,
   Download,
   Globe,
   Loader2,
@@ -160,6 +162,7 @@ const GeneratePage = () => {
   const [appliedTemplate, setAppliedTemplate] = useState<string | null>(null);
   const [lastParams, setLastParams] = useState<any>(null);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
 
   useEffect(() => {
     if (templateId && !appliedTemplate) {
@@ -469,7 +472,14 @@ const GeneratePage = () => {
   return (
     <div className="flex h-[calc(100vh-4rem)] flex-col lg:flex-row">
       <div className="space-y-4 overflow-y-auto border-r border-border bg-card/50 p-4 pb-24 lg:w-[380px] lg:flex-shrink-0 lg:pb-6">
-        <h2 className="text-base font-bold text-foreground">AI 电商图片生成</h2>
+        <div className="space-y-2">
+          <h2 className="text-base font-bold text-foreground">AI 电商图片生成</h2>
+          <div className="flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+            <span className="rounded-full bg-muted px-2.5 py-1">1. 上传商品</span>
+            <span className="rounded-full bg-muted px-2.5 py-1">2. 分析场景</span>
+            <span className="rounded-full bg-muted px-2.5 py-1">3. 生成图片</span>
+          </div>
+        </div>
 
         <div className="space-y-2">
           <div className="flex items-center justify-between">
@@ -559,137 +569,6 @@ const GeneratePage = () => {
         </div>
 
         <div className="space-y-2">
-          <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-            产品信息
-          </label>
-          <Textarea
-            value={productBrief}
-            onChange={(event) => setProductBrief(event.target.value)}
-            placeholder="填写产品介绍、核心卖点、材质或不允许改动的细节。信息越完整，AI 识别跑偏和乱码概率越低。"
-            className="min-h-24 rounded-xl"
-          />
-        </div>
-
-        <div className="space-y-3 rounded-2xl border border-border bg-background/60 p-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                <UserRound className="h-3.5 w-3.5" />
-                模特模式
-              </div>
-              <p className="mt-1 text-[11px] text-muted-foreground">
-                需要人物出镜时，建议上传模特图作为参考
-              </p>
-            </div>
-            <div className="inline-flex rounded-lg bg-muted p-1">
-              <button
-                type="button"
-                onClick={() => {
-                  setModelMode("none");
-                  setModelImage("");
-                }}
-                className={`rounded-md px-2 py-1 text-[11px] font-medium transition ${
-                  modelMode === "none"
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground"
-                }`}
-              >
-                <Ban className="mr-1 inline h-3 w-3" />
-                无模特
-              </button>
-              <button
-                type="button"
-                onClick={() => setModelMode("with_model")}
-                className={`rounded-md px-2 py-1 text-[11px] font-medium transition ${
-                  modelMode === "with_model"
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground"
-                }`}
-              >
-                <UserRound className="mr-1 inline h-3 w-3" />
-                有模特
-              </button>
-            </div>
-          </div>
-
-          {modelMode === "with_model" && (
-            <label className="flex min-h-24 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-border px-3 text-center transition-colors hover:border-primary/40">
-              <input
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                className="hidden"
-                onChange={(event) => void handleSingleAsset(event.target.files, setModelImage)}
-              />
-              {modelImage ? (
-                <div className="relative w-full">
-                  <img src={modelImage} alt="model" className="h-28 w-full rounded-lg object-cover" />
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.preventDefault();
-                      setModelImage("");
-                    }}
-                    className="absolute right-2 top-2 rounded-full bg-black/60 p-1 text-white"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <UserRound className="mb-2 h-4 w-4 text-primary" />
-                  <p className="text-xs text-muted-foreground">上传模特图</p>
-                </>
-              )}
-            </label>
-          )}
-        </div>
-
-        <div className="space-y-2 rounded-2xl border border-border bg-background/60 p-3">
-          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-            <Palette className="h-3.5 w-3.5" />
-            风格参考（可选）
-          </div>
-          <label className="flex min-h-24 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-border px-3 text-center transition-colors hover:border-primary/40">
-            <input
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              className="hidden"
-              onChange={(event) => void handleSingleAsset(event.target.files, setStyleReferenceImage)}
-            />
-            {styleReferenceImage ? (
-              <div className="relative w-full">
-                <img
-                  src={styleReferenceImage}
-                  alt="style-reference"
-                  className="h-28 w-full rounded-lg object-cover"
-                />
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    event.preventDefault();
-                    setStyleReferenceImage("");
-                  }}
-                  className="absolute right-2 top-2 rounded-full bg-black/60 p-1 text-white"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </div>
-            ) : (
-              <>
-                <Palette className="mb-2 h-4 w-4 text-primary" />
-                <p className="text-xs text-muted-foreground">上传风格参考图</p>
-              </>
-            )}
-          </label>
-          <Textarea
-            value={styleReferenceText}
-            onChange={(event) => setStyleReferenceText(event.target.value)}
-            placeholder="可补充风格要求，例如：暖色轻奢、极简白底、日落通透感。"
-            className="min-h-20 rounded-xl"
-          />
-        </div>
-
-        <div className="space-y-2">
           <div className="flex items-center justify-between">
             <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
               场景描述
@@ -739,7 +618,7 @@ const GeneratePage = () => {
               ) : sceneSuggestions.length > 0 ? (
                 <div className="space-y-1.5">
                   <p className="text-[10px] text-muted-foreground">
-                    已完成商品识别。你可以直接点选方案，也可以打开弹窗查看完整 AI 帮写内容。
+                    已完成商品识别，点选一个方案后就可以直接生成。
                   </p>
                   {sceneSuggestions.map((item, index) => (
                     <button
@@ -768,7 +647,7 @@ const GeneratePage = () => {
                 </div>
               ) : (
                 <div className="rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground">
-                  上传产品图后，先点击“分析产品”，AI 会识别商品并生成 3 个场景方案供你选择。
+                  上传商品图后点“分析产品”，先拿 3 个可选场景方案。
                 </div>
               )}
             </div>
@@ -778,7 +657,7 @@ const GeneratePage = () => {
             value={textPrompt}
             onChange={(e) => setTextPrompt(e.target.value)}
             rows={4}
-            placeholder="描述你想要的场景，或先点击“分析产品”生成 AI 推荐方案。"
+            placeholder="直接写你想要的场景，或先点“分析产品”使用 AI 推荐方案。"
             className="w-full resize-none rounded-lg border border-border bg-background p-3 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary/50"
           />
         </div>
@@ -800,25 +679,10 @@ const GeneratePage = () => {
 
         <div className="grid grid-cols-2 gap-2">
           <SelectField
-            label="模型"
-            options={modelOptions}
-            value={selectedModel}
-            onChange={(value) => setSelectedModel(value as GenerationModel)}
-          />
-          <SelectField
             label="生成数量"
             options={imageCountOptions}
             value={selectedCount}
             onChange={setSelectedCount}
-          />
-        </div>
-
-        <div className="grid grid-cols-2 gap-2">
-          <SelectField
-            label="清晰度"
-            options={resolutionOptions}
-            value={selectedResolution}
-            onChange={(value) => setSelectedResolution(value as OutputResolution)}
           />
           <SelectField
             label="文字语言"
@@ -826,6 +690,176 @@ const GeneratePage = () => {
             value={textLanguage}
             onChange={setTextLanguage}
           />
+        </div>
+
+        <div className="rounded-2xl border border-border bg-background/60 p-3">
+          <button
+            type="button"
+            onClick={() => setShowAdvancedOptions((current) => !current)}
+            className="flex w-full items-center justify-between text-left"
+          >
+            <div>
+              <div className="text-sm font-semibold text-foreground">补充素材与高级设置</div>
+              <div className="text-xs text-muted-foreground">
+                模特图、风格图、模型与清晰度都收在这里
+              </div>
+            </div>
+            {showAdvancedOptions ? (
+              <ChevronUp className="h-4 w-4 text-muted-foreground" />
+            ) : (
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            )}
+          </button>
+
+          {showAdvancedOptions && (
+            <div className="mt-4 space-y-4 border-t border-border pt-4">
+              <div className="space-y-2">
+                <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  产品信息
+                </label>
+                <Textarea
+                  value={productBrief}
+                  onChange={(event) => setProductBrief(event.target.value)}
+                  placeholder="补充卖点、材质、尺寸或不允许改动的细节。"
+                  className="min-h-24 rounded-xl"
+                />
+              </div>
+
+              <div className="space-y-3 rounded-2xl border border-border bg-background/60 p-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      <UserRound className="h-3.5 w-3.5" />
+                      模特模式
+                    </div>
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                      需要人物出镜时再上传模特图
+                    </p>
+                  </div>
+                  <div className="inline-flex rounded-lg bg-muted p-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setModelMode("none");
+                        setModelImage("");
+                      }}
+                      className={`rounded-md px-2 py-1 text-[11px] font-medium transition ${
+                        modelMode === "none"
+                          ? "bg-primary text-primary-foreground"
+                          : "text-muted-foreground"
+                      }`}
+                    >
+                      <Ban className="mr-1 inline h-3 w-3" />
+                      无模特
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setModelMode("with_model")}
+                      className={`rounded-md px-2 py-1 text-[11px] font-medium transition ${
+                        modelMode === "with_model"
+                          ? "bg-primary text-primary-foreground"
+                          : "text-muted-foreground"
+                      }`}
+                    >
+                      <UserRound className="mr-1 inline h-3 w-3" />
+                      有模特
+                    </button>
+                  </div>
+                </div>
+
+                {modelMode === "with_model" && (
+                  <label className="flex min-h-24 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-border px-3 text-center transition-colors hover:border-primary/40">
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      className="hidden"
+                      onChange={(event) => void handleSingleAsset(event.target.files, setModelImage)}
+                    />
+                    {modelImage ? (
+                      <div className="relative w-full">
+                        <img src={modelImage} alt="model" className="h-28 w-full rounded-lg object-cover" />
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.preventDefault();
+                            setModelImage("");
+                          }}
+                          className="absolute right-2 top-2 rounded-full bg-black/60 p-1 text-white"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <UserRound className="mb-2 h-4 w-4 text-primary" />
+                        <p className="text-xs text-muted-foreground">上传模特图</p>
+                      </>
+                    )}
+                  </label>
+                )}
+              </div>
+
+              <div className="space-y-2 rounded-2xl border border-border bg-background/60 p-3">
+                <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  <Palette className="h-3.5 w-3.5" />
+                  风格参考
+                </div>
+                <label className="flex min-h-24 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-border px-3 text-center transition-colors hover:border-primary/40">
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    onChange={(event) => void handleSingleAsset(event.target.files, setStyleReferenceImage)}
+                  />
+                  {styleReferenceImage ? (
+                    <div className="relative w-full">
+                      <img
+                        src={styleReferenceImage}
+                        alt="style-reference"
+                        className="h-28 w-full rounded-lg object-cover"
+                      />
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          setStyleReferenceImage("");
+                        }}
+                        className="absolute right-2 top-2 rounded-full bg-black/60 p-1 text-white"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <Palette className="mb-2 h-4 w-4 text-primary" />
+                      <p className="text-xs text-muted-foreground">上传风格参考图</p>
+                    </>
+                  )}
+                </label>
+                <Textarea
+                  value={styleReferenceText}
+                  onChange={(event) => setStyleReferenceText(event.target.value)}
+                  placeholder="例如：暖色轻奢、极简留白、日落通透感。"
+                  className="min-h-20 rounded-xl"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <SelectField
+                  label="模型"
+                  options={modelOptions}
+                  value={selectedModel}
+                  onChange={(value) => setSelectedModel(value as GenerationModel)}
+                />
+                <SelectField
+                  label="清晰度"
+                  options={resolutionOptions}
+                  value={selectedResolution}
+                  onChange={(value) => setSelectedResolution(value as OutputResolution)}
+                />
+              </div>
+            </div>
+          )}
         </div>
 
         <Button
@@ -934,7 +968,7 @@ const GeneratePage = () => {
               <Sparkles className="mx-auto mb-3 h-12 w-12 text-muted-foreground/15" />
               <h3 className="mb-1 text-sm font-semibold text-muted-foreground">准备就绪</h3>
               <p className="max-w-xs text-xs text-muted-foreground/60">
-                上传产品图后，先点击“分析产品”获取 3 个方案，再确认生成专业电商图片。
+                上传商品图，先选一个场景方案，再生成电商图。
               </p>
             </div>
           </div>
