@@ -8,6 +8,8 @@ export type DetailPlanScreen = {
   copyPoints: string[];
   overlayTitle: string;
   overlayBodyLines: string[];
+  humanModelSuggested?: boolean;
+  humanModelReason?: string;
 };
 
 export type DetailPlanOption = {

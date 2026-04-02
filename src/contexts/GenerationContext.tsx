@@ -48,8 +48,6 @@ export interface GenerationJob {
     resolution?: OutputResolution;
     styleReferenceImage?: string;
     styleReferenceText?: string;
-    modelMode?: ModelMode;
-    modelImage?: string;
   };
   createdAt: number;
 }
@@ -97,8 +95,6 @@ export interface DetailGenParams {
   productImages: string[];
   styleReferenceImage?: string;
   styleReferenceText?: string;
-  modelMode?: ModelMode;
-  modelImage?: string;
   screens: DetailScreenJobResult[];
   userId?: string;
   onComplete?: (screens: DetailScreenJobResult[]) => void;
@@ -588,8 +584,6 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           resolution: params.resolution,
           styleReferenceImage: params.styleReferenceImage,
           styleReferenceText: params.styleReferenceText,
-          modelMode: params.modelMode,
-          modelImage: params.modelImage,
         },
         createdAt: Date.now(),
       });
@@ -616,11 +610,6 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             getValidImageUrl(params.styleReferenceImage),
             "detail-style",
           );
-          const modelImage = await ensureUsableImageUrl(
-            getValidImageUrl(params.modelImage),
-            "detail-model",
-          );
-
           const completedImages: string[] = [];
 
           for (let index = 0; index < params.screens.length; index += 1) {
@@ -661,8 +650,6 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
               referenceGallery: gallery.filter(Boolean) as string[],
               styleReferenceImage,
               styleReferenceText: params.styleReferenceText,
-              modelMode: params.modelMode,
-              modelImage,
             });
 
             if (result.error || !result.images[0]) {

@@ -1,8 +1,7 @@
 ﻿
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  Ban,
   CheckCircle2,
   Download,
   Edit3,
@@ -16,7 +15,6 @@ import {
   Sparkles,
   StopCircle,
   Upload,
-  UserRound,
   Wand2,
   X,
   ZoomIn,
@@ -39,7 +37,6 @@ import {
 } from "@/lib/detail-plan";
 import {
   type GenerationModel,
-  type ModelMode,
   type OutputResolution,
 } from "@/lib/ai-generator";
 
@@ -245,6 +242,7 @@ ${targetPlatform}
 - 重点卖点：${screen.copyPoints.join("；")}
 - 后贴标题：${screen.overlayTitle || screen.title}
 - 后贴正文：${screen.overlayBodyLines?.join("；") || screen.copyPoints.join("；")}
+- 人物建议：${screen.humanModelSuggested ? "建议人物出镜" : "建议纯商品展示"}${screen.humanModelReason ? `；原因：${screen.humanModelReason}` : ""}
 - 用户补充的分屏构思：${screenIdea?.trim() || "无"}
 
 生成要求：
@@ -256,7 +254,9 @@ ${targetPlatform}
 6. 请主动为后期文字排版预留干净、安全、易读的留白区域，不要让主体商品挡住文案位置，并优先围绕“后贴标题/后贴正文”的排版需求安排留白。
 7. 严禁出现乱码、伪文字、无法识别的字形、奇怪符号、拼写错误或装饰性怪字体。
 8. ${languageRule(targetLanguage)}
-9. 保持商品真实、可售、适合电商详情页，不做无关艺术化改造。
+9. 如果当前分屏建议人物出镜，可以自然加入真人模特、手部交互或使用动作，但人物只能辅助解释卖点，不能盖住商品主体。
+10. 如果当前分屏建议纯商品展示，就不要额外加入真人模特，除非只是极轻微的手部辅助且明显更利于说明使用方式。
+11. 保持商品真实、可售、适合电商详情页，不做无关艺术化改造。
 `.trim();
 }
 
@@ -314,6 +314,22 @@ function wrapCanvasText(
   return lines;
 }
 
+function splitOverlayBodyLines(text: string): string[] {
+  return text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 4);
+}
+
+function joinOverlayBodyLines(lines: string[]): string {
+  return lines
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 4)
+    .join("\n");
+}
+
 async function loadImageElement(src: string): Promise<HTMLImageElement> {
   return await new Promise((resolve, reject) => {
     const image = new Image();
@@ -334,6 +350,7 @@ async function composePosterImage(args: {
   if (!overlayEnabled || (!overlayTitle.trim() && !overlayBody.trim())) {
     return imageUrl;
   }
+  const overlayBodyLines = splitOverlayBodyLines(overlayBody);
 
   const image = await loadImageElement(imageUrl);
   const canvas = document.createElement("canvas");
@@ -397,13 +414,16 @@ async function composePosterImage(args: {
     });
   }
 
-  if (overlayBody.trim()) {
+  if (overlayBodyLines.length) {
     ctx.fillStyle = "rgba(255,255,255,0.92)";
     ctx.font = `500 ${bodyFontSize}px ${POSTER_FONT_FAMILY}`;
-    const bodyLines = wrapCanvasText(ctx, overlayBody.trim(), textWidth, 4);
-    bodyLines.forEach((line) => {
-      ctx.fillText(line, textX, currentY);
-      currentY += bodyFontSize * 1.5;
+    overlayBodyLines.forEach((lineItem) => {
+      const bodyLines = wrapCanvasText(ctx, `• ${lineItem}`, textWidth, 2);
+      bodyLines.forEach((line) => {
+        ctx.fillText(line, textX, currentY);
+        currentY += bodyFontSize * 1.45;
+      });
+      currentY += bodyFontSize * 0.2;
     });
   }
 
@@ -416,8 +436,6 @@ const DetailDesignPage = () => {
   const [productImages, setProductImages] = useState<string[]>([]);
   const [styleReferenceImage, setStyleReferenceImage] = useState<string>("");
   const [styleReferenceText, setStyleReferenceText] = useState("");
-  const [modelMode, setModelMode] = useState<ModelMode>("none");
-  const [modelImage, setModelImage] = useState<string>("");
   const [productInfo, setProductInfo] = useState("");
   const [targetPlatform, setTargetPlatform] = useState(platformOptions[0]);
   const [targetLanguage, setTargetLanguage] = useState("zh");
@@ -447,6 +465,7 @@ const DetailDesignPage = () => {
   const [isPreparingPreview, setIsPreparingPreview] = useState(false);
   const [detailJobId, setDetailJobId] = useState<string | null>(null);
   const [hasRestoredDraft, setHasRestoredDraft] = useState(false);
+  const resultsSectionRef = useRef<HTMLElement | null>(null);
 
   const activePlan = useMemo(
     () => planOptions[selectedOptionIndex] || null,
@@ -471,10 +490,8 @@ const DetailDesignPage = () => {
       const draft = JSON.parse(rawDraft) as Partial<{
         productInfo: string;
         styleReferenceText: string;
-        modelMode: ModelMode;
         productImages: string[];
         styleReferenceImage: string;
-        modelImage: string;
         selectedRatio: string;
         selectedResolution: OutputResolution;
         generationLanguage: string;
@@ -493,8 +510,6 @@ const DetailDesignPage = () => {
       setProductInfo(draft.productInfo || "");
       setStyleReferenceImage(draft.styleReferenceImage || "");
       setStyleReferenceText(draft.styleReferenceText || "");
-      setModelMode(draft.modelMode || "none");
-      setModelImage(draft.modelImage || "");
       setSelectedRatio(draft.selectedRatio || "3:4");
       setSelectedResolution(draft.selectedResolution || "2k");
       setGenerationLanguage(draft.generationLanguage || "zh");
@@ -568,11 +583,6 @@ const DetailDesignPage = () => {
     );
     setStyleReferenceImage((current) => current || activeDetailJob.detailSettings?.styleReferenceImage || "");
     setStyleReferenceText((current) => current || activeDetailJob.detailSettings?.styleReferenceText || "");
-    setModelMode((current) => {
-      if (current !== "none") return current;
-      return activeDetailJob.detailSettings?.modelMode || "none";
-    });
-    setModelImage((current) => current || activeDetailJob.detailSettings?.modelImage || "");
     if (activeDetailJob.detailSettings?.aspectRatio) {
       setSelectedRatio(activeDetailJob.detailSettings.aspectRatio);
     }
@@ -615,6 +625,19 @@ const DetailDesignPage = () => {
   }, [activeDetailJob, detailJobId, getJob]);
 
   useEffect(() => {
+    const shouldFocusResults = sessionStorage.getItem("detail-design-focus-results");
+    if (!shouldFocusResults) return;
+    if (!generatedScreens.length) return;
+
+    const timer = window.setTimeout(() => {
+      resultsSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      sessionStorage.removeItem("detail-design-focus-results");
+    }, 120);
+
+    return () => window.clearTimeout(timer);
+  }, [generatedScreens.length]);
+
+  useEffect(() => {
     if (!hasRestoredDraft) return;
     sessionStorage.setItem(
       DETAIL_DRAFT_KEY,
@@ -623,8 +646,6 @@ const DetailDesignPage = () => {
         productInfo,
         styleReferenceImage,
         styleReferenceText,
-        modelMode,
-        modelImage,
         selectedRatio,
         selectedResolution,
         generationLanguage,
@@ -643,8 +664,6 @@ const DetailDesignPage = () => {
   }, [
     hasRestoredDraft,
     planOptions,
-    modelMode,
-    modelImage,
     productImages,
     productInfo,
     productSummary,
@@ -746,15 +765,9 @@ const DetailDesignPage = () => {
     if (styleReferenceText.trim()) {
       chunks.push(`风格补充：${styleReferenceText.trim()}`);
     }
-    if (modelMode === "with_model") {
-      chunks.push(
-        modelImage
-          ? "模特要求：使用上传模特图作为人物参考，保证产品主体完整可见。"
-          : "模特要求：需要模特感场景，但目前未上传模特图。",
-      );
-    } else {
-      chunks.push("模特要求：无模特，避免人物出镜。");
-    }
+    chunks.push(
+      "人物策略：由 AI 根据当前商品品类和每一屏的卖点表达，自行判断是否需要真人模特、手部出镜或纯商品展示。只有在上身效果、手持演示、尺寸对比或生活场景更能说明卖点时才加入人物，并且人物不能喧宾夺主。",
+    );
 
     return chunks.filter(Boolean).join("\n");
   };
@@ -762,10 +775,6 @@ const DetailDesignPage = () => {
   const handleGeneratePlan = async () => {
     if (!productImages.length) {
       setError("请先上传至少 1 张商品图");
-      return;
-    }
-    if (modelMode === "with_model" && !modelImage) {
-      setError("已选择有模特模式，请先上传模特图");
       return;
     }
 
@@ -836,6 +845,35 @@ const DetailDesignPage = () => {
     }));
   };
 
+  const updateOverlayBodyLine = (
+    screenNumber: number,
+    lineIndex: number,
+    value: string,
+  ) => {
+    updateGeneratedScreen(screenNumber, (current) => {
+      const lines = splitOverlayBodyLines(current.overlayBody);
+      while (lines.length < 4) {
+        lines.push("");
+      }
+      lines[lineIndex] = value;
+      return {
+        ...current,
+        overlayBody: joinOverlayBodyLines(lines),
+      };
+    });
+  };
+
+  const resetOverlayCopy = (screenData: DetailPlanScreen) => {
+    updateGeneratedScreen(screenData.screen, (current) => ({
+      ...current,
+      overlayTitle: screenData.overlayTitle || screenData.title,
+      overlayBody: joinOverlayBodyLines(
+        screenData.overlayBodyLines?.length ? screenData.overlayBodyLines : screenData.copyPoints,
+      ),
+      overlayEnabled: generationLanguage === "pure" ? false : true,
+    }));
+  };
+
   const getComposedImageUrl = async (generated: GeneratedScreenState): Promise<string> => {
     if (!generated.imageUrl) {
       throw new Error("当前没有可预览图片");
@@ -849,6 +887,55 @@ const DetailDesignPage = () => {
     });
   };
 
+  const composeLongPosterImage = async (screens: GeneratedScreenState[]): Promise<string> => {
+    const completed = screens.filter((screen) => screen.imageUrl);
+    if (!completed.length) {
+      throw new Error("当前没有可拼接的分屏图片");
+    }
+
+    const composedEntries = await Promise.all(
+      completed.map(async (screen) => ({
+        screen: screen.screen,
+        url: await getComposedImageUrl(screen),
+      })),
+    );
+
+    const loaded = await Promise.all(
+      composedEntries.map(async (item) => ({
+        screen: item.screen,
+        image: await loadImageElement(item.url),
+      })),
+    );
+
+    const gap = 24;
+    const width = Math.max(...loaded.map((item) => item.image.naturalWidth || item.image.width));
+    const height =
+      loaded.reduce((sum, item) => sum + (item.image.naturalHeight || item.image.height), 0) +
+      gap * Math.max(0, loaded.length - 1);
+
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      throw new Error("无法创建长图画布");
+    }
+
+    ctx.fillStyle = "#f7f4ef";
+    ctx.fillRect(0, 0, width, height);
+
+    let offsetY = 0;
+    loaded.forEach(({ image }) => {
+      const imageWidth = image.naturalWidth || image.width;
+      const imageHeight = image.naturalHeight || image.height;
+      const drawX = Math.round((width - imageWidth) / 2);
+      ctx.drawImage(image, drawX, offsetY, imageWidth, imageHeight);
+      offsetY += imageHeight + gap;
+    });
+
+    return canvas.toDataURL("image/png");
+  };
+
   const handlePreviewScreen = async (generated: GeneratedScreenState) => {
     setIsPreparingPreview(true);
     try {
@@ -858,6 +945,21 @@ const DetailDesignPage = () => {
     } catch (previewError) {
       setGenerationError(
         previewError instanceof Error ? previewError.message : "预览成品失败",
+      );
+    } finally {
+      setIsPreparingPreview(false);
+    }
+  };
+
+  const handlePreviewLongImage = async () => {
+    setIsPreparingPreview(true);
+    try {
+      const composed = await composeLongPosterImage(generatedScreens);
+      setPreviewImageUrl(composed);
+      setPreviewTitle("详情页长图预览");
+    } catch (previewError) {
+      setGenerationError(
+        previewError instanceof Error ? previewError.message : "预览长图失败",
       );
     } finally {
       setIsPreparingPreview(false);
@@ -876,6 +978,22 @@ const DetailDesignPage = () => {
     } catch (downloadError) {
       setGenerationError(
         downloadError instanceof Error ? downloadError.message : "下载成品失败",
+      );
+    }
+  };
+
+  const handleDownloadLongImage = async () => {
+    try {
+      const composed = await composeLongPosterImage(generatedScreens);
+      const link = document.createElement("a");
+      link.href = composed;
+      link.download = `detail-long-${Date.now()}.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (downloadError) {
+      setGenerationError(
+        downloadError instanceof Error ? downloadError.message : "下载长图失败",
       );
     }
   };
@@ -931,10 +1049,6 @@ const DetailDesignPage = () => {
       setGenerationError("请先完成方案策划并保留至少 1 张商品图");
       return;
     }
-    if (modelMode === "with_model" && !modelImage) {
-      setGenerationError("已选择有模特模式，请先上传模特图");
-      return;
-    }
 
     const nextScreens = createScreenJobPayload(screens);
     setGeneratedScreens((current) => {
@@ -960,8 +1074,6 @@ const DetailDesignPage = () => {
       productImages,
       styleReferenceImage: styleReferenceImage || undefined,
       styleReferenceText: styleReferenceText.trim() || undefined,
-      modelMode,
-      modelImage: modelImage || undefined,
       screens: nextScreens,
       userId: user?.id,
     });
@@ -1116,93 +1228,20 @@ const DetailDesignPage = () => {
               </div>
 
               <div className="rounded-2xl border border-border bg-background p-4">
-                <div className="mb-3 flex items-center justify-between">
-                  <div>
-                    <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                      <UserRound className="h-4 w-4 text-primary" />
-                      模特模式
-                    </div>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      有模特时可上传模特图，逐屏生成会参考人物气质和姿态。
+                <div className="flex items-start gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                    <Images className="h-4.5 w-4.5" />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-sm font-semibold text-foreground">人物出镜交给 AI 判断</div>
+                    <p className="text-xs leading-5 text-muted-foreground">
+                      这里不再手动上传模特图。系统会根据商品品类和每一屏的目标，自动判断是否需要真人模特、手部交互或纯商品展示。
+                    </p>
+                    <p className="text-xs leading-5 text-muted-foreground">
+                      例如服饰上身效果、手持产品演示、尺寸对比场景会更容易触发人物出镜；结构细节和参数屏则优先保持纯商品表达。
                     </p>
                   </div>
-                  <div className="inline-flex rounded-xl bg-muted p-1">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setModelMode("none");
-                        setModelImage("");
-                        resetPlan();
-                      }}
-                      className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
-                        modelMode === "none"
-                          ? "bg-primary text-primary-foreground"
-                          : "text-muted-foreground"
-                      }`}
-                    >
-                      <Ban className="mr-1 inline h-3.5 w-3.5" />
-                      无模特
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setModelMode("with_model");
-                        resetPlan();
-                      }}
-                      className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
-                        modelMode === "with_model"
-                          ? "bg-primary text-primary-foreground"
-                          : "text-muted-foreground"
-                      }`}
-                    >
-                      <UserRound className="mr-1 inline h-3.5 w-3.5" />
-                      有模特
-                    </button>
-                  </div>
                 </div>
-
-                {modelMode === "with_model" && (
-                  <div className="space-y-3">
-                    <label className="flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-border px-4 text-center transition-colors hover:border-primary/40 hover:bg-muted/40">
-                      <input
-                        type="file"
-                        accept="image/jpeg,image/png,image/webp"
-                        className="hidden"
-                        onChange={(event) =>
-                          void handleSingleAsset(event.target.files, setModelImage)
-                        }
-                      />
-                      {modelImage ? (
-                        <div className="relative w-full">
-                          <img
-                            src={modelImage}
-                            alt="model-reference"
-                            className="h-36 w-full rounded-xl object-cover"
-                          />
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.preventDefault();
-                              setModelImage("");
-                              resetPlan();
-                            }}
-                            className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white"
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      ) : (
-                        <>
-                          <UserRound className="mb-2 h-5 w-5 text-primary" />
-                          <div className="text-sm font-medium text-foreground">上传模特图</div>
-                          <div className="mt-1 text-xs text-muted-foreground">
-                            用于参考人物姿态、气质和出镜方式
-                          </div>
-                        </>
-                      )}
-                    </label>
-                  </div>
-                )}
               </div>
 
               <div className="rounded-2xl border border-border bg-background p-4">
@@ -1406,9 +1445,9 @@ const DetailDesignPage = () => {
 
               <div className="mt-4 space-y-2 rounded-2xl border border-border bg-background p-4 text-xs text-muted-foreground">
                 <div className="flex items-center justify-between">
-                  <span>模特模式</span>
+                  <span>人物策略</span>
                   <span className="font-medium text-foreground">
-                    {modelMode === "with_model" ? "有模特" : "无模特"}
+                    AI 自行判断
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
@@ -1423,7 +1462,7 @@ const DetailDesignPage = () => {
                   </div>
                 )}
                 <p>
-                  当前流程会优先用商品图锁定产品本体，再用风格图控制氛围，用后贴真实文字减少乱码。
+                  当前流程会优先用商品图锁定产品本体，再用风格图控制氛围，并根据每屏方案自动决定是否加入人物表达。
                 </p>
               </div>
 
@@ -1596,6 +1635,13 @@ const DetailDesignPage = () => {
                           <p className="mt-2 text-sm leading-6 text-foreground">
                             视觉方向：{screen.visualDirection}
                           </p>
+                          <p className="mt-2 text-sm leading-6 text-foreground">
+                            人物建议：
+                            {screen.humanModelSuggested
+                              ? ` 建议加入真人或手部出镜，${screen.humanModelReason || "更有利于表达使用场景。"}`
+                              : ` 优先纯商品展示，${screen.humanModelReason || "避免人物抢走主体注意力。"}`
+                            }
+                          </p>
                           <div className="mt-2 flex flex-wrap gap-2">
                             {screen.copyPoints.map((point, index) => (
                               <span
@@ -1612,17 +1658,48 @@ const DetailDesignPage = () => {
                   </div>
                 </div>
               </section>
-              <section className="rounded-3xl border border-border bg-card p-5 shadow-sm">
+              <section
+                ref={resultsSectionRef}
+                id="detail-results"
+                className="rounded-3xl border border-border bg-card p-5 shadow-sm"
+              >
                 <div className="mb-4 flex items-center justify-between">
                   <div>
                     <h3 className="text-lg font-semibold text-foreground">逐屏生成结果</h3>
                     <p className="text-sm text-muted-foreground">
-                      先按当前方案逐屏生成，后面我再继续补单屏重排、长图拼接和导出。
+                      现在支持逐屏生成、长图拼接、预览和下载。每屏文案也可以单独微调后再导出。
                     </p>
                   </div>
-                  <div className="rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground">
-                    已完成 {generatedScreens.filter((screen) => screen.status === "done").length}/
-                    {generatedScreens.length}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground">
+                      已完成 {generatedScreens.filter((screen) => screen.status === "done").length}/
+                      {generatedScreens.length}
+                    </div>
+                    {generatedScreens.some((screen) => screen.imageUrl) && (
+                      <>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="rounded-xl"
+                          disabled={isPreparingPreview}
+                          onClick={() => void handlePreviewLongImage()}
+                        >
+                          <ZoomIn className="mr-1.5 h-4 w-4" />
+                          预览长图
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="rounded-xl"
+                          onClick={() => void handleDownloadLongImage()}
+                        >
+                          <Download className="mr-1.5 h-4 w-4" />
+                          下载长图
+                        </Button>
+                      </>
+                    )}
                   </div>
                 </div>
 
@@ -1656,6 +1733,13 @@ const DetailDesignPage = () => {
                             <div className="mt-2">
                               <span className="font-semibold text-foreground">卖点关键词：</span>
                               {screen.copyPoints.join("、")}
+                            </div>
+                            <div className="mt-2">
+                              <span className="font-semibold text-foreground">人物建议：</span>
+                              {screen.humanModelSuggested
+                                ? `建议加入人物辅助，${screen.humanModelReason || "帮助解释使用场景。"}`
+                                : `建议纯商品表达，${screen.humanModelReason || "把注意力留给商品本体。"}`
+                              }
                             </div>
                           </div>
 
@@ -1730,7 +1814,7 @@ const DetailDesignPage = () => {
                                       后贴真实文字
                                     </div>
                                     <div className="text-xs text-muted-foreground">
-                                      用标准字体后贴文字，减少乱码和怪字体风险
+                                      标题和卖点拆开编辑，预览和长图导出都会使用这里的文案
                                     </div>
                                   </div>
                                   <button
@@ -1754,7 +1838,25 @@ const DetailDesignPage = () => {
                                       : "已关闭"}
                                   </button>
                                 </div>
-                                <div className="space-y-2">
+                                <div className="mb-3 flex flex-wrap gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => resetOverlayCopy(screen)}
+                                    disabled={!generated.overlayEnabled || generationLanguage === "pure"}
+                                    className="rounded-full border border-border bg-background px-3 py-1 text-xs text-foreground transition hover:border-primary/40 disabled:cursor-not-allowed disabled:opacity-50"
+                                  >
+                                    恢复 AI 推荐
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => updateOverlayField(screen.screen, "overlayBody", "")}
+                                    disabled={!generated.overlayEnabled || generationLanguage === "pure"}
+                                    className="rounded-full border border-border bg-background px-3 py-1 text-xs text-foreground transition hover:border-primary/40 disabled:cursor-not-allowed disabled:opacity-50"
+                                  >
+                                    清空正文
+                                  </button>
+                                </div>
+                                <div className="space-y-3">
                                   <input
                                     type="text"
                                     value={generated.overlayTitle}
@@ -1771,22 +1873,33 @@ const DetailDesignPage = () => {
                                     placeholder="输入这屏的主标题"
                                     className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none transition focus:ring-2 focus:ring-primary/25 disabled:cursor-not-allowed disabled:opacity-60"
                                   />
-                                  <textarea
-                                    value={generated.overlayBody}
-                                    onChange={(event) =>
-                                      updateOverlayField(
-                                        screen.screen,
-                                        "overlayBody",
-                                        event.target.value,
-                                      )
-                                    }
-                                    disabled={
-                                      !generated.overlayEnabled || generationLanguage === "pure"
-                                    }
-                                    rows={4}
-                                    placeholder="每行一条副标题或卖点"
-                                    className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none transition focus:ring-2 focus:ring-primary/25 disabled:cursor-not-allowed disabled:opacity-60"
-                                  />
+                                  <div className="grid gap-2">
+                                    {Array.from({ length: 4 }, (_, lineIndex) => {
+                                      const lines = splitOverlayBodyLines(generated.overlayBody);
+                                      return (
+                                        <input
+                                          key={`overlay-${screen.screen}-${lineIndex}`}
+                                          type="text"
+                                          value={lines[lineIndex] || ""}
+                                          onChange={(event) =>
+                                            updateOverlayBodyLine(
+                                              screen.screen,
+                                              lineIndex,
+                                              event.target.value,
+                                            )
+                                          }
+                                          disabled={
+                                            !generated.overlayEnabled || generationLanguage === "pure"
+                                          }
+                                          placeholder={`卖点短句 ${lineIndex + 1}`}
+                                          className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none transition focus:ring-2 focus:ring-primary/25 disabled:cursor-not-allowed disabled:opacity-60"
+                                        />
+                                      );
+                                    })}
+                                  </div>
+                                  <p className="text-xs leading-5 text-muted-foreground">
+                                    建议每条控制在 8 到 18 个字，长图拼接时会自动按项目符号排版。
+                                  </p>
                                 </div>
                               </div>
 

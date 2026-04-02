@@ -368,6 +368,10 @@ serve(async (req: Request) => {
       roleInstructions.push(
         "One reference image is a model/person reference. A visible human model is mandatory in the final image. Use it to guide pose, hand placement, body presence, and natural wearing context. Do not let the model hide the product.",
       );
+    } else {
+      roleInstructions.push(
+        "There is no dedicated model reference image. Only add a natural human presence or hands when the screen plan clearly benefits from wearing effect, size reference, or real usage context.",
+      );
     }
     if (styleImage) {
       roleInstructions.push(
@@ -380,6 +384,9 @@ serve(async (req: Request) => {
     const roleInstruction = roleInstructions.join(". ");
 
     const promptSections = extractPromptSections(String(prompt || ""));
+    const promptSuggestsHuman = /建议人物出镜|需要人物|真人模特|上身|手持|手部|使用动作|生活场景/i.test(
+      String(prompt || ""),
+    );
     const hasExplicitScene = Boolean(
       promptSections.sceneKeywords ||
         promptSections.composition ||
@@ -426,7 +433,9 @@ serve(async (req: Request) => {
           ].join(". ")
         : [
             "MODEL PRESENCE:",
-            "Do not add a human model, hands, or mannequin unless the prompt explicitly demands a hand-held close-up.",
+            promptSuggestsHuman
+              ? "The current screen plan suggests that a visible person or hands can help explain the product. Add a natural human presence only as supporting context, and keep the product as the primary visual hero."
+              : "Prefer pure product composition. Do not add a human model, hands, or mannequin unless the screen plan clearly calls for wearing effect, hand-held usage, or human scale reference.",
           ].join(". ");
     const styleReferenceInstruction = styleReferenceText
       ? `STYLE NOTES FROM USER: ${String(styleReferenceText).trim()}.`

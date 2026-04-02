@@ -1,5 +1,5 @@
 import { useContext, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   AlertCircle,
   CheckCircle2,
@@ -16,6 +16,8 @@ function targetPath(kind: "copy" | "image" | "detail") {
 
 export function GenerationFloatingIndicator() {
   const ctx = useContext(GenerationContext);
+  const navigate = useNavigate();
+  const location = useLocation();
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
 
   const visibleJobs = useMemo(() => {
@@ -36,9 +38,33 @@ export function GenerationFloatingIndicator() {
     }
   };
 
+  const handleViewResult = () => {
+    const target = targetPath(latestJob.kind);
+
+    if (latestJob.kind === "detail") {
+      sessionStorage.setItem("detail-design-focus-results", "1");
+    }
+
+    if (location.pathname !== target) {
+      navigate(target);
+    } else if (latestJob.kind === "detail") {
+      document.getElementById("detail-results")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }
+
+    dismiss(latestJob.id);
+  };
+
   const progress = latestJob.total
     ? Math.max(6, Math.min(100, (latestJob.current / latestJob.total) * 100))
     : 0;
+
+  const finishedLabel =
+    latestJob.kind === "detail"
+      ? `已完成 ${latestJob.results.length} 屏详情图`
+      : `已完成 ${latestJob.results.length} 张图片`;
 
   return (
     <div className="fixed bottom-20 right-4 z-[60] w-full max-w-xs animate-in slide-in-from-bottom-4 duration-300 md:bottom-6">
@@ -58,8 +84,7 @@ export function GenerationFloatingIndicator() {
             <div className="flex items-center justify-between gap-2">
               <p className="truncate text-sm font-medium text-foreground">
                 {latestJob.status === "running" && latestJob.step}
-                {latestJob.status === "done" &&
-                  `已完成 ${latestJob.results.length} 张${latestJob.kind === "detail" ? "详情页分屏" : "图片"}`}
+                {latestJob.status === "done" && finishedLabel}
                 {latestJob.status === "error" && "生成失败"}
                 {latestJob.status === "canceled" && "已取消"}
               </p>
@@ -100,14 +125,14 @@ export function GenerationFloatingIndicator() {
                   取消任务
                 </button>
               ) : (
-                <Link
-                  to={targetPath(latestJob.kind)}
+                <button
+                  type="button"
+                  onClick={handleViewResult}
                   className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
-                  onClick={() => dismiss(latestJob.id)}
                 >
                   <Sparkles className="h-3 w-3" />
                   查看结果
-                </Link>
+                </button>
               )}
             </div>
           </div>

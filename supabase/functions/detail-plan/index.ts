@@ -14,6 +14,8 @@ type DetailPlanScreen = {
   copyPoints: string[];
   overlayTitle: string;
   overlayBodyLines: string[];
+  humanModelSuggested: boolean;
+  humanModelReason: string;
 };
 
 type DetailPlanOption = {
@@ -132,6 +134,8 @@ function buildFallbackPlan(
         copyPoints,
         overlayTitle: "一眼看懂主打卖点",
         overlayBodyLines: overlayBodyFromCopyPoints(copyPoints),
+        humanModelSuggested: false,
+        humanModelReason: "首屏以商品主体识别为先，优先保证商品清晰完整。",
       };
     }
 
@@ -145,6 +149,8 @@ function buildFallbackPlan(
         copyPoints,
         overlayTitle: "为什么值得入手",
         overlayBodyLines: overlayBodyFromCopyPoints(copyPoints),
+        humanModelSuggested: false,
+        humanModelReason: "收尾转化屏更适合用商品与信息做总结，不一定需要人物出镜。",
       };
     }
 
@@ -157,6 +163,8 @@ function buildFallbackPlan(
       copyPoints,
       overlayTitle: "细节亮点一屏讲清",
       overlayBodyLines: overlayBodyFromCopyPoints(copyPoints),
+      humanModelSuggested: false,
+      humanModelReason: "卖点细节屏优先突出商品本体、材质和结构。",
     };
   });
 
@@ -312,6 +320,11 @@ function normalizePlanOption(
           current.overlayBodyLines,
           fallbackScreen?.overlayBodyLines || overlayBodyFromCopyPoints(copyPoints),
         ).slice(0, 4),
+        humanModelSuggested: Boolean(current.humanModelSuggested ?? fallbackScreen?.humanModelSuggested),
+        humanModelReason: safeString(
+          current.humanModelReason,
+          fallbackScreen?.humanModelReason || "如需人物出镜，请以商品表达更完整为判断标准。",
+        ),
       };
     });
 
@@ -395,11 +408,12 @@ serve(async (req: Request) => {
       "If the uploaded image is a screenshot or collage, ignore UI chrome, browser frame, editor panels, and generated examples that are not part of the physical product.",
       "You must identify product category, material, color palette, shape, pattern, visible text, and practical selling points.",
       "For each screen, provide both visual planning and short overlay copy that is suitable for post-production text overlay.",
+      "For each screen, also decide whether a human model is recommended. Only recommend a human model when it clearly helps show wearing effect, size reference, hand interaction, or real usage context.",
       "overlayTitle must be short, strong, readable, and suitable as a real poster title.",
       "overlayBodyLines must contain 2 to 4 short lines, each line concise and commercially useful. Avoid fake slogans and avoid generic filler.",
       "The result must be practical for Chinese e-commerce detail-page design and must stay tightly related to the actual product.",
       "Return JSON only with this schema:",
-      '{"productSummary":"中文商品总结","visibleText":"商品上可见文字，没有则写NONE","planOptions":[{"planName":"方案名","tone":"整体调性","audience":"目标人群","summary":"整版总结","designSpec":{"mainColors":["主色1","主色2"],"accentColors":["辅助色1","辅助色2"],"typography":"字体建议","layoutTone":"版式风格","imageStyle":"画面风格","languageGuidelines":"文案规范"},"screens":[{"screen":1,"title":"分屏标题","goal":"该屏目标","visualDirection":"该屏视觉方向","copyPoints":["文案点1","文案点2","文案点3"],"overlayTitle":"后贴标题","overlayBodyLines":["后贴正文1","后贴正文2","后贴正文3"]}]}]}',
+      '{"productSummary":"中文商品总结","visibleText":"商品上可见文字，没有则写NONE","planOptions":[{"planName":"方案名","tone":"整体调性","audience":"目标人群","summary":"整版总结","designSpec":{"mainColors":["主色1","主色2"],"accentColors":["辅助色1","辅助色2"],"typography":"字体建议","layoutTone":"版式风格","imageStyle":"画面风格","languageGuidelines":"文案规范"},"screens":[{"screen":1,"title":"分屏标题","goal":"该屏目标","visualDirection":"该屏视觉方向","copyPoints":["文案点1","文案点2","文案点3"],"overlayTitle":"后贴标题","overlayBodyLines":["后贴正文1","后贴正文2","后贴正文3"],"humanModelSuggested":false,"humanModelReason":"是否需要模特的简短理由"}]}]}',
     ].join(" ");
 
     const candidateText = await callGemini(geminiApiKey, productImages, promptText);
