@@ -6,6 +6,8 @@ export type DetailPlanScreen = {
   goal: string;
   visualDirection: string;
   copyPoints: string[];
+  overlayTitle: string;
+  overlayBodyLines: string[];
 };
 
 export type DetailPlanOption = {
@@ -39,6 +41,12 @@ export type DetailPlanParams = {
   screenIdeas?: string[];
 };
 
+export type OptimizeProductInfoParams = {
+  productImages: string[];
+  productInfo: string;
+  targetPlatform?: string;
+};
+
 export async function generateDetailPlan(
   params: DetailPlanParams,
 ): Promise<DetailPlanResponse> {
@@ -55,4 +63,23 @@ export async function generateDetailPlan(
   }
 
   return data as DetailPlanResponse;
+}
+
+export async function optimizeProductInfo(
+  params: OptimizeProductInfoParams,
+): Promise<string> {
+  const { data, error } = await supabase.functions.invoke("optimize-product-info", {
+    body: params,
+  });
+
+  if (error) {
+    throw new Error(error.message || "产品信息优化失败");
+  }
+
+  const optimized = data?.optimizedText;
+  if (!optimized || typeof optimized !== "string") {
+    throw new Error("产品信息优化未返回有效结果");
+  }
+
+  return optimized;
 }

@@ -33,6 +33,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useGeneration } from "@/contexts/GenerationContext";
 import {
   generateDetailPlan,
+  optimizeProductInfo,
   type DetailPlanOption,
   type DetailPlanScreen,
 } from "@/lib/detail-plan";
@@ -242,6 +243,8 @@ ${targetPlatform}
 - 目标：${screen.goal}
 - 视觉方向：${screen.visualDirection}
 - 重点卖点：${screen.copyPoints.join("；")}
+- 后贴标题：${screen.overlayTitle || screen.title}
+- 后贴正文：${screen.overlayBodyLines?.join("；") || screen.copyPoints.join("；")}
 - 用户补充的分屏构思：${screenIdea?.trim() || "无"}
 
 生成要求：
@@ -250,7 +253,7 @@ ${targetPlatform}
 3. 如果用户提供了分屏构思，必须优先吸收并融入当前这一屏，而不是忽略它。
 4. 如果需要出现说明性元素，优先用版式留白、局部结构和材质细节表达。
 5. 基础生成图里不要直接渲染任何嵌入式文字、标题字、卖点字、海报字或装饰字，所有最终文字会在后期使用真实字体叠加。
-6. 请主动为后期文字排版预留干净、安全、易读的留白区域，不要让主体商品挡住文案位置。
+6. 请主动为后期文字排版预留干净、安全、易读的留白区域，不要让主体商品挡住文案位置，并优先围绕“后贴标题/后贴正文”的排版需求安排留白。
 7. 严禁出现乱码、伪文字、无法识别的字形、奇怪符号、拼写错误或装饰性怪字体。
 8. ${languageRule(targetLanguage)}
 9. 保持商品真实、可售、适合电商详情页，不做无关艺术化改造。
@@ -422,6 +425,7 @@ const DetailDesignPage = () => {
   const [useScreenIdeas, setUseScreenIdeas] = useState(false);
   const [screenIdeas, setScreenIdeas] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isOptimizingProductInfo, setIsOptimizingProductInfo] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [productSummary, setProductSummary] = useState("");
   const [visibleText, setVisibleText] = useState("NONE");
@@ -527,8 +531,11 @@ const DetailDesignPage = () => {
           prompt: existing?.prompt || "",
           imageUrl: existing?.imageUrl,
           error: existing?.error,
-          overlayTitle: existing?.overlayTitle || screen.title,
-          overlayBody: existing?.overlayBody || screen.copyPoints.join("\n"),
+          overlayTitle: existing?.overlayTitle || screen.overlayTitle || screen.title,
+          overlayBody:
+            existing?.overlayBody ||
+            screen.overlayBodyLines?.join("\n") ||
+            screen.copyPoints.join("\n"),
           overlayEnabled:
             generationLanguage === "pure"
               ? false
@@ -786,6 +793,29 @@ const DetailDesignPage = () => {
     }
   };
 
+  const handleOptimizeProductInfo = async () => {
+    if (!productImages.length && !productInfo.trim()) {
+      setError("请先上传商品图或填写一些基础产品信息");
+      return;
+    }
+
+    setIsOptimizingProductInfo(true);
+    setError(null);
+
+    try {
+      const optimized = await optimizeProductInfo({
+        productImages,
+        productInfo,
+        targetPlatform,
+      });
+      setProductInfo(optimized);
+    } catch (optimizeError) {
+      setError(optimizeError instanceof Error ? optimizeError.message : "产品信息优化失败");
+    } finally {
+      setIsOptimizingProductInfo(false);
+    }
+  };
+
   const updateGeneratedScreen = (
     screenNumber: number,
     updater: (current: GeneratedScreenState) => GeneratedScreenState,
@@ -885,8 +915,11 @@ const DetailDesignPage = () => {
         prompt,
         imageUrl: current?.imageUrl,
         error: undefined,
-        overlayTitle: current?.overlayTitle || screen.title,
-        overlayBody: current?.overlayBody || screen.copyPoints.join("\n"),
+        overlayTitle: current?.overlayTitle || screen.overlayTitle || screen.title,
+        overlayBody:
+          current?.overlayBody ||
+          screen.overlayBodyLines?.join("\n") ||
+          screen.copyPoints.join("\n"),
         overlayEnabled:
           generationLanguage === "pure" ? false : current?.overlayEnabled ?? true,
       };
@@ -1046,15 +1079,40 @@ const DetailDesignPage = () => {
 
             <div className="mt-5 space-y-4 border-t border-border pt-5">
               <div className="space-y-1.5">
-                <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  产品信息
-                </label>
+                <div className="flex items-center justify-between gap-3">
+                  <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    产品信息
+                  </label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleOptimizeProductInfo}
+                    disabled={isOptimizingProductInfo || (!productImages.length && !productInfo.trim())}
+                    className="h-8 rounded-xl px-3 text-xs"
+                  >
+                    {isOptimizingProductInfo ? (
+                      <>
+                        <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                        AI 优化中
+                      </>
+                    ) : (
+                      <>
+                        <Wand2 className="mr-1.5 h-3.5 w-3.5" />
+                        AI 帮忙优化
+                      </>
+                    )}
+                  </Button>
+                </div>
                 <Textarea
                   value={productInfo}
                   onChange={(event) => setProductInfo(event.target.value)}
-                  placeholder="填写产品介绍、核心卖点、材质、尺寸、适用人群和你希望画面保留的信息。信息越完整，AI 误识别和文字乱码的概率越低。"
+                  placeholder="填写产品介绍、核心卖点、材质、尺寸、适用人群和你希望画面保留的信息。也可以先上传商品图，再点右上角 AI 帮忙优化。"
                   className="min-h-28 rounded-2xl"
                 />
+                <p className="text-xs leading-5 text-muted-foreground">
+                  AI 会把商品信息整理成更适合详情页策划和后贴文案的结构化文本，你再微调即可。
+                </p>
               </div>
 
               <div className="rounded-2xl border border-border bg-background p-4">

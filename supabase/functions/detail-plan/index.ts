@@ -12,6 +12,8 @@ type DetailPlanScreen = {
   goal: string;
   visualDirection: string;
   copyPoints: string[];
+  overlayTitle: string;
+  overlayBodyLines: string[];
 };
 
 type DetailPlanOption = {
@@ -46,7 +48,7 @@ function normalizeImages(value: unknown): string[] {
       return "";
     })
     .filter((item) => item.length > 100)
-    .slice(0, 3);
+    .slice(0, 5);
 }
 
 function getMimeType(dataUrl: string): string {
@@ -78,16 +80,14 @@ async function tryOptionalAuth(req: Request) {
     const token = authHeader.replace("Bearer ", "");
     await supabase.auth.getUser(token);
   } catch (error) {
-    console.warn("detail-plan: optional auth check failed", error);
+    console.warn("detail-plan optional auth check failed", error);
   }
 }
 
 function clampScreenCount(value: unknown): number {
   const parsed = Number(value);
-  if (Number.isFinite(parsed)) {
-    return Math.min(Math.max(Math.round(parsed), 3), 8);
-  }
-  return 4;
+  if (!Number.isFinite(parsed)) return 4;
+  return Math.min(Math.max(Math.round(parsed), 3), 8);
 }
 
 function normalizeScreenIdeas(value: unknown, screenCount: number): string[] {
@@ -95,7 +95,22 @@ function normalizeScreenIdeas(value: unknown, screenCount: number): string[] {
   return value
     .slice(0, screenCount)
     .map((item) => String(item ?? "").trim())
-    .map((item) => item.slice(0, 200));
+    .map((item) => item.slice(0, 220));
+}
+
+function safeString(value: unknown, fallback = ""): string {
+  const text = String(value ?? fallback).trim();
+  return text || fallback;
+}
+
+function safeStringArray(value: unknown, fallback: string[]): string[] {
+  if (!Array.isArray(value)) return fallback;
+  const items = value.map((item) => safeString(item)).filter(Boolean);
+  return items.length ? items : fallback;
+}
+
+function overlayBodyFromCopyPoints(copyPoints: string[]): string[] {
+  return copyPoints.slice(0, 3).map((item) => item.trim()).filter(Boolean);
 }
 
 function buildFallbackPlan(
@@ -106,30 +121,42 @@ function buildFallbackPlan(
 ): DetailPlanOption {
   const screens = Array.from({ length: screenCount }, (_, index) => {
     const screen = index + 1;
+
     if (screen === 1) {
+      const copyPoints = ["产品名称", "一句核心卖点", "主视觉氛围"];
       return {
         screen,
         title: "首屏主视觉",
         goal: "让用户一眼认出商品和整体调性",
-        visualDirection: "用清晰主商品图建立第一印象，背景风格贴合整版主题，保留足够留白放核心标题。",
-        copyPoints: ["产品名", "一句核心卖点", "主视觉氛围"],
+        visualDirection: "用清晰主商品图建立第一印象，背景风格贴合整版主题，预留安全留白放标题与副文案。",
+        copyPoints,
+        overlayTitle: "一眼看懂主打卖点",
+        overlayBodyLines: overlayBodyFromCopyPoints(copyPoints),
       };
     }
+
     if (screen === screenCount) {
+      const copyPoints = ["价值总结", "信任背书", "购买引导"];
       return {
         screen,
         title: "收尾转化屏",
         goal: "总结价值并推动下单决策",
-        visualDirection: "保持整体视觉统一，强化品牌感与信任感，可加入礼赠感、质保感或适用场景总结。",
-        copyPoints: ["价值总结", "信任背书", "购买引导"],
+        visualDirection: "保持整体视觉统一，强化信任感与购买理由，适合做收尾转化。",
+        copyPoints,
+        overlayTitle: "为什么值得入手",
+        overlayBodyLines: overlayBodyFromCopyPoints(copyPoints),
       };
     }
+
+    const copyPoints = ["材质/做工", "功能亮点", "使用场景"];
     return {
       screen,
       title: `卖点展示屏 ${screen - 1}`,
       goal: "拆解商品的关键卖点与使用感受",
-      visualDirection: "围绕商品本体做局部放大、材质细节、场景化陈列或功能点强调。",
-      copyPoints: ["材质/做工", "功能亮点", "使用场景"],
+      visualDirection: "围绕商品本体做局部放大、材质细节、场景化陈列或功能点强调，兼顾文案留白。",
+      copyPoints,
+      overlayTitle: "细节亮点一屏讲清",
+      overlayBodyLines: overlayBodyFromCopyPoints(copyPoints),
     };
   });
 
@@ -141,10 +168,10 @@ function buildFallbackPlan(
     designSpec: {
       mainColors: ["奶白", "浅金", "石墨灰"],
       accentColors: ["品牌主色", "点缀高亮色"],
-      typography: "标题强调识别度，正文保持简洁可读",
-      layoutTone: "信息层级清楚，留白足够，适合电商长图阅读",
-      imageStyle: "商品主体清晰、细节可辨认、风格统一",
-      languageGuidelines: "文案短句化、卖点前置、避免空泛描述",
+      typography: "标题层级清晰，正文短句化，适合后贴真实文字",
+      layoutTone: "信息层级清楚，留白充足，适合详情页长图阅读",
+      imageStyle: "商品主体清晰、细节可辨识、统一电商质感",
+      languageGuidelines: "短句化、卖点前置、避免空泛口号，适配后期文字叠加",
     },
     screens,
   };
@@ -178,7 +205,7 @@ async function callGemini(
   images: string[],
   promptText: string,
 ): Promise<string> {
-  const models = ["gemini-2.5-flash", "gemini-2.0-flash-001"];
+  const models = ["gemini-2.5-flash", "gemini-1.5-flash"];
   let lastError = "Unknown Gemini error";
 
   for (const model of models) {
@@ -202,7 +229,7 @@ async function callGemini(
         contents: [{ parts }],
         generationConfig: {
           temperature: 0.35,
-          topP: 0.8,
+          topP: 0.85,
           maxOutputTokens: 4096,
           responseMimeType: "application/json",
           thinkingConfig: {
@@ -229,7 +256,7 @@ async function callGemini(
       continue;
     }
 
-    let detail = rawText.slice(0, 400);
+    let detail = rawText.slice(0, 500);
     try {
       const parsed = JSON.parse(rawText);
       detail = parsed?.error?.message || detail;
@@ -241,17 +268,6 @@ async function callGemini(
   }
 
   throw new Error(lastError);
-}
-
-function safeString(value: unknown, fallback = ""): string {
-  const text = String(value ?? fallback).trim();
-  return text || fallback;
-}
-
-function safeStringArray(value: unknown, fallback: string[]): string[] {
-  if (!Array.isArray(value)) return fallback;
-  const items = value.map((item) => safeString(item)).filter(Boolean);
-  return items.length ? items : fallback;
 }
 
 function normalizePlanOption(
@@ -273,18 +289,29 @@ function normalizePlanOption(
     .slice(0, screenCount)
     .map((screen, screenIndex) => {
       const current = screen && typeof screen === "object" ? screen as Record<string, unknown> : {};
+      const fallbackScreen = fallback.screens[screenIndex];
+      const copyPoints = safeStringArray(
+        current.copyPoints,
+        fallbackScreen?.copyPoints || ["核心标题", "卖点短句", "辅助说明"],
+      );
+
       return {
         screen: Number(current.screen) || screenIndex + 1,
-        title: safeString(current.title, fallback.screens[screenIndex]?.title || `内容屏 ${screenIndex + 1}`),
-        goal: safeString(current.goal, fallback.screens[screenIndex]?.goal || "突出当前屏的关键信息"),
+        title: safeString(current.title, fallbackScreen?.title || `内容屏 ${screenIndex + 1}`),
+        goal: safeString(current.goal, fallbackScreen?.goal || "突出当前屏的关键卖点"),
         visualDirection: safeString(
           current.visualDirection,
-          fallback.screens[screenIndex]?.visualDirection || "保持商品主体清晰，围绕卖点组织画面。",
+          fallbackScreen?.visualDirection || "保持商品主体清晰，围绕卖点组织画面，并预留文字留白。",
         ),
-        copyPoints: safeStringArray(
-          current.copyPoints,
-          fallback.screens[screenIndex]?.copyPoints || ["核心标题", "卖点短句", "辅助说明"],
+        copyPoints,
+        overlayTitle: safeString(
+          current.overlayTitle,
+          fallbackScreen?.overlayTitle || copyPoints[0] || `第 ${screenIndex + 1} 屏重点`,
         ),
+        overlayBodyLines: safeStringArray(
+          current.overlayBodyLines,
+          fallbackScreen?.overlayBodyLines || overlayBodyFromCopyPoints(copyPoints),
+        ).slice(0, 4),
       };
     });
 
@@ -330,7 +357,7 @@ serve(async (req: Request) => {
     const screenIdeas = normalizeScreenIdeas(body.screenIdeas, screenCount);
 
     if (!productImages.length) {
-      return new Response(JSON.stringify({ error: "请上传至少 1 张商品图" }), {
+      return new Response(JSON.stringify({ error: "请至少上传 1 张商品图" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -351,28 +378,28 @@ serve(async (req: Request) => {
     }
 
     const promptText = [
-      "You are a senior e-commerce detail-page strategist, visual planner, and merchandising designer.",
-      "Analyze the uploaded product images and produce exactly 3 different Chinese detail-page plans.",
+      "You are a senior e-commerce detail-page strategist, visual planner, and copy planner.",
+      "Analyze the uploaded product images and produce exactly 3 different detail-page plans.",
       `Target platform: ${targetPlatform}.`,
-      `Target language: ${targetLanguage}.`,
+      `Target language for overlay copy: ${targetLanguage}.`,
       `Requested screen count: ${screenCount}.`,
       productInfo
         ? `User notes and selling points: ${productInfo}.`
         : "No extra notes were provided by the user.",
       screenIdeas.some(Boolean)
-        ? `The user also provided optional per-screen ideas: ${screenIdeas
-            .map((idea, index) => `screen ${index + 1}: ${idea || "no extra idea"}`)
+        ? `User screen ideas: ${screenIdeas
+            .map((idea, index) => `screen ${index + 1}: ${idea || "none"}`)
             .join(" | ")}.`
         : "No manual per-screen ideas were provided.",
       "Focus on the actual sellable product only.",
-      "If the uploaded image is a screenshot or a composition, ignore UI chrome, editor panels, browser frame, generated examples, and poster text that are not part of the physical product.",
-      "You must identify product category, material, shape, surface details, printed pattern, color palette, and visible product text.",
-      "Then output exactly 3 detail-page plan options for the same product.",
-      "Each option must include a distinct visual angle and merchandising strategy, but all must remain practical for Chinese e-commerce detail pages.",
-      "When the user provides screen ideas, merge them into the corresponding screens instead of ignoring them.",
-      "Do not output generic filler. The plans must clearly relate to the actual product.",
+      "If the uploaded image is a screenshot or collage, ignore UI chrome, browser frame, editor panels, and generated examples that are not part of the physical product.",
+      "You must identify product category, material, color palette, shape, pattern, visible text, and practical selling points.",
+      "For each screen, provide both visual planning and short overlay copy that is suitable for post-production text overlay.",
+      "overlayTitle must be short, strong, readable, and suitable as a real poster title.",
+      "overlayBodyLines must contain 2 to 4 short lines, each line concise and commercially useful. Avoid fake slogans and avoid generic filler.",
+      "The result must be practical for Chinese e-commerce detail-page design and must stay tightly related to the actual product.",
       "Return JSON only with this schema:",
-      '{"productSummary":"中文商品总结","visibleText":"商品上可见文字，没有则写NONE","planOptions":[{"planName":"方案名","tone":"整体调性","audience":"目标人群","summary":"整版总结","designSpec":{"mainColors":["主色1","主色2"],"accentColors":["辅助色1","辅助色2"],"typography":"字体建议","layoutTone":"版式风格","imageStyle":"画面风格","languageGuidelines":"文案规范"},"screens":[{"screen":1,"title":"分屏标题","goal":"该屏目标","visualDirection":"该屏视觉方向","copyPoints":["文案点1","文案点2","文案点3"]}]}]}',
+      '{"productSummary":"中文商品总结","visibleText":"商品上可见文字，没有则写NONE","planOptions":[{"planName":"方案名","tone":"整体调性","audience":"目标人群","summary":"整版总结","designSpec":{"mainColors":["主色1","主色2"],"accentColors":["辅助色1","辅助色2"],"typography":"字体建议","layoutTone":"版式风格","imageStyle":"画面风格","languageGuidelines":"文案规范"},"screens":[{"screen":1,"title":"分屏标题","goal":"该屏目标","visualDirection":"该屏视觉方向","copyPoints":["文案点1","文案点2","文案点3"],"overlayTitle":"后贴标题","overlayBodyLines":["后贴正文1","后贴正文2","后贴正文3"]}]}]}',
     ].join(" ");
 
     const candidateText = await callGemini(geminiApiKey, productImages, promptText);
@@ -387,7 +414,7 @@ serve(async (req: Request) => {
       const jsonMatch = candidateText.match(/\{[\s\S]*\}/);
       parsed = JSON.parse(jsonMatch ? jsonMatch[0] : candidateText);
     } catch (error) {
-      console.warn("detail-plan: parse failed, using fallback", error);
+      console.warn("detail-plan parse failed, using fallback", error);
     }
 
     const productSummary = safeString(parsed.productSummary, fallbackProductSummary);
