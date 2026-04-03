@@ -6,17 +6,23 @@ import {
   ImagePlus,
   Languages,
   Loader2,
-  Pencil,
   RefreshCw,
   Sparkles,
+  Trash2,
   Upload,
   XCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -53,18 +59,24 @@ interface TranslationJob {
 const MAX_FILES = 8;
 const LOCAL_HISTORY_KEY = "local_image_history";
 
-const readFileAsDataUrl = (file: File) =>
-  new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(new Error("图片读取失败"));
-    reader.readAsDataURL(file);
-  });
+const TARGET_LANGUAGES = [
+  { value: "en", label: "English" },
+  { value: "zh", label: "简体中文" },
+  { value: "zh_tw", label: "繁體中文" },
+  { value: "ja", label: "日本語" },
+  { value: "ko", label: "한국어" },
+  { value: "fr", label: "Français" },
+  { value: "de", label: "Deutsch" },
+  { value: "es", label: "Español" },
+  { value: "it", label: "Italiano" },
+  { value: "pt", label: "Português" },
+  { value: "ru", label: "Русский" },
+  { value: "ar", label: "العربية" },
+  { value: "th", label: "ไทย" },
+  { value: "vi", label: "Tiếng Việt" },
+];
 
-const statusMeta: Record<
-  JobStatus,
-  { label: string; className: string }
-> = {
+const statusMeta: Record<JobStatus, { label: string; className: string }> = {
   uploaded: { label: "待处理", className: "bg-muted text-muted-foreground" },
   ocring: { label: "识别中", className: "bg-primary/10 text-primary" },
   editing: { label: "待校对", className: "bg-amber-500/10 text-amber-700" },
@@ -73,16 +85,71 @@ const statusMeta: Record<
   error: { label: "失败", className: "bg-destructive/10 text-destructive" },
 };
 
+const readFileAsDataUrl = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(new Error("图片读取失败"));
+    reader.readAsDataURL(file);
+  });
+
+function SummaryStat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-2xl bg-background px-4 py-3">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="mt-1 text-lg font-semibold text-foreground">{value}</div>
+    </div>
+  );
+}
+
+function PreviewPanel({
+  title,
+  subtitle,
+  image,
+  placeholder,
+}: {
+  title: string;
+  subtitle: string;
+  image?: string;
+  placeholder?: string;
+}) {
+  return (
+    <div className="space-y-3 rounded-2xl border border-border p-4">
+      <div>
+        <div className="font-medium text-foreground">{title}</div>
+        <div className="mt-1 text-sm text-muted-foreground">{subtitle}</div>
+      </div>
+      {image ? (
+        <div className="overflow-hidden rounded-2xl bg-muted/30">
+          <img
+            src={image}
+            alt={title}
+            className="max-h-[460px] w-full object-contain"
+          />
+        </div>
+      ) : (
+        <div className="flex min-h-[360px] items-center justify-center rounded-2xl border border-dashed border-border bg-muted/20 text-sm text-muted-foreground">
+          {placeholder}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function TranslateImagePage() {
   const [jobs, setJobs] = useState<TranslationJob[]>([]);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [isBatchRunning, setIsBatchRunning] = useState(false);
+  const [targetLanguage, setTargetLanguage] = useState("en");
 
   const activeJob =
     jobs.find((job) => job.id === activeJobId) || jobs[0] || null;
 
   const doneJobs = jobs.filter((job) => job.status === "done");
   const pendingJobs = jobs.filter((job) => job.status !== "done");
+  const targetLanguageLabel =
+    TARGET_LANGUAGES.find((item) => item.value === targetLanguage)?.label ||
+    "English";
 
   const updateJob = useCallback(
     (jobId: string, updater: (job: TranslationJob) => TranslationJob) => {
@@ -93,24 +160,29 @@ export default function TranslateImagePage() {
     [],
   );
 
-  const saveToLocalHistory = useCallback((imageUrl: string) => {
-    const localHistory = JSON.parse(localStorage.getItem(LOCAL_HISTORY_KEY) || "[]");
-    const newRecord = {
-      id: crypto.randomUUID(),
-      image_url: imageUrl,
-      prompt: "图文翻译",
-      style: "翻译",
-      scene: "translate",
-      task_kind: "translate",
-      image_type: "图文翻译",
-      aspect_ratio: "original",
-      created_at: new Date().toISOString(),
-    };
-    localStorage.setItem(
-      LOCAL_HISTORY_KEY,
-      JSON.stringify([newRecord, ...localHistory].slice(0, 150)),
-    );
-  }, []);
+  const saveToLocalHistory = useCallback(
+    (imageUrl: string, fileName: string) => {
+      const localHistory = JSON.parse(
+        localStorage.getItem(LOCAL_HISTORY_KEY) || "[]",
+      );
+      const newRecord = {
+        id: crypto.randomUUID(),
+        image_url: imageUrl,
+        prompt: `图文翻译 · ${fileName}`,
+        style: "翻译",
+        scene: "translate",
+        task_kind: "translate",
+        image_type: "图文翻译",
+        aspect_ratio: "original",
+        created_at: new Date().toISOString(),
+      };
+      localStorage.setItem(
+        LOCAL_HISTORY_KEY,
+        JSON.stringify([newRecord, ...localHistory].slice(0, 150)),
+      );
+    },
+    [],
+  );
 
   const persistTranslatedImage = useCallback(
     async (job: TranslationJob, imageUrl: string) => {
@@ -136,7 +208,7 @@ export default function TranslateImagePage() {
         }
       }
 
-      saveToLocalHistory(permanentUrl);
+      saveToLocalHistory(permanentUrl, job.fileName);
       upsertCuratedImage({
         image_url: permanentUrl,
         prompt: `图文翻译 · ${job.fileName}`,
@@ -216,21 +288,34 @@ export default function TranslateImagePage() {
   );
 
   const handleImageUpload = useCallback(
-    async (e: React.ChangeEvent<HTMLInputElement>) => {
-      if (!e.target.files?.length) return;
-      await handleFiles(e.target.files);
-      e.target.value = "";
+    async (event: React.ChangeEvent<HTMLInputElement>) => {
+      if (!event.target.files?.length) return;
+      await handleFiles(event.target.files);
+      event.target.value = "";
     },
     [handleFiles],
   );
 
   const handleDrop = useCallback(
-    async (e: React.DragEvent) => {
-      e.preventDefault();
-      if (!e.dataTransfer.files?.length) return;
-      await handleFiles(e.dataTransfer.files);
+    async (event: React.DragEvent) => {
+      event.preventDefault();
+      if (!event.dataTransfer.files?.length) return;
+      await handleFiles(event.dataTransfer.files);
     },
     [handleFiles],
+  );
+
+  const removeJob = useCallback(
+    (jobId: string) => {
+      setJobs((current) => {
+        const next = current.filter((job) => job.id !== jobId);
+        if (activeJobId === jobId) {
+          setActiveJobId(next[0]?.id || null);
+        }
+        return next;
+      });
+    },
+    [activeJobId],
   );
 
   const runOCR = useCallback(
@@ -244,17 +329,27 @@ export default function TranslateImagePage() {
 
       try {
         const { data, error } = await supabase.functions.invoke("translate-image", {
-          body: { imageUrl: job.originalImage, step: "ocr" },
+          body: {
+            imageUrl: job.originalImage,
+            step: "ocr",
+            targetLanguage,
+          },
         });
 
-        if (error) throw error;
+        if (error) {
+          throw new Error(
+            typeof error.context === "object" && error.context
+              ? JSON.stringify(error.context)
+              : error.message,
+          );
+        }
 
         const nextTranslations = Array.isArray(data?.translations)
           ? data.translations
           : [];
 
         if (!nextTranslations.length) {
-          throw new Error("未检测到可翻译的中文文字");
+          throw new Error("未检测到可翻译的文字内容");
         }
 
         updateJob(job.id, (current) => ({
@@ -264,6 +359,7 @@ export default function TranslateImagePage() {
           error: null,
           hint: null,
         }));
+
         return nextTranslations as TranslationItem[];
       } catch (error) {
         const message = normalizeUserErrorMessage(error, "文字识别失败");
@@ -276,7 +372,7 @@ export default function TranslateImagePage() {
         throw error;
       }
     },
-    [updateJob],
+    [targetLanguage, updateJob],
   );
 
   const runGenerate = useCallback(
@@ -294,16 +390,23 @@ export default function TranslateImagePage() {
             imageUrl: job.originalImage,
             step: "replace",
             translations: job.translations,
+            targetLanguage,
           },
         });
 
-        if (error) throw error;
+        if (error) {
+          throw new Error(
+            typeof error.context === "object" && error.context
+              ? JSON.stringify(error.context)
+              : error.message,
+          );
+        }
+
         if (!data?.imageUrl) {
           throw new Error("翻译图片生成失败");
         }
 
         const permanentUrl = await persistTranslatedImage(job, data.imageUrl);
-
         updateJob(job.id, (current) => ({
           ...current,
           translatedImage: permanentUrl,
@@ -311,6 +414,7 @@ export default function TranslateImagePage() {
           error: null,
           hint: null,
         }));
+
         return permanentUrl;
       } catch (error) {
         const message = normalizeUserErrorMessage(error, "翻译图片生成失败");
@@ -323,19 +427,19 @@ export default function TranslateImagePage() {
         throw error;
       }
     },
-    [persistTranslatedImage, updateJob],
+    [persistTranslatedImage, targetLanguage, updateJob],
   );
 
   const handleRecognize = useCallback(async () => {
     if (!activeJob) return;
+
     try {
       await runOCR(activeJob);
-      toast.success("文字识别完成，可以直接校对后生成");
+      toast.success(`文字识别完成，已按 ${targetLanguageLabel} 生成候选译文`);
     } catch (error) {
-      const message = normalizeUserErrorMessage(error, "文字识别失败");
-      toast.error(message);
+      toast.error(normalizeUserErrorMessage(error, "文字识别失败"));
     }
-  }, [activeJob, runOCR]);
+  }, [activeJob, runOCR, targetLanguageLabel]);
 
   const handleGenerateActive = useCallback(async () => {
     if (!activeJob) return;
@@ -350,12 +454,12 @@ export default function TranslateImagePage() {
         ...current,
         translations: nextTranslations,
       });
-      toast.success("翻译图片已生成，并已加入图片库");
+
+      toast.success(`翻译图片已生成，并已加入图片库（${targetLanguageLabel}）`);
     } catch (error) {
-      const message = normalizeUserErrorMessage(error, "翻译图片生成失败");
-      toast.error(message);
+      toast.error(normalizeUserErrorMessage(error, "翻译图片生成失败"));
     }
-  }, [activeJob, jobs, runGenerate, runOCR]);
+  }, [activeJob, jobs, runGenerate, runOCR, targetLanguageLabel]);
 
   const handleGenerateAll = useCallback(async () => {
     if (!jobs.length) return;
@@ -371,12 +475,12 @@ export default function TranslateImagePage() {
           const nextTranslations = currentJob.translations.length
             ? currentJob.translations
             : await runOCR(currentJob);
-          await runGenerate(
-            {
-              ...currentJob,
-              translations: nextTranslations,
-            },
-          );
+
+          await runGenerate({
+            ...currentJob,
+            translations: nextTranslations,
+          });
+
           successCount += 1;
         } catch (error) {
           console.warn("batch translate item failed:", error);
@@ -384,14 +488,16 @@ export default function TranslateImagePage() {
       }
 
       if (successCount > 0) {
-        toast.success(`已完成 ${successCount} 张翻译，并自动加入图片库`);
+        toast.success(
+          `已完成 ${successCount} 张翻译，并自动加入图片库（${targetLanguageLabel}）`,
+        );
       } else {
         toast.error("批量翻译没有成功结果，请先检查报错提示");
       }
     } finally {
       setIsBatchRunning(false);
     }
-  }, [jobs, runGenerate, runOCR]);
+  }, [jobs, runGenerate, runOCR, targetLanguageLabel]);
 
   const updateTranslation = useCallback(
     (index: number, value: string) => {
@@ -447,10 +553,10 @@ export default function TranslateImagePage() {
             图文翻译
           </div>
           <h1 className="mt-3 text-2xl font-bold text-foreground">
-            上传图片，识别中文，一键生成英文版
+            上传图片，识别文字，生成多国语言版本
           </h1>
           <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-            这版把流程收短成上传、识别、校对、生成四步。支持批量处理，结果会自动加入图片库，并带上“图文翻译”来源标签。
+            现在支持多目标语言翻译、批量上传和单张删除。识别和生成后的结果会自动加入图片库，并带上“图文翻译”来源标签。
           </p>
         </div>
 
@@ -461,13 +567,13 @@ export default function TranslateImagePage() {
         </div>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[340px_minmax(0,1fr)]">
+      <div className="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
         <Card
           className="border-border shadow-sm"
           onDragOver={(event) => event.preventDefault()}
           onDrop={handleDrop}
         >
-          <CardHeader className="space-y-3">
+          <CardHeader className="space-y-4">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <CardTitle className="text-base">批量任务</CardTitle>
@@ -476,6 +582,22 @@ export default function TranslateImagePage() {
                 </p>
               </div>
               <Badge variant="secondary">{jobs.length}/{MAX_FILES}</Badge>
+            </div>
+
+            <div className="space-y-2">
+              <div className="text-sm font-medium text-foreground">目标语言</div>
+              <Select value={targetLanguage} onValueChange={setTargetLanguage}>
+                <SelectTrigger>
+                  <SelectValue placeholder="选择目标语言" />
+                </SelectTrigger>
+                <SelectContent>
+                  {TARGET_LANGUAGES.map((item) => (
+                    <SelectItem key={item.value} value={item.value}>
+                      {item.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <label className="flex cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-primary/30 bg-primary/5 px-4 py-6 text-center transition hover:border-primary/50 hover:bg-primary/10">
@@ -525,53 +647,65 @@ export default function TranslateImagePage() {
               </Button>
             </div>
           </CardHeader>
-
           <CardContent className="space-y-3">
             {jobs.length ? (
               jobs.map((job) => {
                 const meta = statusMeta[job.status];
                 const active = activeJob?.id === job.id;
                 return (
-                  <button
+                  <div
                     key={job.id}
-                    type="button"
-                    onClick={() => setActiveJobId(job.id)}
-                    className={`w-full rounded-2xl border p-3 text-left transition ${
+                    className={`rounded-2xl border p-3 transition ${
                       active
                         ? "border-primary bg-primary/5 shadow-sm"
                         : "border-border hover:border-primary/30 hover:bg-muted/30"
                     }`}
                   >
                     <div className="flex items-start gap-3">
-                      <img
-                        src={job.originalImage}
-                        alt={job.fileName}
-                        className="h-16 w-16 rounded-xl object-cover"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-medium text-foreground">
-                          {job.fileName}
-                        </div>
-                        <div className="mt-2 flex items-center gap-2">
-                          <span
-                            className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${meta.className}`}
-                          >
-                            {meta.label}
-                          </span>
-                          <span className="text-xs text-muted-foreground">
-                            {job.translations.length
-                              ? `${job.translations.length} 处文字`
-                              : "待识别"}
-                          </span>
-                        </div>
-                        {job.error && (
-                          <div className="mt-2 line-clamp-2 text-xs text-destructive">
-                            {job.error}
+                      <button
+                        type="button"
+                        onClick={() => setActiveJobId(job.id)}
+                        className="flex flex-1 items-start gap-3 text-left"
+                      >
+                        <img
+                          src={job.originalImage}
+                          alt={job.fileName}
+                          className="h-16 w-16 rounded-xl object-cover"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-medium text-foreground">
+                            {job.fileName}
                           </div>
-                        )}
-                      </div>
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <span
+                              className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${meta.className}`}
+                            >
+                              {meta.label}
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              {job.translations.length
+                                ? `${job.translations.length} 处文字`
+                                : "待识别"}
+                            </span>
+                          </div>
+                          {job.error && (
+                            <div className="mt-2 line-clamp-2 text-xs text-destructive">
+                              {job.error}
+                            </div>
+                          )}
+                        </div>
+                      </button>
+
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 shrink-0"
+                        onClick={() => removeJob(job.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     </div>
-                  </button>
+                  </div>
                 );
               })
             ) : (
@@ -593,7 +727,7 @@ export default function TranslateImagePage() {
                         当前任务：{activeJob.fileName}
                       </CardTitle>
                       <p className="mt-1 text-sm text-muted-foreground">
-                        建议先识别并快速校对，再生成最终翻译图。若你不想逐条校对，也可以直接一键生成。
+                        当前目标语言是 {targetLanguageLabel}。你可以先识别校对，也可以直接一键生成翻译图。
                       </p>
                     </div>
 
@@ -691,14 +825,12 @@ export default function TranslateImagePage() {
                       </p>
                     </div>
 
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      {activeJob.status === "done" && (
-                        <span className="inline-flex items-center gap-1 text-emerald-700">
-                          <CheckCircle2 className="h-4 w-4" />
-                          已完成并入图库
-                        </span>
-                      )}
-                    </div>
+                    {activeJob.status === "done" && (
+                      <div className="inline-flex items-center gap-1 text-sm text-emerald-700">
+                        <CheckCircle2 className="h-4 w-4" />
+                        已完成并入图库
+                      </div>
+                    )}
                   </div>
                 </CardHeader>
 
@@ -742,10 +874,10 @@ export default function TranslateImagePage() {
                     ))
                   ) : (
                     <div className="rounded-2xl border border-dashed border-border px-4 py-12 text-center">
-                      <Pencil className="mx-auto mb-3 h-8 w-8 text-muted-foreground/40" />
+                      <ImagePlus className="mx-auto mb-3 h-8 w-8 text-muted-foreground/40" />
                       <div className="font-medium text-foreground">还没有识别结果</div>
                       <div className="mt-1 text-sm text-muted-foreground">
-                        先点“识别文字”，或者直接点“一键生成翻译图”让系统自动识别后生成。
+                        先点“识别文字”，或者直接点“一键生成翻译图”，系统会按 {targetLanguageLabel} 自动完成识别和生成。
                       </div>
                     </div>
                   )}
@@ -763,7 +895,7 @@ export default function TranslateImagePage() {
                     先上传要翻译的图片
                   </div>
                   <div className="mt-2 text-sm text-muted-foreground">
-                    支持拖拽批量上传，上传后就能逐张识别、校对和生成，也可以一键批量跑完整条链路。
+                    支持拖拽批量上传，上传后可以逐张识别和生成，也能整批翻译后直接进入图片库。
                   </div>
                 </div>
               </CardContent>
@@ -794,7 +926,7 @@ export default function TranslateImagePage() {
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <Badge variant="secondary">图文翻译</Badge>
-                    <Badge variant="secondary">已入图库</Badge>
+                    <Badge variant="secondary">{targetLanguageLabel}</Badge>
                   </div>
                   <Button
                     variant="outline"
@@ -818,49 +950,6 @@ export default function TranslateImagePage() {
             <RefreshCw className="mr-2 h-4 w-4" />
             清空当前批次
           </Button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function SummaryStat({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-2xl bg-background px-4 py-3">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="mt-1 text-lg font-semibold text-foreground">{value}</div>
-    </div>
-  );
-}
-
-function PreviewPanel({
-  title,
-  subtitle,
-  image,
-  placeholder,
-}: {
-  title: string;
-  subtitle: string;
-  image?: string;
-  placeholder?: string;
-}) {
-  return (
-    <div className="space-y-3 rounded-2xl border border-border p-4">
-      <div>
-        <div className="font-medium text-foreground">{title}</div>
-        <div className="mt-1 text-sm text-muted-foreground">{subtitle}</div>
-      </div>
-      {image ? (
-        <div className="overflow-hidden rounded-2xl bg-muted/30">
-          <img
-            src={image}
-            alt={title}
-            className="max-h-[460px] w-full object-contain"
-          />
-        </div>
-      ) : (
-        <div className="flex min-h-[360px] items-center justify-center rounded-2xl border border-dashed border-border bg-muted/20 text-sm text-muted-foreground">
-          {placeholder}
         </div>
       )}
     </div>

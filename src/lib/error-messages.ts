@@ -12,6 +12,25 @@ export function normalizeUserErrorMessage(
   const normalized = message.trim();
   if (!normalized) return fallback;
 
+  try {
+    const parsed = JSON.parse(normalized);
+    if (parsed?.message) return parsed.message;
+    if (parsed?.error === "INSUFFICIENT_BALANCE") {
+      return "积分不足，当前图文翻译无法继续生成，请先充值后再试。";
+    }
+    if (parsed?.error === "UNAUTHORIZED") {
+      return "当前登录状态已失效，请刷新页面后重新登录。";
+    }
+    if (parsed?.error === "OCR_UPSTREAM_FAILED" || parsed?.error === "REPLACE_UPSTREAM_FAILED") {
+      return "AI 服务暂时不可用，请稍后重试；如果连续失败，建议先检查当前模型额度。";
+    }
+    if (parsed?.error === "IMAGE_REQUIRED") {
+      return "请先上传一张需要翻译的图片。";
+    }
+  } catch {
+    // ignore JSON parse errors and continue with string matching
+  }
+
   const lower = normalized.toLowerCase();
 
   if (
