@@ -93,14 +93,18 @@ const DashboardLayout = () => {
                         <span
                           className={cn(
                             "flex h-8 w-8 items-center justify-center rounded-xl transition-colors",
-                            active ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground group-hover:text-foreground",
+                            active
+                              ? "bg-primary/15 text-primary"
+                              : "bg-muted text-muted-foreground group-hover:text-foreground",
                           )}
                         >
                           <Icon className="h-4 w-4" />
                         </span>
                         <span className="min-w-0">
                           <span className="block truncate font-medium">{item.label}</span>
-                          <span className="block truncate text-[11px] opacity-75">{item.description}</span>
+                          <span className="block truncate text-[11px] opacity-75">
+                            {item.description}
+                          </span>
                         </span>
                       </Link>
                     );
