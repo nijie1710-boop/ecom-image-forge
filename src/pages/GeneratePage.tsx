@@ -13,12 +13,15 @@ import {
   Ban,
   ChevronDown,
   ChevronUp,
+  Check,
   Download,
+  FolderPlus,
   Globe,
   Loader2,
   Palette,
   RefreshCw,
   Sparkles,
+  Star,
   Upload,
   UserRound,
   X,
@@ -29,6 +32,12 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { GenerationContext } from "@/contexts/GenerationContext";
 import type { GenerationModel, ModelMode, OutputResolution } from "@/lib/ai-generator";
+import {
+  findCuratedImage,
+  markCuratedBest,
+  toggleCuratedFavorite,
+  upsertCuratedImage,
+} from "@/lib/image-library";
 
 const imageTypes = ["主图", "详情图"];
 
@@ -163,6 +172,10 @@ const GeneratePage = () => {
   const [lastParams, setLastParams] = useState<any>(null);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
+  const [currentBatchId, setCurrentBatchId] = useState<string | null>(null);
+  const [savedUrls, setSavedUrls] = useState<string[]>([]);
+  const [favoriteUrls, setFavoriteUrls] = useState<string[]>([]);
+  const [bestImageUrl, setBestImageUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (templateId && !appliedTemplate) {
@@ -193,6 +206,26 @@ const GeneratePage = () => {
       setErrorMessage(activeJob.error || "生成失败");
     }
   }, [activeJob]);
+
+  useEffect(() => {
+    if (!results.length) {
+      setSavedUrls([]);
+      setFavoriteUrls([]);
+      setBestImageUrl(null);
+      return;
+    }
+
+    const curated = results
+      .map((url) => findCuratedImage(url))
+      .filter(Boolean);
+    setSavedUrls(curated.map((item) => item!.image_url));
+    setFavoriteUrls(curated.filter((item) => item!.favorite).map((item) => item!.image_url));
+    const best =
+      curated.find((item) => item!.is_best && (!currentBatchId || item!.group_id === currentBatchId)) ||
+      curated.find((item) => item!.is_best) ||
+      null;
+    setBestImageUrl(best?.image_url || null);
+  }, [currentBatchId, results]);
 
   const resetSuggestionState = () => {
     setSceneSuggestions([]);
@@ -369,6 +402,7 @@ const GeneratePage = () => {
     }
 
     const totalImages = Math.min(Math.max(Number(selectedCount), 1), 9);
+    const batchId = crypto.randomUUID();
     const finalPrompt = [productBrief.trim() ? `产品信息：${productBrief.trim()}` : "", textPrompt.trim()]
       .filter(Boolean)
       .join("\n");
@@ -394,7 +428,8 @@ const GeneratePage = () => {
       },
     };
 
-    setLastParams(params);
+    setCurrentBatchId(batchId);
+    setLastParams({ ...params, _groupId: batchId });
     setProgress({ current: 1, total: totalImages });
     startImageGeneration(params);
   };
@@ -408,18 +443,51 @@ const GeneratePage = () => {
       return;
     }
 
+    const batchId = crypto.randomUUID();
+    setCurrentBatchId(batchId);
     setIsGenerating(true);
     setResults([]);
     setErrorMessage(null);
     setProgress({ current: 1, total: lastParams.n });
     startImageGeneration({
       ...lastParams,
+      _groupId: batchId,
       onComplete: (images: string[]) => {
         setResults(images);
         setIsGenerating(false);
         setProgress(null);
       },
     });
+  };
+
+  const buildCuratedSeed = (src: string) => ({
+    image_url: src,
+    prompt: [productBrief.trim(), textPrompt.trim()].filter(Boolean).join("\n"),
+    aspect_ratio: selectedRatio,
+    image_type: imageType,
+    style: styleReferenceText.trim() || undefined,
+    scene: textPrompt.trim() || undefined,
+    group_id: currentBatchId || undefined,
+    task_kind: "image" as const,
+  });
+
+  const handleSaveToLibrary = (src: string) => {
+    upsertCuratedImage(buildCuratedSeed(src));
+    setSavedUrls((current) => Array.from(new Set([...current, src])));
+  };
+
+  const handleToggleFavorite = (src: string) => {
+    const record = toggleCuratedFavorite(src, buildCuratedSeed(src));
+    setSavedUrls((current) => Array.from(new Set([...current, src])));
+    setFavoriteUrls((current) =>
+      record.favorite ? Array.from(new Set([...current, src])) : current.filter((item) => item !== src),
+    );
+  };
+
+  const handleMarkBest = (src: string) => {
+    markCuratedBest(src, currentBatchId || undefined, buildCuratedSeed(src));
+    setSavedUrls((current) => Array.from(new Set([...current, src])));
+    setBestImageUrl(src);
   };
 
   const selectedModelLabel =
@@ -1020,6 +1088,50 @@ const GeneratePage = () => {
                         className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-medium text-foreground transition hover:border-primary/40 hover:text-primary"
                       >
                         下载
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <button
+                        onClick={() => handleSaveToLibrary(src)}
+                        className={`rounded-xl border px-3 py-2 text-xs font-medium transition ${
+                          savedUrls.includes(src)
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "border-border bg-background text-foreground hover:border-primary/40 hover:text-primary"
+                        }`}
+                      >
+                        {savedUrls.includes(src) ? (
+                          <>
+                            <Check className="mr-1 inline h-3.5 w-3.5" />
+                            已入库
+                          </>
+                        ) : (
+                          <>
+                            <FolderPlus className="mr-1 inline h-3.5 w-3.5" />
+                            入图库
+                          </>
+                        )}
+                      </button>
+                      <button
+                        onClick={() => handleToggleFavorite(src)}
+                        className={`rounded-xl border px-3 py-2 text-xs font-medium transition ${
+                          favoriteUrls.includes(src)
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "border-border bg-background text-foreground hover:border-primary/40 hover:text-primary"
+                        }`}
+                      >
+                        <Star className="mr-1 inline h-3.5 w-3.5" />
+                        {favoriteUrls.includes(src) ? "已收藏" : "收藏"}
+                      </button>
+                      <button
+                        onClick={() => handleMarkBest(src)}
+                        className={`rounded-xl border px-3 py-2 text-xs font-medium transition ${
+                          bestImageUrl === src
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "border-border bg-background text-foreground hover:border-primary/40 hover:text-primary"
+                        }`}
+                      >
+                        <Sparkles className="mr-1 inline h-3.5 w-3.5" />
+                        {bestImageUrl === src ? "最佳" : "标记最佳"}
                       </button>
                     </div>
                   </div>

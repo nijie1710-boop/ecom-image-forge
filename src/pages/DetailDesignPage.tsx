@@ -319,6 +319,7 @@ const DetailDesignPage = () => {
   const [hasRestoredDraft, setHasRestoredDraft] = useState(false);
   const [showScreenIdeas, setShowScreenIdeas] = useState(false);
   const [showGenerationSettings, setShowGenerationSettings] = useState(false);
+  const [selectedScreenNumbers, setSelectedScreenNumbers] = useState<number[]>([]);
   const resultsSectionRef = useRef<HTMLElement | null>(null);
 
   const activePlan = useMemo(
@@ -387,6 +388,7 @@ const DetailDesignPage = () => {
   useEffect(() => {
     if (!activePlan) {
       setGeneratedScreens([]);
+      setSelectedScreenNumbers([]);
       return;
     }
 
@@ -414,6 +416,11 @@ const DetailDesignPage = () => {
     );
     setGenerationError(null);
   }, [activePlan, generationLanguage]);
+
+  useEffect(() => {
+    if (!activePlan) return;
+    setSelectedScreenNumbers(activePlan.screens.map((screen) => screen.screen));
+  }, [activePlan]);
 
   useEffect(() => {
     const desired = Number(screenCount) || 4;
@@ -894,6 +901,26 @@ const DetailDesignPage = () => {
     launchDetailGeneration([screen]);
   };
 
+  const toggleScreenSelection = (screenNumber: number) => {
+    setSelectedScreenNumbers((current) =>
+      current.includes(screenNumber)
+        ? current.filter((item) => item !== screenNumber)
+        : [...current, screenNumber].sort((a, b) => a - b),
+    );
+  };
+
+  const handleGenerateSelectedScreens = async () => {
+    if (!activePlan) return;
+    const selected = activePlan.screens.filter((screen) =>
+      selectedScreenNumbers.includes(screen.screen),
+    );
+    if (!selected.length) {
+      setGenerationError("请先勾选至少 1 屏再生成");
+      return;
+    }
+    launchDetailGeneration(selected);
+  };
+
   const currentModelHint =
     modelOptions.find((option) => option.value === selectedModel)?.hint || "";
 
@@ -1281,6 +1308,12 @@ const DetailDesignPage = () => {
 
               <div className="mt-4 space-y-2 rounded-2xl border border-border bg-background p-4 text-xs text-muted-foreground">
                 <div className="flex items-center justify-between">
+                  <span>已选分屏</span>
+                  <span className="font-medium text-foreground">
+                    {selectedScreenNumbers.length || 0}/{activePlan.screens.length}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
                   <span>人物策略</span>
                   <span className="font-medium text-foreground">
                     AI 自行判断
@@ -1309,9 +1342,44 @@ const DetailDesignPage = () => {
               )}
 
               <div className="mt-5 grid gap-2">
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="rounded-xl"
+                    onClick={() => setSelectedScreenNumbers(activePlan.screens.map((screen) => screen.screen))}
+                  >
+                    全选
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="rounded-xl"
+                    onClick={() => setSelectedScreenNumbers([])}
+                  >
+                    清空
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="rounded-xl"
+                    onClick={() =>
+                      setSelectedScreenNumbers(
+                        activePlan.screens
+                          .filter((screen) => screen.humanModelSuggested)
+                          .map((screen) => screen.screen),
+                      )
+                    }
+                  >
+                    仅选人物屏
+                  </Button>
+                </div>
                 <Button
                   type="button"
-                  onClick={handleGenerateAllScreens}
+                  onClick={handleGenerateSelectedScreens}
                   disabled={isGeneratingScreens}
                   className="h-12 w-full rounded-2xl text-sm font-semibold"
                 >
@@ -1323,7 +1391,7 @@ const DetailDesignPage = () => {
                   ) : (
                     <>
                       <ImagePlus className="mr-2 h-4 w-4" />
-                      生成当前方案 {activePlan.screens.length} 屏
+                      生成已选 {selectedScreenNumbers.length || 0} 屏
                     </>
                   )}
                 </Button>
@@ -1508,9 +1576,19 @@ const DetailDesignPage = () => {
                       {activePlan.screens.map((screen) => (
                         <div
                           key={`${activePlan.planName}-${screen.screen}`}
-                          className="rounded-2xl border border-border bg-card px-4 py-3 transition hover:border-primary/20"
+                          className={`rounded-2xl border bg-card px-4 py-3 transition hover:border-primary/20 ${
+                            selectedScreenNumbers.includes(screen.screen)
+                              ? "border-primary/40 ring-1 ring-primary/10"
+                              : "border-border"
+                          }`}
                         >
                           <div className="mb-1 flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={selectedScreenNumbers.includes(screen.screen)}
+                              onChange={() => toggleScreenSelection(screen.screen)}
+                              className="h-4 w-4 rounded border-border text-primary focus:ring-primary/30"
+                            />
                             <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
                               {screen.screen}
                             </span>
