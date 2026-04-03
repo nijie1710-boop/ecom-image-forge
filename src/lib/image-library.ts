@@ -10,7 +10,7 @@ export type CuratedImageRecord = {
   image_type?: string;
   created_at: string;
   group_id?: string;
-  task_kind?: "image" | "detail" | "copy";
+  task_kind?: "image" | "detail" | "copy" | "translate";
   favorite?: boolean;
   is_best?: boolean;
   source: "curated";

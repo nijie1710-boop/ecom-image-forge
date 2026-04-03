@@ -50,7 +50,7 @@ interface ImageRecord {
   created_at: string;
   source: SourceType;
   group_id?: string;
-  task_kind?: "image" | "detail" | "copy";
+  task_kind?: "image" | "detail" | "copy" | "translate";
   favorite?: boolean;
   is_best?: boolean;
 }
@@ -66,7 +66,14 @@ function sourceLabel(source: SourceType) {
 function taskGroupLabel(taskKind?: string) {
   if (taskKind === "detail") return "AI 详情页";
   if (taskKind === "copy") return "文案联动";
+  if (taskKind === "translate") return "图文翻译";
   return "AI 生图";
+}
+
+function resolveTaskKind(item: Pick<ImageRecord, "task_kind" | "scene">) {
+  if (item.task_kind) return item.task_kind;
+  if (item.scene === "translate") return "translate";
+  return "image";
 }
 
 function formatGroupTitle(groupMode: GroupMode, groupKey: string, firstImage?: ImageRecord) {
@@ -176,13 +183,13 @@ const MyImagesPage = () => {
       if (viewFilter === "best" && !item.is_best) return false;
       if (!query.trim()) return true;
 
-      const haystack = [
-        item.prompt,
-        item.style,
-        item.scene,
-        item.image_type,
-        taskGroupLabel(item.task_kind),
-      ]
+        const haystack = [
+          item.prompt,
+          item.style,
+          item.scene,
+          item.image_type,
+          taskGroupLabel(resolveTaskKind(item)),
+        ]
         .filter(Boolean)
         .join(" ")
         .toLowerCase();
@@ -199,7 +206,7 @@ const MyImagesPage = () => {
         groupMode === "date"
           ? item.created_at.slice(0, 10)
           : groupMode === "task"
-            ? item.task_kind || "image"
+            ? resolveTaskKind(item)
             : item.group_id || item.created_at.slice(0, 10);
 
       const current = groups.get(key) || [];
