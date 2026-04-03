@@ -16,8 +16,15 @@ import {
   Sparkles,
   Star,
   Trash2,
+  ZoomIn,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -80,6 +87,7 @@ const MyImagesPage = () => {
   const [viewFilter, setViewFilter] = useState<ViewFilter>("all");
   const [groupMode, setGroupMode] = useState<GroupMode>("batch");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [previewImage, setPreviewImage] = useState<ImageRecord | null>(null);
 
   const {
     data: cloudPages,
@@ -107,10 +115,10 @@ const MyImagesPage = () => {
 
       if (error) throw error;
 
-      const mapped = (data || []).map((image) => ({ ...image, source: "cloud" as const }));
+      const items = (data || []).map((image) => ({ ...image, source: "cloud" as const }));
       return {
-        items: mapped,
-        nextPage: mapped.length === CLOUD_PAGE_SIZE ? pageParam + 1 : undefined,
+        items,
+        nextPage: items.length === CLOUD_PAGE_SIZE ? pageParam + 1 : undefined,
       };
     },
     getNextPageParam: (lastPage) => lastPage.nextPage,
@@ -333,7 +341,7 @@ const MyImagesPage = () => {
             </div>
             <h1 className="mt-3 text-2xl font-bold text-foreground">统一管理你的生成结果</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              图片库已经改成分页加载和懒加载，首次进入会更快，后续按需继续加载。
+              点图片会直接大图预览，收藏和最佳图操作也已经改成更清爽的卡片工具栏。
             </p>
           </div>
 
@@ -468,16 +476,23 @@ const MyImagesPage = () => {
                   {images.map((img) => (
                     <div
                       key={`${img.id}-${img.source}`}
-                      className="group overflow-hidden rounded-3xl border border-border bg-card shadow-sm transition hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md"
+                      className="overflow-hidden rounded-3xl border border-border bg-card shadow-sm transition hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md"
                     >
                       <div className="relative">
-                        <img
-                          src={img.image_url}
-                          alt={img.prompt || "Generated"}
-                          loading="lazy"
-                          decoding="async"
-                          className="aspect-square w-full object-cover"
-                        />
+                        <button
+                          type="button"
+                          onClick={() => setPreviewImage(img)}
+                          className="block w-full text-left"
+                        >
+                          <img
+                            src={img.image_url}
+                            alt={img.prompt || "Generated"}
+                            loading="lazy"
+                            decoding="async"
+                            className="aspect-square w-full object-cover transition duration-200 hover:scale-[1.01]"
+                          />
+                        </button>
+
                         <div className="absolute left-3 top-3 flex flex-wrap gap-2">
                           <span className="rounded-full bg-black/55 px-2.5 py-1 text-[11px] text-white backdrop-blur-sm">
                             {sourceLabel(img.source)}
@@ -493,6 +508,15 @@ const MyImagesPage = () => {
                             </span>
                           )}
                         </div>
+
+                        <button
+                          type="button"
+                          onClick={() => setPreviewImage(img)}
+                          className="absolute bottom-3 right-3 inline-flex items-center gap-1 rounded-full bg-white/90 px-3 py-1.5 text-[11px] font-medium text-foreground shadow-sm transition hover:bg-white"
+                        >
+                          <ZoomIn className="h-3.5 w-3.5" />
+                          预览大图
+                        </button>
 
                         <label className="absolute right-3 top-3 flex h-7 w-7 cursor-pointer items-center justify-center rounded-full bg-white/85 shadow-sm backdrop-blur-sm">
                           <input
@@ -519,11 +543,11 @@ const MyImagesPage = () => {
                           </div>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="flex gap-2">
                           <button
                             type="button"
                             onClick={() => handleFavorite(img)}
-                            className={`rounded-xl border px-3 py-2 text-xs font-medium transition ${
+                            className={`flex-1 rounded-xl border px-3 py-2 text-xs font-medium transition ${
                               img.favorite
                                 ? "border-primary bg-primary/10 text-primary"
                                 : "border-border bg-background text-foreground hover:border-primary/40 hover:text-primary"
@@ -536,7 +560,7 @@ const MyImagesPage = () => {
                           <button
                             type="button"
                             onClick={() => handleBest(img)}
-                            className={`rounded-xl border px-3 py-2 text-xs font-medium transition ${
+                            className={`flex-1 rounded-xl border px-3 py-2 text-xs font-medium transition ${
                               img.is_best
                                 ? "border-primary bg-primary/10 text-primary"
                                 : "border-border bg-background text-foreground hover:border-primary/40 hover:text-primary"
@@ -607,6 +631,54 @@ const MyImagesPage = () => {
           </Link>
         </div>
       )}
+
+      <Dialog open={!!previewImage} onOpenChange={(open) => !open && setPreviewImage(null)}>
+        <DialogContent className="max-w-5xl p-4">
+          {previewImage && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="pr-8 text-base">
+                  {previewImage.prompt || "图片预览"}
+                </DialogTitle>
+              </DialogHeader>
+
+              <div className="overflow-hidden rounded-2xl border border-border bg-muted/20">
+                <img
+                  src={previewImage.image_url}
+                  alt={previewImage.prompt || "Preview"}
+                  className="max-h-[78vh] w-full object-contain"
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+                  <span className="rounded-full bg-muted px-2.5 py-1">{sourceLabel(previewImage.source)}</span>
+                  {previewImage.image_type && (
+                    <span className="rounded-full bg-muted px-2.5 py-1">{previewImage.image_type}</span>
+                  )}
+                  {previewImage.aspect_ratio && (
+                    <span className="rounded-full bg-muted px-2.5 py-1">{previewImage.aspect_ratio}</span>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="rounded-xl"
+                    onClick={() =>
+                      previewImage && downloadImage(previewImage.image_url, `image-${previewImage.id}.jpg`)
+                    }
+                  >
+                    <Download className="mr-1 h-3.5 w-3.5" />
+                    下载图片
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
