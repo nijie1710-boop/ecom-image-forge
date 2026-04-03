@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+﻿import { useCallback, useMemo, useState } from "react";
 import {
   ArrowRight,
   CheckCircle2,
@@ -30,6 +30,7 @@ import {
   normalizeUserErrorMessage,
 } from "@/lib/error-messages";
 import { upsertCuratedImage } from "@/lib/image-library";
+import { WorkspaceHeader, WorkspaceShell } from "@/components/workspace/WorkspaceShell";
 
 interface TranslationItem {
   original: string;
@@ -500,27 +501,23 @@ export default function TranslateImagePage() {
   );
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6 px-4 py-6 md:px-6">
-      <div className="flex flex-col gap-4 rounded-3xl border border-border bg-card p-6 shadow-sm lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <div className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
-            <Languages className="h-3.5 w-3.5" />
-            图文翻译
-          </div>
-          <h1 className="mt-3 text-2xl font-bold text-foreground">上传图片，识别文字，生成多国语言版本</h1>
-          <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-            支持多目标语言翻译、批量上传和单张删除。识别和生成后的结果会自动加入图片库，并带上“图文翻译”来源标签。
-          </p>
-        </div>
-        <div className="grid grid-cols-3 gap-3 rounded-2xl bg-muted/60 p-3 text-center">
-          <SummaryStat label="总任务" value={summary.total} />
-          <SummaryStat label="已完成" value={summary.done} />
-          <SummaryStat label="待处理" value={summary.waiting} />
-        </div>
-      </div>
+    <div className="mx-auto max-w-[1480px] space-y-6 px-4 py-6 md:px-6">
+      <WorkspaceHeader
+        icon={Languages}
+        badge="图文翻译"
+        title="上传图片，识别文字，生成多国语言版本"
+        description="支持多目标语言翻译、批量上传和单张删除。识别和生成后的结果会自动加入图片库，并带上图文翻译来源标签。"
+        steps={["1. 上传原图", "2. 识别与校对", "3. 生成翻译图"]}
+        stats={[
+          { label: "总任务", value: summary.total },
+          { label: "已完成", value: summary.done },
+          { label: "待处理", value: summary.waiting },
+        ]}
+      />
 
-      <div className="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
-        <Card className="border-border shadow-sm" onDragOver={(e) => e.preventDefault()} onDrop={handleDrop}>
+      <WorkspaceShell
+        sidebar={
+        <Card className="rounded-3xl border-border shadow-sm xl:max-h-[calc(100vh-7rem)] xl:overflow-y-auto" onDragOver={(e) => e.preventDefault()} onDrop={handleDrop}>
           <CardHeader className="space-y-4">
             <div className="flex items-start justify-between gap-3">
               <div>
@@ -604,11 +601,12 @@ export default function TranslateImagePage() {
             )}
           </CardContent>
         </Card>
-
+        }
+        content={
         <div className="space-y-6">
           {activeJob ? (
             <>
-              <Card className="border-border shadow-sm">
+              <Card className="rounded-3xl border-border shadow-sm">
                 <CardHeader className="space-y-3">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                     <div>
@@ -659,7 +657,7 @@ export default function TranslateImagePage() {
                 </CardContent>
               </Card>
 
-              <Card className="border-border shadow-sm">
+              <Card className="rounded-3xl border-border shadow-sm">
                 <CardHeader className="space-y-3">
                   <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
                     <div>
@@ -703,7 +701,7 @@ export default function TranslateImagePage() {
               </Card>
             </>
           ) : (
-            <Card className="border-dashed border-border">
+            <Card className="rounded-3xl border-dashed border-border">
               <CardContent className="flex min-h-[540px] flex-col items-center justify-center gap-4 text-center">
                 <div className="rounded-3xl bg-primary/10 p-4 text-primary">
                   <ImagePlus className="h-10 w-10" />
@@ -718,10 +716,11 @@ export default function TranslateImagePage() {
             </Card>
           )}
         </div>
-      </div>
+        }
+      />
 
       {!!doneJobs.length && (
-        <Card className="border-border shadow-sm">
+        <Card className="rounded-3xl border-border shadow-sm">
           <CardHeader>
             <CardTitle className="text-base">已完成结果</CardTitle>
           </CardHeader>

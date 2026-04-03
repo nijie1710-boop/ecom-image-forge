@@ -42,6 +42,7 @@ import {
   type GenerationModel,
   type OutputResolution,
 } from "@/lib/ai-generator";
+import { WorkspaceHeader } from "@/components/workspace/WorkspaceShell";
 
 const platformOptions = ["淘宝/天猫", "京东", "拼多多", "小红书", "抖音", "亚马逊"];
 
@@ -918,23 +919,18 @@ const DetailDesignPage = () => {
     modelOptions.find((option) => option.value === selectedModel)?.hint || "";
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-6 md:px-8">
-      <div className="mb-6 flex flex-col gap-2">
-        <div className="inline-flex w-fit items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-xs font-medium text-primary">
-          <LayoutPanelTop className="h-3.5 w-3.5" />
-          AI 详情页
-        </div>
-        <h1 className="text-2xl font-bold text-foreground md:text-3xl">先策划，再逐屏生成</h1>
-        <div className="flex flex-wrap gap-2 text-[11px] text-muted-foreground">
-          <span className="rounded-full bg-muted px-2.5 py-1">1. 上传商品</span>
-          <span className="rounded-full bg-muted px-2.5 py-1">2. 选方案</span>
-          <span className="rounded-full bg-muted px-2.5 py-1">3. 逐屏生成</span>
-        </div>
-      </div>
+    <div className="mx-auto max-w-[1480px] space-y-6 px-4 py-6 md:px-6">
+      <WorkspaceHeader
+        icon={LayoutPanelTop}
+        badge="AI 详情页"
+        title="先策划，再逐屏生成"
+        description="先整理商品信息和风格方向，再从 3 套方案里挑一套，逐屏生成整套详情页。"
+        steps={["1. 上传商品", "2. 选方案", "3. 逐屏生成"]}
+      />
 
-      <div className="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
-        <div className="space-y-5">
-          <section className="rounded-3xl border border-border bg-card p-5 shadow-sm">
+      <div className="grid gap-6 xl:grid-cols-[380px_minmax(0,1fr)]">
+        <div className="space-y-5 rounded-3xl border border-border bg-card p-5 shadow-sm xl:sticky xl:top-24 xl:max-h-[calc(100vh-7rem)] xl:overflow-y-auto xl:pr-1">
+          <section className="rounded-2xl border border-border bg-background/70 p-4">
             <div className="mb-4 flex items-center justify-between">
               <div>
                 <h2 className="text-base font-semibold text-foreground">商品素材</h2>
@@ -1129,7 +1125,7 @@ const DetailDesignPage = () => {
               </div>
             </div>
           </section>
-          <section className="rounded-3xl border border-border bg-card p-5 shadow-sm">
+          <section className="rounded-2xl border border-border bg-background/70 p-4">
             <div className="mb-4">
               <h2 className="text-base font-semibold text-foreground">策划参数</h2>
               <p className="text-xs text-muted-foreground">先生成 3 套整版方案，再选一套往下走</p>
@@ -1188,7 +1184,7 @@ const DetailDesignPage = () => {
             </Button>
           </section>
 
-          <section className="rounded-3xl border border-border bg-card p-5 shadow-sm">
+          <section className="rounded-2xl border border-border bg-background/70 p-4">
             <button
               type="button"
               onClick={() => setShowScreenIdeas((current) => !current)}
@@ -1252,7 +1248,7 @@ const DetailDesignPage = () => {
           </section>
 
           {activePlan && (
-            <section className="rounded-3xl border border-border bg-card p-5 shadow-sm">
+            <section className="rounded-2xl border border-border bg-background/70 p-4">
               <div className="mb-4 flex items-start justify-between gap-3">
                 <div>
                   <h2 className="text-base font-semibold text-foreground">逐屏生成设置</h2>
@@ -1410,7 +1406,7 @@ const DetailDesignPage = () => {
           )}
         </div>
 
-        <div className="space-y-5">
+        <div className="space-y-6">
           {!activePlan ? (
             <EmptyState />
           ) : (

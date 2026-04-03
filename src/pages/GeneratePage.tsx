@@ -39,6 +39,7 @@ import {
   toggleCuratedFavorite,
   upsertCuratedImage,
 } from "@/lib/image-library";
+import { WorkspaceHeader, WorkspaceShell } from "@/components/workspace/WorkspaceShell";
 
 const imageTypes = ["主图", "详情图"];
 
@@ -551,16 +552,18 @@ const GeneratePage = () => {
   };
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] flex-col lg:flex-row">
-      <div className="space-y-4 overflow-y-auto border-r border-border bg-card/50 p-4 pb-24 lg:w-[380px] lg:flex-shrink-0 lg:pb-6">
-        <div className="space-y-2">
-          <h2 className="text-base font-bold text-foreground">AI 电商图片生成</h2>
-          <div className="flex flex-wrap gap-2 text-[11px] text-muted-foreground">
-            <span className="rounded-full bg-muted px-2.5 py-1">1. 上传商品</span>
-            <span className="rounded-full bg-muted px-2.5 py-1">2. 分析场景</span>
-            <span className="rounded-full bg-muted px-2.5 py-1">3. 生成图片</span>
-          </div>
-        </div>
+    <div className="mx-auto max-w-[1480px] space-y-6 px-4 py-6 md:px-6">
+      <WorkspaceHeader
+        icon={Sparkles}
+        badge="AI 生图"
+        title="AI 电商图片生成"
+        description="上传商品图，先分析场景方案，再快速生成多张电商图结果。"
+        steps={["1. 上传商品", "2. 分析场景", "3. 生成图片"]}
+      />
+
+      <WorkspaceShell
+        sidebar={
+          <div className="space-y-5 rounded-3xl border border-border bg-card p-5 pb-24 shadow-sm xl:max-h-[calc(100vh-7rem)] xl:overflow-y-auto xl:pb-6">
 
         <div className="space-y-2">
           <div className="flex items-center justify-between">
@@ -970,9 +973,10 @@ const GeneratePage = () => {
             </>
           )}
         </Button>
-      </div>
-
-      <div className="flex-1 overflow-y-auto bg-background p-4 pb-24 md:p-6 lg:pb-6">
+          </div>
+        }
+        content={
+      <div className="space-y-6 rounded-3xl border border-border bg-card p-5 pb-24 shadow-sm md:p-6 lg:pb-6 xl:min-h-[720px]">
         {errorMessage && (
           <div className="mb-3 flex items-center justify-between rounded-lg bg-destructive/10 p-2.5 text-sm text-destructive">
             <div className="min-w-0">
@@ -1168,6 +1172,8 @@ const GeneratePage = () => {
           </div>
         )}
       </div>
+        }
+      />
 
       <Dialog open={showSuggestionDialog} onOpenChange={setShowSuggestionDialog}>
         <DialogContent className="max-w-3xl">
