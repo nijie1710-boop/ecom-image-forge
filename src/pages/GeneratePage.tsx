@@ -32,6 +32,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { GenerationContext } from "@/contexts/GenerationContext";
 import type { GenerationModel, ModelMode, OutputResolution } from "@/lib/ai-generator";
+import { errorHintFromMessage, normalizeUserErrorMessage } from "@/lib/error-messages";
 import {
   findCuratedImage,
   markCuratedBest,
@@ -176,6 +177,8 @@ const GeneratePage = () => {
   const [savedUrls, setSavedUrls] = useState<string[]>([]);
   const [favoriteUrls, setFavoriteUrls] = useState<string[]>([]);
   const [bestImageUrl, setBestImageUrl] = useState<string | null>(null);
+  const errorHint = errorMessage ? errorHintFromMessage(errorMessage) : null;
+  const suggestionHint = suggestionError ? errorHintFromMessage(suggestionError) : null;
 
   useEffect(() => {
     if (templateId && !appliedTemplate) {
@@ -203,7 +206,7 @@ const GeneratePage = () => {
     if (activeJob.status === "error") {
       setIsGenerating(false);
       setProgress(null);
-      setErrorMessage(activeJob.error || "生成失败");
+      setErrorMessage(normalizeUserErrorMessage(activeJob.error, "生成失败，请稍后重试。"));
     }
   }, [activeJob]);
 
@@ -267,7 +270,7 @@ const GeneratePage = () => {
 
   const handleFile = async (file: File) => {
     if (!file.type.match(/image\/(jpeg|png|webp)/)) {
-      return;
+      throw new Error("仅支持 JPG、PNG 或 WEBP 图片。");
     }
 
     const dataUrl = await compressImage(file);
@@ -328,11 +331,9 @@ const GeneratePage = () => {
         setShowSuggestionDialog(true);
       }
     } catch (err: any) {
-      let message = err.message || "场景识别失败，请稍后重试";
-      if (message.includes("Base64 decoding failed")) {
-        message = "图片数据处理失败，请更换图片后重试";
-      }
-      setSuggestionError(message);
+      setSuggestionError(
+        normalizeUserErrorMessage(err, "场景识别失败，请稍后重试。"),
+      );
     } finally {
       setIsLoadingSuggestions(false);
     }
@@ -373,10 +374,14 @@ const GeneratePage = () => {
         Array.from(files)
           .slice(0, 10 - uploadedImages.length)
           .forEach((file) => {
-            handleFile(file).catch(console.error);
+            handleFile(file).catch((error) => {
+              setSuggestionError(normalizeUserErrorMessage(error, "图片上传失败，请重试。"));
+            });
           });
       } else {
-        handleFile(files[0]).catch(console.error);
+        handleFile(files[0]).catch((error) => {
+          setSuggestionError(normalizeUserErrorMessage(error, "图片上传失败，请重试。"));
+        });
       }
     },
     [isBatchMode, uploadedImages.length],
@@ -617,7 +622,9 @@ const GeneratePage = () => {
                       onChange={(e) => {
                         const file = e.target.files?.[0];
                         if (file) {
-                          handleFile(file).catch(console.error);
+                          handleFile(file).catch((error) => {
+                            setSuggestionError(normalizeUserErrorMessage(error, "图片上传失败，请重试。"));
+                          });
                         }
                       }}
                     />
@@ -635,7 +642,9 @@ const GeneratePage = () => {
                   onChange={(e) => {
                     const file = e.target.files?.[0];
                     if (file) {
-                      handleFile(file).catch(console.error);
+                      handleFile(file).catch((error) => {
+                        setSuggestionError(normalizeUserErrorMessage(error, "图片上传失败，请重试。"));
+                      });
                     }
                   }}
                 />
@@ -685,11 +694,16 @@ const GeneratePage = () => {
                   AI 正在识别产品并生成 3 个场景方案...
                 </div>
               ) : suggestionError ? (
-                <div className="flex items-center justify-between rounded-lg bg-destructive/10 px-2 py-2 text-xs">
-                  <span className="text-destructive">{suggestionError}</span>
-                  <button onClick={handleAnalyzeProduct} className="text-primary hover:underline">
-                    重试
-                  </button>
+                <div className="rounded-lg bg-destructive/10 px-2 py-2 text-xs">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-destructive">{suggestionError}</span>
+                    <button onClick={handleAnalyzeProduct} className="shrink-0 text-primary hover:underline">
+                      重试
+                    </button>
+                  </div>
+                  {suggestionHint && (
+                    <div className="mt-1 text-[11px] text-muted-foreground">{suggestionHint}</div>
+                  )}
                 </div>
               ) : sceneSuggestions.length > 0 ? (
                 <div className="space-y-1.5">
@@ -961,8 +975,11 @@ const GeneratePage = () => {
       <div className="flex-1 overflow-y-auto bg-background p-4 pb-24 md:p-6 lg:pb-6">
         {errorMessage && (
           <div className="mb-3 flex items-center justify-between rounded-lg bg-destructive/10 p-2.5 text-sm text-destructive">
-            <span>{errorMessage}</span>
-            <button onClick={() => setErrorMessage(null)}>
+            <div className="min-w-0">
+              <div>{errorMessage}</div>
+              {errorHint && <div className="mt-1 text-xs text-muted-foreground">{errorHint}</div>}
+            </div>
+            <button onClick={() => setErrorMessage(null)} className="shrink-0">
               <X className="h-4 w-4" />
             </button>
           </div>

@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { normalizeUserErrorMessage } from "@/lib/error-messages";
 
 export type DetailPlanScreen = {
   screen: number;
@@ -57,11 +58,11 @@ export async function generateDetailPlan(
   });
 
   if (error) {
-    throw new Error(error.message || "详情页策划失败");
+    throw new Error(normalizeUserErrorMessage(error.message, "详情页策划失败，请稍后重试。"));
   }
 
   if (!data) {
-    throw new Error("详情页策划未返回结果");
+    throw new Error("详情页策划没有返回有效结果，请稍后重试。");
   }
 
   return data as DetailPlanResponse;
@@ -75,12 +76,12 @@ export async function optimizeProductInfo(
   });
 
   if (error) {
-    throw new Error(error.message || "产品信息优化失败");
+    throw new Error(normalizeUserErrorMessage(error.message, "产品信息优化失败，请稍后重试。"));
   }
 
   const optimized = data?.optimizedText;
   if (!optimized || typeof optimized !== "string") {
-    throw new Error("产品信息优化未返回有效结果");
+    throw new Error("产品信息优化没有返回有效结果，请重新尝试。");
   }
 
   return optimized;

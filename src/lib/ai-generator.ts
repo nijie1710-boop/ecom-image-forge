@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { normalizeUserErrorMessage } from "@/lib/error-messages";
 
 export type GenerationModel =
   | "gemini-3.1-flash-image-preview"
@@ -31,7 +32,7 @@ export interface GenerateImageResult {
 
 async function extractInvokeErrorMessage(error: unknown): Promise<string> {
   if (!error || typeof error !== "object") {
-    return "图片生成服务暂时不可用，请稍后重试";
+    return "图片生成服务暂时不可用，请稍后重试。";
   }
 
   const maybeError = error as {
@@ -45,7 +46,9 @@ async function extractInvokeErrorMessage(error: unknown): Promise<string> {
         | { error?: string; message?: string }
         | undefined;
       const detailed = payload?.error || payload?.message;
-      if (detailed) return detailed;
+      if (detailed) {
+        return normalizeUserErrorMessage(detailed, "图片生成失败，请稍后重试。");
+      }
     } catch {
       // ignore
     }
@@ -54,13 +57,18 @@ async function extractInvokeErrorMessage(error: unknown): Promise<string> {
   if (maybeError.context?.text) {
     try {
       const text = await maybeError.context.text();
-      if (text) return text;
+      if (text) {
+        return normalizeUserErrorMessage(text, "图片生成失败，请稍后重试。");
+      }
     } catch {
       // ignore
     }
   }
 
-  return maybeError.message || "图片生成服务暂时不可用，请稍后重试";
+  return normalizeUserErrorMessage(
+    maybeError.message,
+    "图片生成服务暂时不可用，请稍后重试。",
+  );
 }
 
 function buildFallbackParams(params: GenerateImageParams): GenerateImageParams | null {
@@ -96,6 +104,9 @@ function isFatalError(message: string | undefined): boolean {
     "billing",
     "login",
     "not authenticated",
+    "额度不足",
+    "限流",
+    "登录状态",
   ].some((keyword) => normalized.includes(keyword));
 }
 
@@ -135,12 +146,15 @@ async function generateSingleImage(
         : data.error?.message || data.error?.error || "生成失败";
 
     console.error(`[attempt ${attempt}] generate-image returned error:`, errorMessage);
-    return { url: null, error: errorMessage };
+    return {
+      url: null,
+      error: normalizeUserErrorMessage(errorMessage, "生成失败，请稍后重试。"),
+    };
   }
 
   const imageUrl = data?.images?.[0];
   if (!imageUrl) {
-    return { url: null, error: "未能生成图片，请稍后重试" };
+    return { url: null, error: "本次没有返回有效图片，请稍后重试。" };
   }
 
   return { url: imageUrl, error: null };
@@ -177,7 +191,7 @@ export async function generateImage(
       if (!images.length) {
         return {
           images: [],
-          error: lastError || "未能生成图片，请稍后重试",
+          error: normalizeUserErrorMessage(lastError, "本次没有生成成功，请稍后重试。"),
         };
       }
 
@@ -200,14 +214,12 @@ export async function generateImage(
       return fallbackResult;
     }
 
-    return primaryResult.error
-      ? primaryResult
-      : fallbackResult;
+    return primaryResult.error ? primaryResult : fallbackResult;
   } catch (error) {
     console.error("generateImage unexpected error:", error);
     return {
       images: [],
-      error: error instanceof Error ? error.message : "未知错误",
+      error: normalizeUserErrorMessage(error, "生成服务异常，请稍后重试。"),
     };
   }
 }

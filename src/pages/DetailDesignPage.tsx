@@ -37,6 +37,7 @@ import {
   type DetailPlanOption,
   type DetailPlanScreen,
 } from "@/lib/detail-plan";
+import { errorHintFromMessage, normalizeUserErrorMessage } from "@/lib/error-messages";
 import {
   type GenerationModel,
   type OutputResolution,
@@ -321,6 +322,8 @@ const DetailDesignPage = () => {
   const [showGenerationSettings, setShowGenerationSettings] = useState(false);
   const [selectedScreenNumbers, setSelectedScreenNumbers] = useState<number[]>([]);
   const resultsSectionRef = useRef<HTMLElement | null>(null);
+  const planningErrorHint = error ? errorHintFromMessage(error) : null;
+  const generationErrorHint = generationError ? errorHintFromMessage(generationError) : null;
 
   const activePlan = useMemo(
     () => planOptions[selectedOptionIndex] || null,
@@ -475,7 +478,7 @@ const DetailDesignPage = () => {
     }
     setIsGeneratingScreens(activeDetailJob.status === "running");
     if (activeDetailJob.status === "error") {
-      setGenerationError(activeDetailJob.error || "逐屏生成失败");
+      setGenerationError(normalizeUserErrorMessage(activeDetailJob.error, "逐屏生成失败，请稍后重试。"));
     } else if (activeDetailJob.status === "canceled") {
       setGenerationError("后台任务已取消");
     }
@@ -657,7 +660,7 @@ const DetailDesignPage = () => {
       setPlanOptions(result.planOptions || []);
       setSelectedOptionIndex(0);
     } catch (planError) {
-      setError(planError instanceof Error ? planError.message : "详情页策划失败");
+      setError(normalizeUserErrorMessage(planError, "详情页策划失败，请稍后重试。"));
     } finally {
       setIsLoading(false);
     }
@@ -680,7 +683,7 @@ const DetailDesignPage = () => {
       });
       setProductInfo(optimized);
     } catch (optimizeError) {
-      setError(optimizeError instanceof Error ? optimizeError.message : "产品信息优化失败");
+      setError(normalizeUserErrorMessage(optimizeError, "产品信息优化失败，请稍后重试。"));
     } finally {
       setIsOptimizingProductInfo(false);
     }
@@ -758,9 +761,7 @@ const DetailDesignPage = () => {
       setPreviewImageUrl(composed);
       setPreviewTitle(generated.title);
     } catch (previewError) {
-      setGenerationError(
-        previewError instanceof Error ? previewError.message : "预览成品失败",
-      );
+      setGenerationError(normalizeUserErrorMessage(previewError, "预览成品失败，请稍后重试。"));
     } finally {
       setIsPreparingPreview(false);
     }
@@ -773,9 +774,7 @@ const DetailDesignPage = () => {
       setPreviewImageUrl(composed);
       setPreviewTitle("详情页长图预览");
     } catch (previewError) {
-      setGenerationError(
-        previewError instanceof Error ? previewError.message : "预览长图失败",
-      );
+      setGenerationError(normalizeUserErrorMessage(previewError, "预览长图失败，请稍后重试。"));
     } finally {
       setIsPreparingPreview(false);
     }
@@ -791,9 +790,7 @@ const DetailDesignPage = () => {
       link.click();
       document.body.removeChild(link);
     } catch (downloadError) {
-      setGenerationError(
-        downloadError instanceof Error ? downloadError.message : "下载成品失败",
-      );
+      setGenerationError(normalizeUserErrorMessage(downloadError, "下载成品失败，请稍后重试。"));
     }
   };
 
@@ -807,9 +804,7 @@ const DetailDesignPage = () => {
       link.click();
       document.body.removeChild(link);
     } catch (downloadError) {
-      setGenerationError(
-        downloadError instanceof Error ? downloadError.message : "下载长图失败",
-      );
+      setGenerationError(normalizeUserErrorMessage(downloadError, "下载长图失败，请稍后重试。"));
     }
   };
 
@@ -819,9 +814,7 @@ const DetailDesignPage = () => {
       sessionStorage.setItem("detail-design-edit-image", composed);
       navigate("/dashboard/edit?source=detail-design");
     } catch (editError) {
-      setGenerationError(
-        editError instanceof Error ? editError.message : "打开编辑页失败",
-      );
+      setGenerationError(normalizeUserErrorMessage(editError, "打开编辑页失败，请稍后重试。"));
     }
   };
 
@@ -1168,7 +1161,10 @@ const DetailDesignPage = () => {
 
             {error && (
               <div className="mt-4 rounded-2xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-                {error}
+                <div>{error}</div>
+                {planningErrorHint && (
+                  <div className="mt-1 text-xs text-muted-foreground">{planningErrorHint}</div>
+                )}
               </div>
             )}
 
@@ -1337,7 +1333,10 @@ const DetailDesignPage = () => {
 
               {generationError && (
                 <div className="mt-4 rounded-2xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-                  {generationError}
+                  <div>{generationError}</div>
+                  {generationErrorHint && (
+                    <div className="mt-1 text-xs text-muted-foreground">{generationErrorHint}</div>
+                  )}
                 </div>
               )}
 
@@ -1772,7 +1771,12 @@ const DetailDesignPage = () => {
 
                           {generated?.error && (
                             <div className="rounded-2xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-                              {generated.error}
+                              <div>{generated.error}</div>
+                              {errorHintFromMessage(generated.error) && (
+                                <div className="mt-1 text-xs text-muted-foreground">
+                                  {errorHintFromMessage(generated.error)}
+                                </div>
+                              )}
                             </div>
                           )}
 

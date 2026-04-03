@@ -9,6 +9,7 @@ import {
   X,
 } from "lucide-react";
 import { GenerationContext } from "@/contexts/GenerationContext";
+import { errorHintFromMessage, normalizeUserErrorMessage } from "@/lib/error-messages";
 
 function targetPath(kind: "copy" | "image" | "detail") {
   return kind === "detail" ? "/dashboard/detail-design" : "/dashboard/generate";
@@ -30,6 +31,11 @@ export function GenerationFloatingIndicator() {
   }
 
   const latestJob = visibleJobs[0];
+  const normalizedError =
+    latestJob.status !== "running"
+      ? normalizeUserErrorMessage(latestJob.error, "本次任务失败，请稍后重试。")
+      : null;
+  const errorHint = normalizedError ? errorHintFromMessage(normalizedError) : null;
 
   const dismiss = (id: string) => {
     setDismissed((prev) => new Set([...prev, id]));
@@ -85,8 +91,8 @@ export function GenerationFloatingIndicator() {
               <p className="truncate text-sm font-medium text-foreground">
                 {latestJob.status === "running" && latestJob.step}
                 {latestJob.status === "done" && finishedLabel}
-                {latestJob.status === "error" && "生成失败"}
-                {latestJob.status === "canceled" && "已取消"}
+                {latestJob.status === "error" && "任务失败"}
+                {latestJob.status === "canceled" && "任务已取消"}
               </p>
               <button
                 onClick={() => dismiss(latestJob.id)}
@@ -105,13 +111,16 @@ export function GenerationFloatingIndicator() {
                   />
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  {latestJob.current}/{latestJob.total}，切换页面不会中断
+                  {latestJob.current}/{latestJob.total}，切换页面不会中断。
                 </p>
               </>
             )}
 
-            {latestJob.error && latestJob.status !== "running" && (
-              <p className="mt-1 text-xs leading-5 text-destructive">{latestJob.error}</p>
+            {normalizedError && latestJob.status !== "running" && (
+              <div className="mt-1 text-xs leading-5 text-destructive">
+                <div>{normalizedError}</div>
+                {errorHint && <div className="mt-1 text-muted-foreground">{errorHint}</div>}
+              </div>
             )}
 
             <div className="mt-3 flex flex-wrap gap-2">
