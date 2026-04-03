@@ -87,6 +87,34 @@ const readFileAsDataUrl = (file: File) =>
     reader.readAsDataURL(file);
   });
 
+const compressImageForTranslation = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const maxEdge = 1600;
+        const scale = Math.min(1, maxEdge / Math.max(img.width, img.height));
+        const width = Math.max(1, Math.round(img.width * scale));
+        const height = Math.max(1, Math.round(img.height * scale));
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          reject(new Error("图片处理失败"));
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", 0.9));
+      };
+      img.onerror = () => reject(new Error("图片处理失败"));
+      img.src = reader.result as string;
+    };
+    reader.onerror = () => reject(new Error("图片读取失败"));
+    reader.readAsDataURL(file);
+  });
+
 async function readInvokeError(error: any) {
   if (!error) return "服务暂时不可用，请稍后重试。";
   const context = error.context;
@@ -260,7 +288,7 @@ export default function TranslateImagePage() {
         nextFiles.map(async (file) => ({
           id: crypto.randomUUID(),
           fileName: file.name,
-          originalImage: await readFileAsDataUrl(file),
+          originalImage: await compressImageForTranslation(file),
           translatedImage: "",
           translations: [],
           status: "uploaded" as const,

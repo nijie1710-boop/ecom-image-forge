@@ -22,7 +22,9 @@ export function normalizeUserErrorMessage(
       return "当前登录状态已失效，请刷新页面后重新登录。";
     }
     if (parsed?.error === "OCR_UPSTREAM_FAILED" || parsed?.error === "REPLACE_UPSTREAM_FAILED") {
-      return "AI 服务暂时不可用，请稍后重试；如果连续失败，建议先检查当前模型额度。";
+      const detail = parsed?.detail ? ` 详情：${String(parsed.detail).slice(0, 140)}` : "";
+      const model = parsed?.model ? ` 模型：${parsed.model}` : "";
+      return `AI 服务暂时不可用，请稍后重试；如果连续失败，建议先检查当前模型额度。${model}${detail}`;
     }
     if (parsed?.error === "IMAGE_REQUIRED") {
       return "请先上传一张需要翻译的图片。";

@@ -83,6 +83,14 @@ async function callModel(
               maxOutputTokens: 512,
             }
           : undefined,
+        safetySettings: options?.expectImage
+          ? [
+              { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+              { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+              { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+              { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
+            ]
+          : undefined,
       }),
     },
   );
@@ -249,8 +257,8 @@ serve(async (req: Request) => {
         "Edit this image by replacing text only.",
         `Target language: ${targetLanguageLabel}.`,
         replacementInstructions,
-        "Preserve the original layout, background, product, spacing, and styling as much as possible.",
-        "Only replace text content.",
+        "Keep the original layout, background, product, spacing, font weight, and styling as close as possible.",
+        "Do not redesign the poster. Do not change the product. Only replace text.",
       ].join("\n");
 
       const { response, parsed, rawText, model } = await callReplaceModel(
