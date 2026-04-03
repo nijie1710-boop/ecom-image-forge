@@ -15,19 +15,19 @@ type TranslationItem = {
 
 const TARGET_LANGUAGE_LABELS: Record<string, string> = {
   en: "English",
-  zh: "简体中文",
-  zh_tw: "繁體中文",
-  ja: "日本語",
-  ko: "한국어",
-  fr: "Français",
-  de: "Deutsch",
-  es: "Español",
-  it: "Italiano",
-  pt: "Português",
-  ru: "Русский",
-  ar: "العربية",
-  th: "ไทย",
-  vi: "Tiếng Việt",
+  zh: "Simplified Chinese",
+  zh_tw: "Traditional Chinese",
+  ja: "Japanese",
+  ko: "Korean",
+  fr: "French",
+  de: "German",
+  es: "Spanish",
+  it: "Italian",
+  pt: "Portuguese",
+  ru: "Russian",
+  ar: "Arabic",
+  th: "Thai",
+  vi: "Vietnamese",
 };
 
 function jsonResponse(payload: unknown, status = 200) {
@@ -38,15 +38,14 @@ function jsonResponse(payload: unknown, status = 200) {
 }
 
 function stripDataPrefix(imageUrl: string) {
-  if (!imageUrl.startsWith("data:")) return imageUrl;
   return imageUrl.replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/, "");
 }
 
-function parseTranslationsFromContent(content: string): TranslationItem[] {
+function parseJsonArray(text: string): TranslationItem[] {
   try {
-    const jsonMatch = content.match(/\[[\s\S]*\]/);
-    if (!jsonMatch) return [];
-    const parsed = JSON.parse(jsonMatch[0]);
+    const match = text.match(/\[[\s\S]*\]/);
+    if (!match) return [];
+    const parsed = JSON.parse(match[0]);
     if (!Array.isArray(parsed)) return [];
     return parsed
       .filter((item) => item?.original && item?.translated)
@@ -60,34 +59,14 @@ function parseTranslationsFromContent(content: string): TranslationItem[] {
   }
 }
 
-async function callGemini({
-  apiKey,
-  imageBase64,
-  instruction,
-}: {
-  apiKey: string;
-  imageBase64: string;
-  instruction: string;
-}) {
+async function callModel(apiKey: string, model: string, parts: unknown[]) {
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/nano-banana-pro-preview:generateContent?key=${apiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              { text: instruction },
-              {
-                inlineData: {
-                  mimeType: "image/jpeg",
-                  data: imageBase64,
-                },
-              },
-            ],
-          },
-        ],
+        contents: [{ parts }],
       }),
     },
   );
@@ -101,7 +80,7 @@ async function callGemini({
     parsed = {};
   }
 
-  return { response, rawText, parsed };
+  return { response, parsed, rawText };
 }
 
 serve(async (req: Request) => {
@@ -117,21 +96,13 @@ serve(async (req: Request) => {
 
     const token = authHeader.replace("Bearer ", "");
     const body = await req.json().catch(() => null);
-    if (!body) {
-      return jsonResponse({ error: "INVALID_JSON" }, 400);
-    }
+    if (!body) return jsonResponse({ error: "INVALID_JSON" }, 400);
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
-
-    if (!supabaseUrl || !supabaseServiceKey) {
-      return jsonResponse({ error: "SUPABASE_ENV_MISSING" }, 500);
-    }
-
-    if (!geminiApiKey) {
-      return jsonResponse({ error: "GEMINI_API_KEY_MISSING" }, 500);
-    }
+    if (!supabaseUrl || !supabaseServiceKey) return jsonResponse({ error: "SUPABASE_ENV_MISSING" }, 500);
+    if (!geminiApiKey) return jsonResponse({ error: "GEMINI_API_KEY_MISSING" }, 500);
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
     const {
@@ -139,9 +110,7 @@ serve(async (req: Request) => {
       error: authError,
     } = await supabase.auth.getUser(token);
 
-    if (authError || !user) {
-      return jsonResponse({ error: "UNAUTHORIZED" }, 401);
-    }
+    if (authError || !user) return jsonResponse({ error: "UNAUTHORIZED" }, 401);
 
     const {
       imageUrl,
@@ -155,9 +124,7 @@ serve(async (req: Request) => {
       targetLanguage?: string;
     };
 
-    if (!imageUrl) {
-      return jsonResponse({ error: "IMAGE_REQUIRED" }, 400);
-    }
+    if (!imageUrl) return jsonResponse({ error: "IMAGE_REQUIRED" }, 400);
 
     const imageBase64 = stripDataPrefix(imageUrl);
     const targetLanguageLabel =
@@ -165,34 +132,26 @@ serve(async (req: Request) => {
 
     if (step === "ocr") {
       const instruction = [
-        "You are an expert OCR and translation planner for marketing images.",
-        "Read all visible text blocks that should be translated in this image.",
+        "You are an OCR and translation planner for marketing images.",
+        "Detect all visible text blocks that should be translated.",
         `Translate them into ${targetLanguageLabel}.`,
-        "Return only a JSON array in this format:",
+        "Return only a JSON array.",
         '[{"original":"source text","translated":"target text","position":"short position description"}]',
-        "Keep the translated text concise and suitable for image layout.",
+        "Keep translated text concise for image layout.",
         "If there is no useful text, return [] only.",
       ].join("\n");
 
-      const { response, parsed } = await callGemini({
-        apiKey: geminiApiKey,
-        imageBase64,
-        instruction,
-      });
+      const { response, parsed } = await callModel(geminiApiKey, "gemini-2.5-flash", [
+        { text: instruction },
+        { inlineData: { mimeType: "image/jpeg", data: imageBase64 } },
+      ]);
 
       if (!response.ok) {
-        return jsonResponse(
-          {
-            error: "OCR_UPSTREAM_FAILED",
-            status: response.status,
-          },
-          500,
-        );
+        return jsonResponse({ error: "OCR_UPSTREAM_FAILED", status: response.status }, 500);
       }
 
       const content = parsed?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-      const nextTranslations = parseTranslationsFromContent(content);
-      return jsonResponse({ translations: nextTranslations });
+      return jsonResponse({ translations: parseJsonArray(content) });
     }
 
     if (step === "replace") {
@@ -216,15 +175,12 @@ serve(async (req: Request) => {
         );
       }
 
-      const { data: deductResult, error: deductError } = await supabase.rpc(
-        "deduct_balance",
-        {
-          p_user_id: user.id,
-          p_amount: cost,
-          p_operation_type: "translate_image",
-          p_description: `图文翻译 -> ${targetLanguageLabel}`,
-        },
-      );
+      const { data: deductResult, error: deductError } = await supabase.rpc("deduct_balance", {
+        p_user_id: user.id,
+        p_amount: cost,
+        p_operation_type: "translate_image",
+        p_description: `图文翻译 -> ${targetLanguageLabel}`,
+      });
 
       if (deductError || !deductResult?.[0]?.success) {
         return jsonResponse({ error: "BALANCE_DEDUCT_FAILED" }, 500);
@@ -238,18 +194,17 @@ serve(async (req: Request) => {
         .join("\n");
 
       const instruction = [
-        "Edit this marketing image by replacing text only.",
+        "Edit this image by replacing text only.",
         `Target language: ${targetLanguageLabel}.`,
         replacementInstructions,
-        "Keep the exact original layout, color palette, font weight, spacing, stroke, shadows, and placement as much as possible.",
-        "Only replace text. Do not redraw the product or the background.",
+        "Preserve the original layout, background, product, spacing, and styling as much as possible.",
+        "Only replace text content.",
       ].join("\n");
 
-      const { response, parsed } = await callGemini({
-        apiKey: geminiApiKey,
-        imageBase64,
-        instruction,
-      });
+      const { response, parsed } = await callModel(geminiApiKey, "nano-banana-pro-preview", [
+        { text: instruction },
+        { inlineData: { mimeType: "image/jpeg", data: imageBase64 } },
+      ]);
 
       if (!response.ok) {
         await supabase.rpc("add_balance", {
@@ -258,13 +213,7 @@ serve(async (req: Request) => {
           p_payment_method: "refund",
           p_notes: "图文翻译失败退款",
         });
-        return jsonResponse(
-          {
-            error: "REPLACE_UPSTREAM_FAILED",
-            status: response.status,
-          },
-          500,
-        );
+        return jsonResponse({ error: "REPLACE_UPSTREAM_FAILED", status: response.status }, 500);
       }
 
       const part = parsed?.candidates?.[0]?.content?.parts?.[0];
@@ -298,7 +247,6 @@ serve(async (req: Request) => {
           for (let i = 0; i < binaryStr.length; i += 1) {
             bytes[i] = binaryStr.charCodeAt(i);
           }
-
           const fileName = `translated/${Date.now()}-${crypto.randomUUID()}.png`;
           const uploadResp = await fetch(
             `${supabaseUrl}/storage/v1/object/generated-images/${fileName}`,
@@ -311,7 +259,6 @@ serve(async (req: Request) => {
               body: bytes,
             },
           );
-
           if (uploadResp.ok) {
             imageResult = `${supabaseUrl}/storage/v1/object/public/generated-images/${fileName}`;
           }
