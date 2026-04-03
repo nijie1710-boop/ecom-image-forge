@@ -129,7 +129,7 @@ const MyImagesPage = () => {
     [cloudPages],
   );
 
-  const loadLocalState = () => {
+  const refreshLocalState = () => {
     try {
       const localHistory = JSON.parse(localStorage.getItem("local_image_history") || "[]");
       setLocalImages(localHistory.map((image: any) => ({ ...image, source: "local" as const })));
@@ -142,7 +142,7 @@ const MyImagesPage = () => {
   };
 
   useEffect(() => {
-    loadLocalState();
+    refreshLocalState();
   }, []);
 
   const mergedImages = useMemo(() => {
@@ -176,7 +176,13 @@ const MyImagesPage = () => {
       if (viewFilter === "best" && !item.is_best) return false;
       if (!query.trim()) return true;
 
-      const haystack = [item.prompt, item.style, item.scene, item.image_type, taskGroupLabel(item.task_kind)]
+      const haystack = [
+        item.prompt,
+        item.style,
+        item.scene,
+        item.image_type,
+        taskGroupLabel(item.task_kind),
+      ]
         .filter(Boolean)
         .join(" ")
         .toLowerCase();
@@ -244,7 +250,7 @@ const MyImagesPage = () => {
         curatedIds.forEach((id) => removeCuratedImage(id));
       }
 
-      loadLocalState();
+      refreshLocalState();
       setSelectedIds((current) => current.filter((id) => !images.some((img) => img.id === id)));
       toast({ title: `已删除 ${images.length} 张图片` });
     } catch (error) {
@@ -295,7 +301,7 @@ const MyImagesPage = () => {
   };
 
   const handleFavorite = (image: ImageRecord) => {
-    toggleCuratedFavorite(image.image_url, {
+    const updated = toggleCuratedFavorite(image.image_url, {
       image_url: image.image_url,
       prompt: image.prompt,
       aspect_ratio: image.aspect_ratio,
@@ -305,7 +311,10 @@ const MyImagesPage = () => {
       group_id: image.group_id,
       task_kind: image.task_kind,
     });
-    loadLocalState();
+    refreshLocalState();
+    toast({
+      title: updated.favorite ? "已加入收藏" : "已取消收藏",
+    });
   };
 
   const handleBest = (image: ImageRecord) => {
@@ -319,7 +328,11 @@ const MyImagesPage = () => {
       group_id: image.group_id,
       task_kind: image.task_kind,
     });
-    loadLocalState();
+    refreshLocalState();
+    toast({
+      title: "已标记为最佳图",
+      description: "同一批次里会优先保留这张作为最佳结果。",
+    });
   };
 
   const toggleSelected = (id: string) => {
@@ -341,7 +354,7 @@ const MyImagesPage = () => {
             </div>
             <h1 className="mt-3 text-2xl font-bold text-foreground">统一管理你的生成结果</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              点图片会直接大图预览，收藏和最佳图操作也已经改成更清爽的卡片工具栏。
+              点图片会直接大图预览，收藏和最佳图会立即更新状态，并给你明确提示。
             </p>
           </div>
 
