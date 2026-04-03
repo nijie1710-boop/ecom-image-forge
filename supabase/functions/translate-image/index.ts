@@ -64,6 +64,35 @@ function parseJsonArray(text: string): TranslationItem[] {
   }
 }
 
+function extractImageResult(parsed: any): string {
+  const candidates = Array.isArray(parsed?.candidates) ? parsed.candidates : [];
+
+  for (const candidate of candidates) {
+    const parts = Array.isArray(candidate?.content?.parts) ? candidate.content.parts : [];
+
+    for (const part of parts) {
+      if (part?.inlineData?.data) {
+        return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+      }
+
+      if (typeof part?.text === "string" && part.text.trim()) {
+        try {
+          const maybeJson = JSON.parse(part.text);
+          if (typeof maybeJson?.image_url === "string" && maybeJson.image_url) {
+            return maybeJson.image_url;
+          }
+        } catch {
+          if (part.text.startsWith("data:") || part.text.startsWith("http")) {
+            return part.text;
+          }
+        }
+      }
+    }
+  }
+
+  return "";
+}
+
 async function callModel(
   apiKey: string,
   model: string,
@@ -109,9 +138,8 @@ async function callModel(
 
 async function callReplaceModel(apiKey: string, mimeType: string, imageBase64: string, instruction: string) {
   const models = [
-    "nano-banana-pro-preview",
     "gemini-2.5-flash-image",
-    "gemini-3.1-flash-image-preview",
+    "gemini-3-pro-image-preview",
   ];
 
   let lastFailure = "";
@@ -128,7 +156,14 @@ async function callReplaceModel(apiKey: string, mimeType: string, imageBase64: s
     );
 
     if (result.response.ok) {
-      return { ...result, model };
+      const imageResult = extractImageResult(result.parsed);
+      if (imageResult) {
+        return { ...result, model, imageResult };
+      }
+
+      const responsePreview = JSON.stringify(result.parsed).slice(0, 300) || result.rawText.slice(0, 300);
+      lastFailure = `${model}:200:EMPTY_IMAGE_RESULT:${responsePreview}`;
+      continue;
     }
 
     lastFailure = `${model}:${result.response.status}:${result.rawText.slice(0, 300)}`;
@@ -138,7 +173,8 @@ async function callReplaceModel(apiKey: string, mimeType: string, imageBase64: s
     response: new Response(null, { status: 500 }),
     parsed: {},
     rawText: lastFailure,
-    model: models[0],
+    model: models[models.length - 1],
+    imageResult: "",
   };
 }
 
@@ -261,7 +297,7 @@ serve(async (req: Request) => {
         "Do not redesign the poster. Do not change the product. Only replace text.",
       ].join("\n");
 
-      const { response, parsed, rawText, model } = await callReplaceModel(
+      const { response, parsed, rawText, model, imageResult } = await callReplaceModel(
         geminiApiKey,
         mimeType,
         imageBase64,
@@ -286,19 +322,6 @@ serve(async (req: Request) => {
         );
       }
 
-      const part = parsed?.candidates?.[0]?.content?.parts?.[0];
-      let imageResult = "";
-
-      if (part?.inlineData?.data) {
-        imageResult = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
-      } else if (part?.text) {
-        try {
-          imageResult = JSON.parse(part.text).image_url || "";
-        } catch {
-          imageResult = part.text;
-        }
-      }
-
       if (!imageResult) {
         await supabase.rpc("add_balance", {
           p_user_id: user.id,
@@ -306,7 +329,13 @@ serve(async (req: Request) => {
           p_payment_method: "refund",
           p_notes: "图文翻译失败退款",
         });
-        return jsonResponse({ error: "EMPTY_IMAGE_RESULT" }, 500);
+        return jsonResponse(
+          {
+            error: "EMPTY_IMAGE_RESULT",
+            detail: JSON.stringify(parsed).slice(0, 500),
+          },
+          500,
+        );
       }
 
       if (imageResult.startsWith("data:")) {

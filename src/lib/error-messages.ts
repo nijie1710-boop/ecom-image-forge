@@ -14,20 +14,33 @@ export function normalizeUserErrorMessage(
 
   try {
     const parsed = JSON.parse(normalized);
+
     if (parsed?.message) return parsed.message;
+
     if (parsed?.error === "INSUFFICIENT_BALANCE") {
-      return "积分不足，当前图文翻译无法继续生成，请先充值后再试。";
+      return "积分不足，当前无法继续生成翻译图，请先充值后再试。";
     }
+
     if (parsed?.error === "UNAUTHORIZED") {
       return "当前登录状态已失效，请刷新页面后重新登录。";
     }
+
     if (parsed?.error === "OCR_UPSTREAM_FAILED" || parsed?.error === "REPLACE_UPSTREAM_FAILED") {
-      const detail = parsed?.detail ? ` 详情：${String(parsed.detail).slice(0, 140)}` : "";
       const model = parsed?.model ? ` 模型：${parsed.model}` : "";
-      return `AI 服务暂时不可用，请稍后重试；如果连续失败，建议先检查当前模型额度。${model}${detail}`;
+      const detail = parsed?.detail ? ` 详情：${String(parsed.detail).slice(0, 140)}` : "";
+      return `AI 服务暂时不可用，请稍后重试；如果连续失败，建议检查当前模型额度。${model}${detail}`;
     }
+
+    if (parsed?.error === "EMPTY_IMAGE_RESULT") {
+      return "AI 已完成替换请求，但这一次没有返回可用图片。请稍后重试；如果连续失败，说明当前替换模型没有稳定产出图片。";
+    }
+
     if (parsed?.error === "IMAGE_REQUIRED") {
       return "请先上传一张需要翻译的图片。";
+    }
+
+    if (parsed?.error === "TRANSLATIONS_REQUIRED") {
+      return "请先识别文字并确认译文，再生成翻译图。";
     }
   } catch {
     // ignore JSON parse errors and continue with string matching
@@ -72,7 +85,14 @@ export function normalizeUserErrorMessage(
     lower.includes("502") ||
     lower.includes("503")
   ) {
-    return "上游模型响应超时，请稍后重试，或先降低张数和清晰度。";
+    return "上游模型响应超时，请稍后重试，或先降低图片尺寸再试。";
+  }
+
+  if (
+    lower.includes("empty_image_result") ||
+    lower.includes("no image returned")
+  ) {
+    return "AI 已响应，但没有返回图片结果。请重试一次；如果连续失败，说明当前替换模型没有稳定产出图片。";
   }
 
   if (
@@ -80,8 +100,7 @@ export function normalizeUserErrorMessage(
     lower.includes("decode") ||
     lower.includes("mime") ||
     lower.includes("image data") ||
-    lower.includes("invalid image") ||
-    lower.includes("图片")
+    lower.includes("invalid image")
   ) {
     return "图片处理失败，请换一张更清晰的 JPG、PNG 或 WEBP 图片再试。";
   }
@@ -114,7 +133,7 @@ export function errorHintFromMessage(message: string): string | null {
   }
 
   if (lower.includes("额度") || lower.includes("限流") || lower.includes("余额")) {
-    return "建议：先切换到低分辨率或更便宜模型，并检查上游 API 余额。";
+    return "建议：先切换到更低成本模型，或检查上游 API 账户余额与配额。";
   }
 
   if (lower.includes("图片处理") || lower.includes("图片加载")) {
@@ -122,7 +141,11 @@ export function errorHintFromMessage(message: string): string | null {
   }
 
   if (lower.includes("超时")) {
-    return "建议：先把生成数量调到 1 张，或把清晰度降到 1K / 0.5K 再试。";
+    return "建议：先减少批量数量，或更换更小的图片再试。";
+  }
+
+  if (lower.includes("没有返回图片") || lower.includes("empty_image_result")) {
+    return "建议：先重试一次；如果连续失败，说明当前替换模型没有稳定返回图片，需要继续调整模型链路。";
   }
 
   if (lower.includes("连接失败") || lower.includes("部署异常")) {
