@@ -31,6 +31,10 @@ import {
 } from "@/lib/error-messages";
 import { upsertCuratedImage } from "@/lib/image-library";
 import { WorkspaceHeader, WorkspaceShell } from "@/components/workspace/WorkspaceShell";
+import {
+  WorkspaceEmptyState,
+  WorkspaceSection,
+} from "@/components/workspace/WorkspaceBlocks";
 
 interface TranslationItem {
   original: string;
@@ -554,7 +558,7 @@ export default function TranslateImagePage() {
               <input className="hidden" type="file" accept="image/*" multiple onChange={handleImageUpload} />
             </label>
 
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
               <Button className="flex-1" onClick={() => void handleGenerateAll()} disabled={!jobs.length || isBatchRunning}>
                 {isBatchRunning ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />批量处理中</> : <><Sparkles className="mr-2 h-4 w-4" />批量翻译全部</>}
               </Button>
@@ -606,45 +610,38 @@ export default function TranslateImagePage() {
         <div className="space-y-6">
           {activeJob ? (
             <>
-              <Card className="rounded-3xl border-border shadow-sm">
-                <CardHeader className="space-y-3">
-                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                    <div>
-                      <CardTitle className="text-base">当前任务：{activeJob.fileName}</CardTitle>
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        当前目标语言是 {targetLanguageLabel}。你可以先识别校对，也可以直接一键生成翻译图。
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <Button variant="outline" onClick={() => void handleRecognize()} disabled={activeJob.status === "ocring" || activeJob.status === "rendering"}>
-                        {activeJob.status === "ocring" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Languages className="mr-2 h-4 w-4" />}
-                        识别文字
-                      </Button>
-                      <Button onClick={() => void handleGenerateActive()} disabled={activeJob.status === "ocring" || activeJob.status === "rendering"}>
-                        {activeJob.status === "rendering" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ArrowRight className="mr-2 h-4 w-4" />}
-                        一键生成翻译图
-                      </Button>
-                      <Button variant="outline" onClick={() => handleDownload(activeJob)} disabled={!activeJob.translatedImage}>
-                        <Download className="mr-2 h-4 w-4" />
-                        下载
-                      </Button>
-                    </div>
-                  </div>
-
-                  {activeJob.error && (
-                    <div className="rounded-2xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm">
-                      <div className="flex items-start gap-2 text-destructive">
-                        <XCircle className="mt-0.5 h-4 w-4" />
-                        <div>
-                          <div className="font-medium">当前任务失败</div>
-                          <div className="mt-1">{activeJob.error}</div>
-                          {activeJob.hint && <div className="mt-2 text-destructive/80">{activeJob.hint}</div>}
-                        </div>
+              <WorkspaceSection
+                title={`当前任务：${activeJob.fileName}`}
+                description={`当前目标语言是 ${targetLanguageLabel}。你可以先识别校对，也可以直接一键生成翻译图。`}
+                actions={
+                  <>
+                    <Button variant="outline" onClick={() => void handleRecognize()} disabled={activeJob.status === "ocring" || activeJob.status === "rendering"}>
+                      {activeJob.status === "ocring" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Languages className="mr-2 h-4 w-4" />}
+                      识别文字
+                    </Button>
+                    <Button onClick={() => void handleGenerateActive()} disabled={activeJob.status === "ocring" || activeJob.status === "rendering"}>
+                      {activeJob.status === "rendering" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ArrowRight className="mr-2 h-4 w-4" />}
+                      一键生成翻译图
+                    </Button>
+                    <Button variant="outline" onClick={() => handleDownload(activeJob)} disabled={!activeJob.translatedImage}>
+                      <Download className="mr-2 h-4 w-4" />
+                      下载
+                    </Button>
+                  </>
+                }
+              >
+                {activeJob.error && (
+                  <div className="mb-5 rounded-2xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm">
+                    <div className="flex items-start gap-2 text-destructive">
+                      <XCircle className="mt-0.5 h-4 w-4" />
+                      <div>
+                        <div className="font-medium">当前任务失败</div>
+                        <div className="mt-1">{activeJob.error}</div>
+                        {activeJob.hint && <div className="mt-2 text-destructive/80">{activeJob.hint}</div>}
                       </div>
                     </div>
-                  )}
-                </CardHeader>
-                <CardContent>
+                  </div>
+                )}
                   <div className="grid gap-4 lg:grid-cols-2">
                     <PreviewPanel title="原图" subtitle="用于 OCR 识别和替换生成" image={activeJob.originalImage} />
                     <PreviewPanel
@@ -654,8 +651,7 @@ export default function TranslateImagePage() {
                       placeholder={activeJob.status === "rendering" ? "正在生成翻译图..." : "这里会显示翻译后的最终图片"}
                     />
                   </div>
-                </CardContent>
-              </Card>
+              </WorkspaceSection>
 
               <Card className="rounded-3xl border-border shadow-sm">
                 <CardHeader className="space-y-3">
@@ -701,19 +697,12 @@ export default function TranslateImagePage() {
               </Card>
             </>
           ) : (
-            <Card className="rounded-3xl border-dashed border-border">
-              <CardContent className="flex min-h-[540px] flex-col items-center justify-center gap-4 text-center">
-                <div className="rounded-3xl bg-primary/10 p-4 text-primary">
-                  <ImagePlus className="h-10 w-10" />
-                </div>
-                <div>
-                  <div className="text-lg font-semibold text-foreground">先上传要翻译的图片</div>
-                  <div className="mt-2 text-sm text-muted-foreground">
-                    支持拖拽批量上传，上传后可以逐张识别和生成，也能整批翻译后直接进入图片库。
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+            <WorkspaceEmptyState
+              icon={ImagePlus}
+              title="先上传要翻译的图片"
+              description="支持拖拽批量上传，上传后可以逐张识别和生成，也能整批翻译后直接进入图片库。"
+              className="min-h-[540px]"
+            />
           )}
         </div>
         }

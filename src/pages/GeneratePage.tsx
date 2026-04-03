@@ -40,6 +40,11 @@ import {
   upsertCuratedImage,
 } from "@/lib/image-library";
 import { WorkspaceHeader, WorkspaceShell } from "@/components/workspace/WorkspaceShell";
+import {
+  WorkspaceEmptyState,
+  WorkspaceSection,
+  WorkspaceStatGrid,
+} from "@/components/workspace/WorkspaceBlocks";
 
 const imageTypes = ["主图", "详情图"];
 
@@ -755,7 +760,7 @@ const GeneratePage = () => {
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <SelectField
             label="图片类型"
             options={imageTypes}
@@ -770,7 +775,7 @@ const GeneratePage = () => {
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <SelectField
             label="生成数量"
             options={imageCountOptions}
@@ -937,7 +942,7 @@ const GeneratePage = () => {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <SelectField
                   label="模型"
                   options={modelOptions}
@@ -976,7 +981,7 @@ const GeneratePage = () => {
           </div>
         }
         content={
-      <div className="space-y-6 rounded-3xl border border-border bg-card p-5 pb-24 shadow-sm md:p-6 lg:pb-6 xl:min-h-[720px]">
+      <div className="space-y-6 rounded-3xl border border-border bg-card p-4 pb-24 shadow-sm md:p-6 lg:pb-6 xl:min-h-[720px]">
         {errorMessage && (
           <div className="mb-3 flex items-center justify-between rounded-lg bg-destructive/10 p-2.5 text-sm text-destructive">
             <div className="min-w-0">
@@ -1008,7 +1013,7 @@ const GeneratePage = () => {
               />
             </div>
             <p className="text-xs text-muted-foreground">AI 正在生成电商图片，请稍候...</p>
-            <div className="mt-6 grid w-full grid-cols-2 gap-3 md:grid-cols-3">
+            <div className="mt-6 grid w-full grid-cols-2 gap-3 lg:grid-cols-3">
               {Array.from({ length: Math.min(Math.max(Number(selectedCount), 1), 9) }).map(
                 (_, index) => (
                   <div key={index} className="aspect-square rounded-lg bg-muted animate-pulse" />
@@ -1018,19 +1023,15 @@ const GeneratePage = () => {
           </div>
         ) : results.length > 0 ? (
           <>
-            <div className="mb-4 rounded-3xl border border-border bg-card p-4 shadow-sm">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <div>
+            <WorkspaceSection
+              title="结果已经准备好了"
+              description="先挑一张满意的结果预览或编辑，不满意再整体重生。"
+              actions={
+                <>
                   <div className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-[11px] font-medium text-primary">
                     <Sparkles className="h-3.5 w-3.5" />
                     本次已生成 {results.length} 张结果
                   </div>
-                  <h3 className="mt-3 text-lg font-semibold text-foreground">结果已经准备好了</h3>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    先挑一张满意的结果预览或编辑，不满意再整体重生。
-                  </p>
-                </div>
-                <div className="flex gap-1.5">
                   <Button variant="outline" size="sm" className="h-9 text-xs" onClick={handleRegenerate}>
                     <RefreshCw className="mr-1 h-3.5 w-3.5" />
                     重新生成
@@ -1039,32 +1040,21 @@ const GeneratePage = () => {
                     <Download className="mr-1 h-3.5 w-3.5" />
                     全部下载
                   </Button>
-                </div>
-              </div>
+                </>
+              }
+              className="p-4"
+            >
+              <WorkspaceStatGrid
+                items={[
+                  { label: "图片类型", value: imageType },
+                  { label: "模型", value: selectedModelLabel },
+                  { label: "规格", value: `${selectedResolutionLabel} / ${selectedRatio}` },
+                  { label: "文字语言", value: selectedLanguageLabel },
+                ]}
+              />
+            </WorkspaceSection>
 
-              <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-                <div className="rounded-2xl bg-muted/70 px-3 py-3">
-                  <div className="text-[11px] uppercase tracking-wider text-muted-foreground">图片类型</div>
-                  <div className="mt-1 text-sm font-medium text-foreground">{imageType}</div>
-                </div>
-                <div className="rounded-2xl bg-muted/70 px-3 py-3">
-                  <div className="text-[11px] uppercase tracking-wider text-muted-foreground">模型</div>
-                  <div className="mt-1 text-sm font-medium text-foreground">{selectedModelLabel}</div>
-                </div>
-                <div className="rounded-2xl bg-muted/70 px-3 py-3">
-                  <div className="text-[11px] uppercase tracking-wider text-muted-foreground">规格</div>
-                  <div className="mt-1 text-sm font-medium text-foreground">
-                    {selectedResolutionLabel} / {selectedRatio}
-                  </div>
-                </div>
-                <div className="rounded-2xl bg-muted/70 px-3 py-3">
-                  <div className="text-[11px] uppercase tracking-wider text-muted-foreground">文字语言</div>
-                  <div className="mt-1 text-sm font-medium text-foreground">{selectedLanguageLabel}</div>
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
               {results.map((src, index) => (
                 <div
                   key={index}
@@ -1091,7 +1081,7 @@ const GeneratePage = () => {
                         预览
                       </button>
                     </div>
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                       <button
                         onClick={() => setPreviewImage(src)}
                         className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-medium text-foreground transition hover:border-primary/40 hover:text-primary"
@@ -1111,7 +1101,7 @@ const GeneratePage = () => {
                         下载
                       </button>
                     </div>
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                       <button
                         onClick={() => handleSaveToLibrary(src)}
                         className={`rounded-xl border px-3 py-2 text-xs font-medium transition ${
@@ -1161,15 +1151,12 @@ const GeneratePage = () => {
             </div>
           </>
         ) : (
-          <div className="flex min-h-[400px] items-center justify-center text-center">
-            <div>
-              <Sparkles className="mx-auto mb-3 h-12 w-12 text-muted-foreground/15" />
-              <h3 className="mb-1 text-sm font-semibold text-muted-foreground">准备就绪</h3>
-              <p className="max-w-xs text-xs text-muted-foreground/60">
-                上传商品图，先选一个场景方案，再生成电商图。
-              </p>
-            </div>
-          </div>
+          <WorkspaceEmptyState
+            icon={Sparkles}
+            title="准备就绪"
+            description="上传商品图，先选一个场景方案，再生成电商图。"
+            className="min-h-[400px]"
+          />
         )}
       </div>
         }

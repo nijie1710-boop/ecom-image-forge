@@ -43,6 +43,11 @@ import {
   type OutputResolution,
 } from "@/lib/ai-generator";
 import { WorkspaceHeader } from "@/components/workspace/WorkspaceShell";
+import {
+  WorkspaceEmptyState,
+  WorkspaceSection,
+  WorkspaceStatGrid,
+} from "@/components/workspace/WorkspaceBlocks";
 
 const platformOptions = ["淘宝/天猫", "京东", "拼多多", "小红书", "抖音", "亚马逊"];
 
@@ -163,15 +168,12 @@ const SelectField = ({
 );
 
 const EmptyState = () => (
-  <div className="rounded-3xl border border-dashed border-border bg-card/60 p-8 text-center">
-    <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10">
-      <LayoutPanelTop className="h-7 w-7 text-primary" />
-    </div>
-    <h3 className="text-lg font-semibold text-foreground">先生成一套详情页方案</h3>
-    <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
-      上传商品图、补充卖点后，AI 会先输出 3 套完整详情页方案，包含整版调性、配色规范和每一屏的结构建议。
-    </p>
-  </div>
+  <WorkspaceEmptyState
+    icon={LayoutPanelTop}
+    title="先生成一套详情页方案"
+    description="上传商品图、补充卖点后，AI 会先输出 3 套完整详情页方案，包含整版调性、配色规范和每一屏的结构建议。"
+    className="min-h-[520px]"
+  />
 );
 
 function languageRule(language: string): string {
@@ -1337,7 +1339,7 @@ const DetailDesignPage = () => {
               )}
 
               <div className="mt-5 grid gap-2">
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
                   <Button
                     type="button"
                     variant="outline"
@@ -1411,23 +1413,21 @@ const DetailDesignPage = () => {
             <EmptyState />
           ) : (
             <>
-              <section className="rounded-3xl border border-border bg-card p-5 shadow-sm">
-                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <h2 className="text-lg font-semibold text-foreground">AI 详情页方案</h2>
-                    <p className="text-sm text-muted-foreground">
-                      先从 3 套整体方向里选一套。选中的方案会直接作为下面逐屏生成的执行蓝本。
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-                    <span className="rounded-full bg-muted px-3 py-1">
+              <WorkspaceSection
+                title="AI 详情页方案"
+                description="先从 3 套整体方向里选一套。选中的方案会直接作为下面逐屏生成的执行蓝本。"
+                actions={
+                  <>
+                    <span className="rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground">
                       商品识别：{productSummary || "未返回"}
                     </span>
-                    <span className="rounded-full bg-muted px-3 py-1">可见文字：{visibleText}</span>
-                  </div>
-                </div>
-
-                <div className="mt-5 grid gap-4 lg:grid-cols-3">
+                    <span className="rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground">
+                      可见文字：{visibleText}
+                    </span>
+                  </>
+                }
+              >
+                <div className="grid gap-4 lg:grid-cols-3">
                   {planOptions.map((option, index) => {
                     const active = index === selectedOptionIndex;
                     return (
@@ -1489,14 +1489,12 @@ const DetailDesignPage = () => {
                     );
                   })}
                 </div>
-              </section>
+              </WorkspaceSection>
 
-              <section className="rounded-3xl border border-border bg-card p-5 shadow-sm">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                  <div>
-                    <h3 className="text-xl font-semibold text-foreground">{activePlan.planName}</h3>
-                    <p className="mt-1 text-sm text-muted-foreground">{activePlan.summary}</p>
-                  </div>
+              <WorkspaceSection
+                title={activePlan.planName}
+                description={activePlan.summary}
+                actions={
                   <div className="grid gap-2 text-xs text-muted-foreground md:grid-cols-2 lg:min-w-[260px]">
                     <div className="rounded-2xl bg-muted px-3 py-2">
                       <span className="block text-[11px] uppercase tracking-wider">目标人群</span>
@@ -1509,22 +1507,15 @@ const DetailDesignPage = () => {
                       </span>
                     </div>
                   </div>
-                </div>
-
-                <div className="mt-5 grid gap-3 md:grid-cols-3">
-                  <div className="rounded-2xl bg-muted/70 px-4 py-3">
-                    <div className="text-[11px] uppercase tracking-wider text-muted-foreground">当前方案调性</div>
-                    <div className="mt-1 text-sm font-medium text-foreground">{activePlan.tone}</div>
-                  </div>
-                  <div className="rounded-2xl bg-muted/70 px-4 py-3">
-                    <div className="text-[11px] uppercase tracking-wider text-muted-foreground">目标人群</div>
-                    <div className="mt-1 text-sm font-medium text-foreground">{activePlan.audience}</div>
-                  </div>
-                  <div className="rounded-2xl bg-muted/70 px-4 py-3">
-                    <div className="text-[11px] uppercase tracking-wider text-muted-foreground">执行屏数</div>
-                    <div className="mt-1 text-sm font-medium text-foreground">{activePlan.screens.length} 屏</div>
-                  </div>
-                </div>
+                }
+              >
+                <WorkspaceStatGrid
+                  items={[
+                    { label: "当前方案调性", value: activePlan.tone },
+                    { label: "目标人群", value: activePlan.audience },
+                    { label: "执行屏数", value: `${activePlan.screens.length} 屏` },
+                  ]}
+                />
 
                 <div className="mt-5 grid gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
                   <div className="rounded-2xl border border-border bg-background p-4">
@@ -1623,7 +1614,7 @@ const DetailDesignPage = () => {
                     </div>
                   </div>
                 </div>
-              </section>
+              </WorkspaceSection>
               <section
                 ref={resultsSectionRef}
                 id="detail-results"
