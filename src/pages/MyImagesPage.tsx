@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { useAuth } from "@/contexts/AuthContext";
-import { supabase } from "@/integrations/supabase/client";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   CheckCircle2,
@@ -15,17 +14,19 @@ import {
   Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Link } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 import {
   loadCuratedImageLibrary,
+  markCuratedBest,
   removeCuratedImage,
   toggleCuratedFavorite,
-  markCuratedBest,
-  type CuratedImageRecord,
 } from "@/lib/image-library";
 
 type SourceType = "cloud" | "local" | "curated";
+type ViewFilter = "all" | "favorites" | "best";
+type GroupMode = "batch" | "date" | "task";
 
 interface ImageRecord {
   id: string;
@@ -43,15 +44,40 @@ interface ImageRecord {
   is_best?: boolean;
 }
 
+function sourceLabel(source: SourceType) {
+  if (source === "cloud") return "云端";
+  if (source === "local") return "本地";
+  return "精选";
+}
+
+function taskGroupLabel(taskKind?: string) {
+  if (taskKind === "detail") return "AI 详情页";
+  if (taskKind === "copy") return "文案联动";
+  return "AI 生图";
+}
+
+function formatGroupTitle(groupMode: GroupMode, groupKey: string, firstImage?: ImageRecord) {
+  if (groupMode === "task") {
+    return taskGroupLabel(groupKey);
+  }
+  if (groupMode === "batch") {
+    return firstImage?.group_id ? "同一批次结果" : `批次 ${groupKey}`;
+  }
+  return groupKey;
+}
+
 const MyImagesPage = () => {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
   const [localImages, setLocalImages] = useState<ImageRecord[]>([]);
   const [curatedImages, setCuratedImages] = useState<ImageRecord[]>([]);
   const [query, setQuery] = useState("");
   const [sourceFilter, setSourceFilter] = useState<"all" | SourceType>("all");
-  const [viewFilter, setViewFilter] = useState<"all" | "favorites" | "best">("all");
+  const [viewFilter, setViewFilter] = useState<ViewFilter>("all");
+  const [groupMode, setGroupMode] = useState<GroupMode>("batch");
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const { data: cloudImages, isLoading: isLoadingCloud } = useQuery({
     queryKey: ["my-images", user?.id],
@@ -62,8 +88,9 @@ const MyImagesPage = () => {
         .eq("user_id", user!.id)
         .order("created_at", { ascending: false })
         .limit(100);
+
       if (error) throw error;
-      return (data || []).map((img) => ({ ...img, source: "cloud" as const }));
+      return (data || []).map((image) => ({ ...image, source: "cloud" as const }));
     },
     enabled: !!user,
   });
@@ -71,8 +98,10 @@ const MyImagesPage = () => {
   const loadLocalState = () => {
     try {
       const localHistory = JSON.parse(localStorage.getItem("local_image_history") || "[]");
-      setLocalImages(localHistory.map((img: any) => ({ ...img, source: "local" as const })));
-      setCuratedImages(loadCuratedImageLibrary().map((img) => ({ ...img, source: "curated" as const })));
+      setLocalImages(localHistory.map((image: any) => ({ ...image, source: "local" as const })));
+      setCuratedImages(
+        loadCuratedImageLibrary().map((image) => ({ ...image, source: "curated" as const })),
+      );
     } catch (error) {
       console.error("load image library failed:", error);
     }
@@ -91,6 +120,7 @@ const MyImagesPage = () => {
         map.set(item.image_url, item);
         return;
       }
+
       map.set(item.image_url, {
         ...existing,
         ...item,
@@ -111,75 +141,92 @@ const MyImagesPage = () => {
       if (viewFilter === "favorites" && !item.favorite) return false;
       if (viewFilter === "best" && !item.is_best) return false;
       if (!query.trim()) return true;
-      const haystack = [item.prompt, item.style, item.scene, item.image_type]
+
+      const haystack = [item.prompt, item.style, item.scene, item.image_type, taskGroupLabel(item.task_kind)]
         .filter(Boolean)
         .join(" ")
         .toLowerCase();
       return haystack.includes(query.trim().toLowerCase());
     });
-  }, [mergedImages, query, sourceFilter, viewFilter]);
+  }, [groupMode, mergedImages, query, sourceFilter, viewFilter]);
 
   const groupedImages = useMemo(() => {
     const groups = new Map<string, ImageRecord[]>();
+
     filteredImages.forEach((item) => {
-      const key = item.group_id || item.created_at.slice(0, 10);
-      if (!groups.has(key)) {
-        groups.set(key, []);
-      }
-      groups.get(key)!.push(item);
+      const key =
+        groupMode === "date"
+          ? item.created_at.slice(0, 10)
+          : groupMode === "task"
+            ? item.task_kind || "image"
+            : item.group_id || item.created_at.slice(0, 10);
+
+      const current = groups.get(key) || [];
+      current.push(item);
+      groups.set(key, current);
     });
+
     return Array.from(groups.entries());
+  }, [filteredImages, groupMode]);
+
+  useEffect(() => {
+    const validIds = new Set(filteredImages.map((item) => item.id));
+    setSelectedIds((current) => current.filter((id) => validIds.has(id)));
   }, [filteredImages]);
 
-  const isLoading = user ? isLoadingCloud : false;
-
   const deleteCloudMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from("generated_images").delete().eq("id", id);
+    mutationFn: async (ids: string[]) => {
+      const { error } = await supabase.from("generated_images").delete().in("id", ids);
       if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["my-images"] });
-      toast({ title: "已删除云端图片" });
     },
   });
 
-  const deleteLocalImage = (id: string) => {
-    try {
-      const localHistory = JSON.parse(localStorage.getItem("local_image_history") || "[]");
-      const updated = localHistory.filter((img: any) => img.id !== id);
-      localStorage.setItem("local_image_history", JSON.stringify(updated));
-      setLocalImages(updated);
-      toast({ title: "已删除本地图片" });
-    } catch (error) {
-      console.error("delete local image failed:", error);
-    }
+  const updateLocalHistory = (updater: (items: any[]) => any[]) => {
+    const localHistory = JSON.parse(localStorage.getItem("local_image_history") || "[]");
+    const updated = updater(localHistory);
+    localStorage.setItem("local_image_history", JSON.stringify(updated));
+    setLocalImages(updated.map((image: any) => ({ ...image, source: "local" as const })));
   };
 
-  const handleDelete = (image: ImageRecord) => {
-    if (image.source === "cloud") {
-      deleteCloudMutation.mutate(image.id);
-      return;
-    }
-    if (image.source === "curated") {
-      removeCuratedImage(image.id);
+  const handleDelete = async (images: ImageRecord[]) => {
+    const cloudIds = images.filter((item) => item.source === "cloud").map((item) => item.id);
+    const localIds = new Set(images.filter((item) => item.source === "local").map((item) => item.id));
+    const curatedIds = images.filter((item) => item.source === "curated").map((item) => item.id);
+
+    try {
+      if (cloudIds.length > 0) {
+        await deleteCloudMutation.mutateAsync(cloudIds);
+      }
+
+      if (localIds.size > 0) {
+        updateLocalHistory((items) => items.filter((item: any) => !localIds.has(item.id)));
+      }
+
+      if (curatedIds.length > 0) {
+        curatedIds.forEach((id) => removeCuratedImage(id));
+      }
+
       loadLocalState();
-      toast({ title: "已移出精选图库" });
-      return;
+      setSelectedIds((current) => current.filter((id) => !images.some((img) => img.id === id)));
+      toast({ title: `已删除 ${images.length} 张图片` });
+    } catch (error) {
+      console.error("delete images failed:", error);
+      toast({ title: "删除失败，请稍后重试" });
     }
-    deleteLocalImage(image.id);
   };
 
   const isMobile = () =>
-    /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
-      navigator.userAgent,
-    );
+    /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
   const downloadImage = (url: string, filename: string) => {
     if (isMobile()) {
       window.open(url, "_blank");
       return;
     }
+
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.onload = () => {
@@ -187,23 +234,29 @@ const MyImagesPage = () => {
       canvas.width = img.width;
       canvas.height = img.height;
       const ctx = canvas.getContext("2d");
-      if (ctx) {
-        ctx.drawImage(img, 0, 0);
-        canvas.toBlob((blob) => {
-          if (blob) {
-            const link = document.createElement("a");
-            link.href = URL.createObjectURL(blob);
-            link.download = filename;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(link.href);
-          }
-        }, "image/jpeg");
-      }
+      if (!ctx) return;
+      ctx.drawImage(img, 0, 0);
+      canvas.toBlob((blob) => {
+        if (!blob) return;
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(link.href);
+      }, "image/jpeg");
     };
     img.onerror = () => window.open(url, "_blank");
     img.src = url;
+  };
+
+  const handleBatchDownload = (images: ImageRecord[]) => {
+    images.forEach((image, index) => {
+      setTimeout(() => {
+        downloadImage(image.image_url, `image-${image.id}-${index + 1}.jpg`);
+      }, index * 250);
+    });
   };
 
   const handleFavorite = (image: ImageRecord) => {
@@ -234,6 +287,14 @@ const MyImagesPage = () => {
     loadLocalState();
   };
 
+  const toggleSelected = (id: string) => {
+    setSelectedIds((current) =>
+      current.includes(id) ? current.filter((item) => item !== id) : [...current, id],
+    );
+  };
+
+  const selectedImages = filteredImages.filter((item) => selectedIds.includes(item.id));
+
   return (
     <div className="mx-auto max-w-7xl p-6">
       <div className="mb-8 rounded-3xl border border-border bg-card p-5 shadow-sm">
@@ -245,85 +306,95 @@ const MyImagesPage = () => {
             </div>
             <h1 className="mt-3 text-2xl font-bold text-foreground">统一管理你的生成结果</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              这里会展示云端历史、本地历史和你手动收藏的精选图，方便你筛选、下载和继续使用。
+              这里会汇总云端记录、本地历史和你手动收藏的精选图，方便搜索、筛选、下载和清理。
             </p>
           </div>
 
           <div className="grid gap-2 sm:grid-cols-3">
-            <div className="rounded-2xl bg-muted/70 px-4 py-3">
-              <div className="text-[11px] uppercase tracking-wider text-muted-foreground">云端</div>
-              <div className="mt-1 text-sm font-medium text-foreground">{cloudImages?.length || 0} 张</div>
-            </div>
-            <div className="rounded-2xl bg-muted/70 px-4 py-3">
-              <div className="text-[11px] uppercase tracking-wider text-muted-foreground">本地</div>
-              <div className="mt-1 text-sm font-medium text-foreground">{localImages.length} 张</div>
-            </div>
-            <div className="rounded-2xl bg-muted/70 px-4 py-3">
-              <div className="text-[11px] uppercase tracking-wider text-muted-foreground">精选</div>
-              <div className="mt-1 text-sm font-medium text-foreground">{curatedImages.length} 张</div>
-            </div>
+            <StatCard label="云端" value={`${cloudImages?.length || 0} 张`} icon={<Cloud className="h-4 w-4" />} />
+            <StatCard label="本地" value={`${localImages.length} 张`} icon={<Smartphone className="h-4 w-4" />} />
+            <StatCard label="精选" value={`${curatedImages.length} 张`} icon={<Star className="h-4 w-4" />} />
           </div>
         </div>
       </div>
 
       <div className="mb-6 rounded-3xl border border-border bg-card p-4 shadow-sm">
-        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto_auto]">
+        <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_auto_auto_auto]">
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="搜索提示词、风格、场景或图片类型"
+              placeholder="搜索提示词、风格、场景、图片类型"
               className="w-full rounded-2xl border border-border bg-background py-2.5 pl-10 pr-3 text-sm outline-none transition focus:ring-2 focus:ring-primary/25"
             />
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            {[
+          <FilterGroup
+            value={sourceFilter}
+            onChange={(value) => setSourceFilter(value as "all" | SourceType)}
+            options={[
               { value: "all", label: "全部来源" },
               { value: "cloud", label: "云端" },
               { value: "local", label: "本地" },
               { value: "curated", label: "精选" },
-            ].map((item) => (
-              <button
-                key={item.value}
-                type="button"
-                onClick={() => setSourceFilter(item.value as "all" | SourceType)}
-                className={`rounded-full px-3 py-1.5 text-xs font-medium transition ${
-                  sourceFilter === item.value
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted text-muted-foreground"
-                }`}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
+            ]}
+          />
 
-          <div className="flex flex-wrap gap-2">
-            {[
+          <FilterGroup
+            value={viewFilter}
+            onChange={(value) => setViewFilter(value as ViewFilter)}
+            options={[
               { value: "all", label: "全部" },
               { value: "favorites", label: "已收藏" },
               { value: "best", label: "最佳图" },
-            ].map((item) => (
-              <button
-                key={item.value}
-                type="button"
-                onClick={() => setViewFilter(item.value as "all" | "favorites" | "best")}
-                className={`rounded-full px-3 py-1.5 text-xs font-medium transition ${
-                  viewFilter === item.value
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted text-muted-foreground"
-                }`}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
+            ]}
+          />
+
+          <FilterGroup
+            value={groupMode}
+            onChange={(value) => setGroupMode(value as GroupMode)}
+            options={[
+              { value: "batch", label: "按批次" },
+              { value: "date", label: "按日期" },
+              { value: "task", label: "按任务" },
+            ]}
+          />
         </div>
       </div>
 
-      {isLoading ? (
+      {selectedImages.length > 0 && (
+        <div className="mb-6 rounded-3xl border border-primary/20 bg-primary/5 p-4 shadow-sm">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <div className="text-sm font-semibold text-foreground">已选中 {selectedImages.length} 张图片</div>
+              <div className="text-xs text-muted-foreground">
+                可以批量下载或一次性删除这批已勾选结果。
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" className="rounded-xl" onClick={() => handleBatchDownload(selectedImages)}>
+                <Download className="mr-1.5 h-3.5 w-3.5" />
+                批量下载
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                className="rounded-xl"
+                onClick={() => void handleDelete(selectedImages)}
+              >
+                <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                批量删除
+              </Button>
+              <Button variant="outline" size="sm" className="rounded-xl" onClick={() => setSelectedIds([])}>
+                清空选择
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {user && isLoadingCloud ? (
         <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
           {Array.from({ length: 8 }).map((_, index) => (
             <div key={index} className="aspect-square animate-pulse rounded-2xl bg-muted" />
@@ -333,12 +404,35 @@ const MyImagesPage = () => {
         <div className="space-y-8">
           {groupedImages.map(([groupKey, images]) => (
             <section key={groupKey}>
-              <div className="mb-3 flex items-center justify-between">
+              <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <h2 className="text-sm font-semibold text-foreground">
-                    {images[0]?.group_id ? "同一批次结果" : groupKey}
+                    {formatGroupTitle(groupMode, groupKey, images[0])}
                   </h2>
-                  <p className="text-xs text-muted-foreground">{images.length} 张图片</p>
+                  <p className="text-xs text-muted-foreground">
+                    {images.length} 张图片
+                    {images.some((item) => item.is_best) ? " · 含最佳图" : ""}
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="rounded-xl"
+                    onClick={() => setSelectedIds(images.map((item) => item.id))}
+                  >
+                    全选本组
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="rounded-xl"
+                    onClick={() => handleBatchDownload(images)}
+                  >
+                    <Download className="mr-1.5 h-3.5 w-3.5" />
+                    下载本组
+                  </Button>
                 </div>
               </div>
 
@@ -349,14 +443,10 @@ const MyImagesPage = () => {
                     className="group overflow-hidden rounded-3xl border border-border bg-card shadow-sm transition hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md"
                   >
                     <div className="relative">
-                      <img
-                        src={img.image_url}
-                        alt={img.prompt || "Generated"}
-                        className="aspect-square w-full object-cover"
-                      />
+                      <img src={img.image_url} alt={img.prompt || "Generated"} className="aspect-square w-full object-cover" />
                       <div className="absolute left-3 top-3 flex flex-wrap gap-2">
                         <span className="rounded-full bg-black/55 px-2.5 py-1 text-[11px] text-white backdrop-blur-sm">
-                          {img.source === "cloud" ? "云端" : img.source === "local" ? "本地" : "精选"}
+                          {sourceLabel(img.source)}
                         </span>
                         {img.favorite && (
                           <span className="rounded-full bg-primary px-2.5 py-1 text-[11px] text-primary-foreground">
@@ -369,6 +459,15 @@ const MyImagesPage = () => {
                           </span>
                         )}
                       </div>
+
+                      <label className="absolute right-3 top-3 flex h-7 w-7 cursor-pointer items-center justify-center rounded-full bg-white/85 shadow-sm backdrop-blur-sm">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.includes(img.id)}
+                          onChange={() => toggleSelected(img.id)}
+                          className="h-4 w-4 rounded border-border text-primary focus:ring-primary/30"
+                        />
+                      </label>
                     </div>
 
                     <div className="space-y-3 p-3">
@@ -377,9 +476,7 @@ const MyImagesPage = () => {
                           {img.prompt || "未记录提示词"}
                         </div>
                         <div className="flex flex-wrap gap-2 text-[11px] text-muted-foreground">
-                          {img.image_type && (
-                            <span className="rounded-full bg-muted px-2.5 py-1">{img.image_type}</span>
-                          )}
+                          {img.image_type && <span className="rounded-full bg-muted px-2.5 py-1">{img.image_type}</span>}
                           {img.aspect_ratio && (
                             <span className="rounded-full bg-muted px-2.5 py-1">{img.aspect_ratio}</span>
                           )}
@@ -399,6 +496,7 @@ const MyImagesPage = () => {
                           <Star className="mr-1 inline h-3.5 w-3.5" />
                           {img.favorite ? "已收藏" : "收藏"}
                         </button>
+
                         <button
                           type="button"
                           onClick={() => handleBest(img)}
@@ -409,7 +507,7 @@ const MyImagesPage = () => {
                           }`}
                         >
                           <Sparkles className="mr-1 inline h-3.5 w-3.5" />
-                          {img.is_best ? "最佳" : "标记最佳"}
+                          {img.is_best ? "最佳图" : "标记最佳"}
                         </button>
                       </div>
 
@@ -427,7 +525,7 @@ const MyImagesPage = () => {
                           variant="destructive"
                           size="sm"
                           className="rounded-xl"
-                          onClick={() => handleDelete(img)}
+                          onClick={() => void handleDelete([img])}
                         >
                           <Trash2 className="mr-1 h-3.5 w-3.5" />
                           删除
@@ -455,5 +553,40 @@ const MyImagesPage = () => {
     </div>
   );
 };
+
+const StatCard = ({ label, value, icon }: { label: string; value: string; icon: ReactNode }) => (
+  <div className="rounded-2xl bg-muted/70 px-4 py-3">
+    <div className="flex items-center gap-2 text-[11px] uppercase tracking-wider text-muted-foreground">
+      {icon}
+      {label}
+    </div>
+    <div className="mt-1 text-sm font-medium text-foreground">{value}</div>
+  </div>
+);
+
+const FilterGroup = ({
+  value,
+  onChange,
+  options,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: Array<{ value: string; label: string }>;
+}) => (
+  <div className="flex flex-wrap gap-2">
+    {options.map((item) => (
+      <button
+        key={item.value}
+        type="button"
+        onClick={() => onChange(item.value)}
+        className={`rounded-full px-3 py-1.5 text-xs font-medium transition ${
+          value === item.value ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+        }`}
+      >
+        {item.label}
+      </button>
+    ))}
+  </div>
+);
 
 export default MyImagesPage;
