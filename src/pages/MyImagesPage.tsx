@@ -1,12 +1,16 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  CheckCircle2,
+  useInfiniteQuery,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
+import {
   Cloud,
   Download,
   FolderHeart,
   Image as ImageIcon,
+  Loader2,
   Search,
   Smartphone,
   Sparkles,
@@ -44,6 +48,8 @@ interface ImageRecord {
   is_best?: boolean;
 }
 
+const CLOUD_PAGE_SIZE = 24;
+
 function sourceLabel(source: SourceType) {
   if (source === "cloud") return "云端";
   if (source === "local") return "本地";
@@ -57,12 +63,8 @@ function taskGroupLabel(taskKind?: string) {
 }
 
 function formatGroupTitle(groupMode: GroupMode, groupKey: string, firstImage?: ImageRecord) {
-  if (groupMode === "task") {
-    return taskGroupLabel(groupKey);
-  }
-  if (groupMode === "batch") {
-    return firstImage?.group_id ? "同一批次结果" : `批次 ${groupKey}`;
-  }
+  if (groupMode === "task") return taskGroupLabel(groupKey);
+  if (groupMode === "batch") return firstImage?.group_id ? "同一批次结果" : `批次 ${groupKey}`;
   return groupKey;
 }
 
@@ -79,21 +81,45 @@ const MyImagesPage = () => {
   const [groupMode, setGroupMode] = useState<GroupMode>("batch");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
-  const { data: cloudImages, isLoading: isLoadingCloud } = useQuery({
+  const {
+    data: cloudPages,
+    isLoading: isLoadingCloud,
+    isFetchingNextPage,
+    hasNextPage,
+    fetchNextPage,
+  } = useInfiniteQuery({
     queryKey: ["my-images", user?.id],
-    queryFn: async () => {
+    enabled: !!user,
+    staleTime: 60_000,
+    initialPageParam: 0,
+    queryFn: async ({ pageParam }) => {
+      const from = pageParam * CLOUD_PAGE_SIZE;
+      const to = from + CLOUD_PAGE_SIZE - 1;
+
       const { data, error } = await supabase
         .from("generated_images")
-        .select("*")
+        .select(
+          "id,image_url,prompt,style,scene,aspect_ratio,image_type,created_at,group_id,task_kind",
+        )
         .eq("user_id", user!.id)
         .order("created_at", { ascending: false })
-        .limit(100);
+        .range(from, to);
 
       if (error) throw error;
-      return (data || []).map((image) => ({ ...image, source: "cloud" as const }));
+
+      const mapped = (data || []).map((image) => ({ ...image, source: "cloud" as const }));
+      return {
+        items: mapped,
+        nextPage: mapped.length === CLOUD_PAGE_SIZE ? pageParam + 1 : undefined,
+      };
     },
-    enabled: !!user,
+    getNextPageParam: (lastPage) => lastPage.nextPage,
   });
+
+  const cloudImages = useMemo(
+    () => (cloudPages?.pages || []).flatMap((page) => page.items),
+    [cloudPages],
+  );
 
   const loadLocalState = () => {
     try {
@@ -114,7 +140,7 @@ const MyImagesPage = () => {
   const mergedImages = useMemo(() => {
     const map = new Map<string, ImageRecord>();
 
-    [...(cloudImages || []), ...localImages, ...curatedImages].forEach((item) => {
+    [...cloudImages, ...localImages, ...curatedImages].forEach((item) => {
       const existing = map.get(item.image_url);
       if (!existing) {
         map.set(item.image_url, item);
@@ -146,9 +172,10 @@ const MyImagesPage = () => {
         .filter(Boolean)
         .join(" ")
         .toLowerCase();
+
       return haystack.includes(query.trim().toLowerCase());
     });
-  }, [groupMode, mergedImages, query, sourceFilter, viewFilter]);
+  }, [mergedImages, query, sourceFilter, viewFilter]);
 
   const groupedImages = useMemo(() => {
     const groups = new Map<string, ImageRecord[]>();
@@ -306,12 +333,12 @@ const MyImagesPage = () => {
             </div>
             <h1 className="mt-3 text-2xl font-bold text-foreground">统一管理你的生成结果</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              这里会汇总云端记录、本地历史和你手动收藏的精选图，方便搜索、筛选、下载和清理。
+              图片库已经改成分页加载和懒加载，首次进入会更快，后续按需继续加载。
             </p>
           </div>
 
           <div className="grid gap-2 sm:grid-cols-3">
-            <StatCard label="云端" value={`${cloudImages?.length || 0} 张`} icon={<Cloud className="h-4 w-4" />} />
+            <StatCard label="云端已加载" value={`${cloudImages.length} 张`} icon={<Cloud className="h-4 w-4" />} />
             <StatCard label="本地" value={`${localImages.length} 张`} icon={<Smartphone className="h-4 w-4" />} />
             <StatCard label="精选" value={`${curatedImages.length} 张`} icon={<Star className="h-4 w-4" />} />
           </div>
@@ -369,7 +396,7 @@ const MyImagesPage = () => {
             <div>
               <div className="text-sm font-semibold text-foreground">已选中 {selectedImages.length} 张图片</div>
               <div className="text-xs text-muted-foreground">
-                可以批量下载或一次性删除这批已勾选结果。
+                可以批量下载，或一次性删除这批已勾选结果。
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -401,143 +428,173 @@ const MyImagesPage = () => {
           ))}
         </div>
       ) : groupedImages.length > 0 ? (
-        <div className="space-y-8">
-          {groupedImages.map(([groupKey, images]) => (
-            <section key={groupKey}>
-              <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h2 className="text-sm font-semibold text-foreground">
-                    {formatGroupTitle(groupMode, groupKey, images[0])}
-                  </h2>
-                  <p className="text-xs text-muted-foreground">
-                    {images.length} 张图片
-                    {images.some((item) => item.is_best) ? " · 含最佳图" : ""}
-                  </p>
+        <>
+          <div className="space-y-8">
+            {groupedImages.map(([groupKey, images]) => (
+              <section key={groupKey}>
+                <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h2 className="text-sm font-semibold text-foreground">
+                      {formatGroupTitle(groupMode, groupKey, images[0])}
+                    </h2>
+                    <p className="text-xs text-muted-foreground">
+                      {images.length} 张图片
+                      {images.some((item) => item.is_best) ? " · 含最佳图" : ""}
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="rounded-xl"
+                      onClick={() => setSelectedIds(images.map((item) => item.id))}
+                    >
+                      全选本组
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="rounded-xl"
+                      onClick={() => handleBatchDownload(images)}
+                    >
+                      <Download className="mr-1.5 h-3.5 w-3.5" />
+                      下载本组
+                    </Button>
+                  </div>
                 </div>
 
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="rounded-xl"
-                    onClick={() => setSelectedIds(images.map((item) => item.id))}
-                  >
-                    全选本组
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="rounded-xl"
-                    onClick={() => handleBatchDownload(images)}
-                  >
-                    <Download className="mr-1.5 h-3.5 w-3.5" />
-                    下载本组
-                  </Button>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-4">
-                {images.map((img) => (
-                  <div
-                    key={`${img.id}-${img.source}`}
-                    className="group overflow-hidden rounded-3xl border border-border bg-card shadow-sm transition hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md"
-                  >
-                    <div className="relative">
-                      <img src={img.image_url} alt={img.prompt || "Generated"} className="aspect-square w-full object-cover" />
-                      <div className="absolute left-3 top-3 flex flex-wrap gap-2">
-                        <span className="rounded-full bg-black/55 px-2.5 py-1 text-[11px] text-white backdrop-blur-sm">
-                          {sourceLabel(img.source)}
-                        </span>
-                        {img.favorite && (
-                          <span className="rounded-full bg-primary px-2.5 py-1 text-[11px] text-primary-foreground">
-                            已收藏
-                          </span>
-                        )}
-                        {img.is_best && (
-                          <span className="rounded-full bg-amber-500 px-2.5 py-1 text-[11px] text-white">
-                            最佳图
-                          </span>
-                        )}
-                      </div>
-
-                      <label className="absolute right-3 top-3 flex h-7 w-7 cursor-pointer items-center justify-center rounded-full bg-white/85 shadow-sm backdrop-blur-sm">
-                        <input
-                          type="checkbox"
-                          checked={selectedIds.includes(img.id)}
-                          onChange={() => toggleSelected(img.id)}
-                          className="h-4 w-4 rounded border-border text-primary focus:ring-primary/30"
+                <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-4">
+                  {images.map((img) => (
+                    <div
+                      key={`${img.id}-${img.source}`}
+                      className="group overflow-hidden rounded-3xl border border-border bg-card shadow-sm transition hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md"
+                    >
+                      <div className="relative">
+                        <img
+                          src={img.image_url}
+                          alt={img.prompt || "Generated"}
+                          loading="lazy"
+                          decoding="async"
+                          className="aspect-square w-full object-cover"
                         />
-                      </label>
-                    </div>
-
-                    <div className="space-y-3 p-3">
-                      <div className="space-y-1">
-                        <div className="line-clamp-2 text-sm font-medium text-foreground">
-                          {img.prompt || "未记录提示词"}
-                        </div>
-                        <div className="flex flex-wrap gap-2 text-[11px] text-muted-foreground">
-                          {img.image_type && <span className="rounded-full bg-muted px-2.5 py-1">{img.image_type}</span>}
-                          {img.aspect_ratio && (
-                            <span className="rounded-full bg-muted px-2.5 py-1">{img.aspect_ratio}</span>
+                        <div className="absolute left-3 top-3 flex flex-wrap gap-2">
+                          <span className="rounded-full bg-black/55 px-2.5 py-1 text-[11px] text-white backdrop-blur-sm">
+                            {sourceLabel(img.source)}
+                          </span>
+                          {img.favorite && (
+                            <span className="rounded-full bg-primary px-2.5 py-1 text-[11px] text-primary-foreground">
+                              已收藏
+                            </span>
+                          )}
+                          {img.is_best && (
+                            <span className="rounded-full bg-amber-500 px-2.5 py-1 text-[11px] text-white">
+                              最佳图
+                            </span>
                           )}
                         </div>
+
+                        <label className="absolute right-3 top-3 flex h-7 w-7 cursor-pointer items-center justify-center rounded-full bg-white/85 shadow-sm backdrop-blur-sm">
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.includes(img.id)}
+                            onChange={() => toggleSelected(img.id)}
+                            className="h-4 w-4 rounded border-border text-primary focus:ring-primary/30"
+                          />
+                        </label>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          type="button"
-                          onClick={() => handleFavorite(img)}
-                          className={`rounded-xl border px-3 py-2 text-xs font-medium transition ${
-                            img.favorite
-                              ? "border-primary bg-primary/10 text-primary"
-                              : "border-border bg-background text-foreground hover:border-primary/40 hover:text-primary"
-                          }`}
-                        >
-                          <Star className="mr-1 inline h-3.5 w-3.5" />
-                          {img.favorite ? "已收藏" : "收藏"}
-                        </button>
+                      <div className="space-y-3 p-3">
+                        <div className="space-y-1">
+                          <div className="line-clamp-2 text-sm font-medium text-foreground">
+                            {img.prompt || "未记录提示词"}
+                          </div>
+                          <div className="flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+                            {img.image_type && (
+                              <span className="rounded-full bg-muted px-2.5 py-1">{img.image_type}</span>
+                            )}
+                            {img.aspect_ratio && (
+                              <span className="rounded-full bg-muted px-2.5 py-1">{img.aspect_ratio}</span>
+                            )}
+                          </div>
+                        </div>
 
-                        <button
-                          type="button"
-                          onClick={() => handleBest(img)}
-                          className={`rounded-xl border px-3 py-2 text-xs font-medium transition ${
-                            img.is_best
-                              ? "border-primary bg-primary/10 text-primary"
-                              : "border-border bg-background text-foreground hover:border-primary/40 hover:text-primary"
-                          }`}
-                        >
-                          <Sparkles className="mr-1 inline h-3.5 w-3.5" />
-                          {img.is_best ? "最佳图" : "标记最佳"}
-                        </button>
-                      </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleFavorite(img)}
+                            className={`rounded-xl border px-3 py-2 text-xs font-medium transition ${
+                              img.favorite
+                                ? "border-primary bg-primary/10 text-primary"
+                                : "border-border bg-background text-foreground hover:border-primary/40 hover:text-primary"
+                            }`}
+                          >
+                            <Star className="mr-1 inline h-3.5 w-3.5" />
+                            {img.favorite ? "已收藏" : "收藏"}
+                          </button>
 
-                      <div className="grid grid-cols-2 gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="rounded-xl"
-                          onClick={() => downloadImage(img.image_url, `image-${img.id}.jpg`)}
-                        >
-                          <Download className="mr-1 h-3.5 w-3.5" />
-                          下载
-                        </Button>
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          className="rounded-xl"
-                          onClick={() => void handleDelete([img])}
-                        >
-                          <Trash2 className="mr-1 h-3.5 w-3.5" />
-                          删除
-                        </Button>
+                          <button
+                            type="button"
+                            onClick={() => handleBest(img)}
+                            className={`rounded-xl border px-3 py-2 text-xs font-medium transition ${
+                              img.is_best
+                                ? "border-primary bg-primary/10 text-primary"
+                                : "border-border bg-background text-foreground hover:border-primary/40 hover:text-primary"
+                            }`}
+                          >
+                            <Sparkles className="mr-1 inline h-3.5 w-3.5" />
+                            {img.is_best ? "最佳图" : "标记最佳"}
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="rounded-xl"
+                            onClick={() => downloadImage(img.image_url, `image-${img.id}.jpg`)}
+                          >
+                            <Download className="mr-1 h-3.5 w-3.5" />
+                            下载
+                          </Button>
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            className="rounded-xl"
+                            onClick={() => void handleDelete([img])}
+                          >
+                            <Trash2 className="mr-1 h-3.5 w-3.5" />
+                            删除
+                          </Button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          ))}
-        </div>
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
+
+          {hasNextPage && (sourceFilter === "all" || sourceFilter === "cloud") && (
+            <div className="mt-8 flex justify-center">
+              <Button
+                variant="outline"
+                className="rounded-2xl"
+                disabled={isFetchingNextPage}
+                onClick={() => void fetchNextPage()}
+              >
+                {isFetchingNextPage ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    正在加载更多
+                  </>
+                ) : (
+                  "加载更多云端图片"
+                )}
+              </Button>
+            </div>
+          )}
+        </>
       ) : (
         <div className="rounded-3xl border border-dashed border-border bg-card p-16 text-center">
           <ImageIcon className="mx-auto mb-4 h-16 w-16 text-muted-foreground/20" />
