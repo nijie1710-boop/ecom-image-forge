@@ -30,27 +30,40 @@ export interface GenerateImageResult {
   error?: string;
 }
 
+const DEFAULT_ERROR = "图片生成服务暂时不可用，请稍后重试。";
+const GENERATE_FAIL_ERROR = "图片生成失败，请稍后重试。";
+const NO_IMAGE_ERROR = "本次没有返回有效图片，请稍后重试。";
+
+type InvokeLikeError = {
+  message?: string;
+  context?: {
+    json?: () => Promise<unknown>;
+    text?: () => Promise<string>;
+  };
+};
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function extractInvokeErrorMessage(error: unknown): Promise<string> {
   if (!error || typeof error !== "object") {
-    return "图片生成服务暂时不可用，请稍后重试。";
+    return DEFAULT_ERROR;
   }
 
-  const maybeError = error as {
-    message?: string;
-    context?: { json?: () => Promise<unknown>; text?: () => Promise<string> };
-  };
+  const maybeError = error as InvokeLikeError;
 
   if (maybeError.context?.json) {
     try {
       const payload = (await maybeError.context.json()) as
-        | { error?: string; message?: string }
+        | { error?: string; message?: string; detail?: string }
         | undefined;
-      const detailed = payload?.error || payload?.message;
+      const detailed = payload?.error || payload?.message || payload?.detail;
       if (detailed) {
-        return normalizeUserErrorMessage(detailed, "图片生成失败，请稍后重试。");
+        return normalizeUserErrorMessage(detailed, GENERATE_FAIL_ERROR);
       }
     } catch {
-      // ignore
+      // ignore JSON extraction failures
     }
   }
 
@@ -58,37 +71,114 @@ async function extractInvokeErrorMessage(error: unknown): Promise<string> {
     try {
       const text = await maybeError.context.text();
       if (text) {
-        return normalizeUserErrorMessage(text, "图片生成失败，请稍后重试。");
+        return normalizeUserErrorMessage(text, GENERATE_FAIL_ERROR);
       }
     } catch {
-      // ignore
+      // ignore text extraction failures
     }
   }
 
-  return normalizeUserErrorMessage(
-    maybeError.message,
-    "图片生成服务暂时不可用，请稍后重试。",
-  );
+  return normalizeUserErrorMessage(maybeError.message, DEFAULT_ERROR);
 }
 
-function buildFallbackParams(params: GenerateImageParams): GenerateImageParams | null {
-  const hasExtraRefs =
-    Boolean(params.styleReferenceImage) ||
-    Boolean(params.modelImage) ||
-    Boolean(params.referenceGallery?.length);
+function normalizeModelLabel(model: GenerationModel | undefined): GenerationModel {
+  return model || "gemini-2.5-flash-image";
+}
 
-  if (!hasExtraRefs) {
-    return null;
+function normalizeResolution(resolution: OutputResolution | undefined): OutputResolution {
+  return resolution || "1k";
+}
+
+function dedupeVariants(variants: GenerateImageParams[]): GenerateImageParams[] {
+  const seen = new Set<string>();
+  const result: GenerateImageParams[] = [];
+
+  for (const variant of variants) {
+    const key = JSON.stringify({
+      model: variant.model,
+      resolution: variant.resolution,
+      hasGallery: Boolean(variant.referenceGallery?.length),
+      hasStyle: Boolean(variant.styleReferenceImage),
+      hasModel: Boolean(variant.modelImage),
+      modelMode: variant.modelMode,
+    });
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(variant);
   }
 
-  return {
-    ...params,
-    referenceGallery: [],
-    styleReferenceImage: undefined,
-    modelImage: undefined,
-    styleReferenceText: params.styleReferenceText,
-    modelMode: "none",
-  };
+  return result;
+}
+
+function buildRequestVariants(params: GenerateImageParams): GenerateImageParams[] {
+  const model = normalizeModelLabel(params.model);
+  const resolution = normalizeResolution(params.resolution);
+  const hasExtraRefs =
+    Boolean(params.referenceGallery?.length) ||
+    Boolean(params.styleReferenceImage) ||
+    Boolean(params.modelImage);
+
+  const variants: GenerateImageParams[] = [
+    {
+      ...params,
+      model,
+      resolution,
+    },
+  ];
+
+  if (hasExtraRefs) {
+    variants.push({
+      ...params,
+      model,
+      resolution,
+      referenceGallery: [],
+      styleReferenceImage: undefined,
+      styleReferenceText: params.styleReferenceText,
+      modelMode: "none",
+      modelImage: undefined,
+    });
+  }
+
+  if (resolution === "4k" || resolution === "2k") {
+    variants.push({
+      ...params,
+      model,
+      resolution: resolution === "4k" ? "2k" : "1k",
+    });
+    if (hasExtraRefs) {
+      variants.push({
+        ...params,
+        model,
+        resolution: resolution === "4k" ? "2k" : "1k",
+        referenceGallery: [],
+        styleReferenceImage: undefined,
+        styleReferenceText: params.styleReferenceText,
+        modelMode: "none",
+        modelImage: undefined,
+      });
+    }
+  }
+
+  if (model === "nano-banana-pro-preview") {
+    variants.push({
+      ...params,
+      model: "gemini-3.1-flash-image-preview",
+      resolution: resolution === "4k" ? "2k" : resolution,
+    });
+    variants.push({
+      ...params,
+      model: "gemini-2.5-flash-image",
+      resolution: resolution === "4k" ? "2k" : resolution,
+    });
+  } else if (model === "gemini-3.1-flash-image-preview") {
+    variants.push({
+      ...params,
+      model: "gemini-2.5-flash-image",
+      resolution: resolution === "4k" ? "2k" : resolution,
+    });
+  }
+
+  return dedupeVariants(variants);
 }
 
 function isFatalError(message: string | undefined): boolean {
@@ -100,19 +190,49 @@ function isFatalError(message: string | undefined): boolean {
     "unauthorized",
     "forbidden",
     "authentication",
-    "quota",
     "billing",
-    "login",
     "not authenticated",
-    "额度不足",
-    "限流",
-    "登录状态",
+    "login expired",
+    "登录",
+    "余额不足",
+    "积分不足",
+    "未登录",
+    "无权限",
   ].some((keyword) => normalized.includes(keyword));
 }
 
-async function generateSingleImage(
+function isRetryableError(message: string | undefined): boolean {
+  if (!message) return false;
+
+  const normalized = message.toLowerCase();
+  return [
+    "timeout",
+    "timed out",
+    "try again",
+    "temporarily unavailable",
+    "empty_image_result",
+    "no image returned",
+    "no valid image",
+    "rate limit",
+    "quota exceeded",
+    "internal",
+    "upstream",
+    "503",
+    "502",
+    "500",
+    "429",
+    "超时",
+    "限流",
+    "拥挤",
+    "服务繁忙",
+    "稍后重试",
+    "没有返回有效图片",
+  ].some((keyword) => normalized.includes(keyword));
+}
+
+async function generateSingleImageRaw(
   params: GenerateImageParams,
-  attempt: number,
+  attemptLabel: string,
 ): Promise<{ url: string | null; error: string | null }> {
   const { data, error } = await supabase.functions.invoke("generate-image", {
     body: {
@@ -121,8 +241,8 @@ async function generateSingleImage(
       aspectRatio: params.aspectRatio || "1:1",
       imageType: params.imageType || "主图",
       textLanguage: params.textLanguage || "zh",
-      model: params.model || "nano-banana-pro-preview",
-      resolution: params.resolution || "2k",
+      model: normalizeModelLabel(params.model),
+      resolution: normalizeResolution(params.resolution),
       referenceGallery: params.referenceGallery || [],
       referenceStyleUrl: params.styleReferenceImage || undefined,
       styleReferenceText: params.styleReferenceText || undefined,
@@ -132,7 +252,7 @@ async function generateSingleImage(
   });
 
   if (error) {
-    console.error(`[attempt ${attempt}] generate-image edge function error:`, error);
+    console.error(`[${attemptLabel}] generate-image edge function error:`, error);
     return {
       url: null,
       error: await extractInvokeErrorMessage(error),
@@ -143,78 +263,109 @@ async function generateSingleImage(
     const errorMessage =
       typeof data.error === "string"
         ? data.error
-        : data.error?.message || data.error?.error || "生成失败";
+        : data.error?.message || data.error?.error || GENERATE_FAIL_ERROR;
 
-    console.error(`[attempt ${attempt}] generate-image returned error:`, errorMessage);
+    console.error(`[${attemptLabel}] generate-image returned error:`, errorMessage);
     return {
       url: null,
-      error: normalizeUserErrorMessage(errorMessage, "生成失败，请稍后重试。"),
+      error: normalizeUserErrorMessage(errorMessage, GENERATE_FAIL_ERROR),
     };
   }
 
   const imageUrl = data?.images?.[0];
   if (!imageUrl) {
-    return { url: null, error: "本次没有返回有效图片，请稍后重试。" };
+    return {
+      url: null,
+      error: normalizeUserErrorMessage("EMPTY_IMAGE_RESULT", NO_IMAGE_ERROR),
+    };
   }
 
   return { url: imageUrl, error: null };
+}
+
+async function generateSingleImageStable(
+  params: GenerateImageParams,
+  batchIndex: number,
+): Promise<{ url: string | null; error: string | null }> {
+  const variants = buildRequestVariants(params);
+  let lastError: string | null = null;
+
+  for (let variantIndex = 0; variantIndex < variants.length; variantIndex += 1) {
+    const variant = variants[variantIndex];
+    const retryCount = isFatalError(lastError || undefined) ? 1 : 2;
+
+    for (let attempt = 0; attempt < retryCount; attempt += 1) {
+      const attemptLabel = `batch-${batchIndex}-variant-${variantIndex + 1}-attempt-${attempt + 1}`;
+      const result = await generateSingleImageRaw(variant, attemptLabel);
+      if (result.url) {
+        return result;
+      }
+
+      lastError = result.error;
+      if (isFatalError(result.error || undefined)) {
+        return { url: null, error: result.error };
+      }
+
+      if (!isRetryableError(result.error || undefined)) {
+        break;
+      }
+
+      if (attempt < retryCount - 1) {
+        await sleep(1200 * (attempt + 1));
+      }
+    }
+  }
+
+  return {
+    url: null,
+    error: normalizeUserErrorMessage(lastError, GENERATE_FAIL_ERROR),
+  };
 }
 
 export async function generateImage(
   params: GenerateImageParams,
 ): Promise<GenerateImageResult> {
   try {
-    const runBatch = async (requestParams: GenerateImageParams): Promise<GenerateImageResult> => {
-      const total = Math.min(Math.max(requestParams.n || 1, 1), 9);
-      const images: string[] = [];
-      let lastError: string | undefined;
+    const total = Math.min(Math.max(params.n || 1, 1), 9);
+    const images: string[] = [];
+    let lastError: string | undefined;
 
-      for (let index = 0; index < total; index += 1) {
-        const result = await generateSingleImage(requestParams, index + 1);
-        if (result.url) {
-          images.push(result.url);
-          continue;
-        }
+    for (let index = 0; index < total; index += 1) {
+      const result = await generateSingleImageStable(
+        { ...params, n: 1 },
+        index + 1,
+      );
 
-        if (result.error) {
-          lastError = result.error;
-          if (isFatalError(result.error)) {
-            break;
-          }
-        }
-
-        if (index < total - 1) {
-          await new Promise((resolve) => setTimeout(resolve, 1600));
+      if (result.url) {
+        images.push(result.url);
+      } else if (result.error) {
+        lastError = result.error;
+        if (isFatalError(result.error)) {
+          break;
         }
       }
 
-      if (!images.length) {
-        return {
-          images: [],
-          error: normalizeUserErrorMessage(lastError, "本次没有生成成功，请稍后重试。"),
-        };
+      if (index < total - 1) {
+        await sleep(images.length ? 900 : 1500);
       }
-
-      return { images };
-    };
-
-    const primaryResult = await runBatch(params);
-    if (primaryResult.images.length) {
-      return primaryResult;
     }
 
-    const fallbackParams = buildFallbackParams(params);
-    if (!fallbackParams) {
-      return primaryResult;
+    if (!images.length) {
+      return {
+        images: [],
+        error: normalizeUserErrorMessage(lastError, "本次没有生成成功，请稍后重试。"),
+      };
     }
 
-    console.warn("generateImage fallback: retrying with simplified references");
-    const fallbackResult = await runBatch(fallbackParams);
-    if (fallbackResult.images.length) {
-      return fallbackResult;
+    if (images.length < total) {
+      console.warn("generateImage partial success:", {
+        requested: total,
+        received: images.length,
+        lastError,
+      });
     }
 
-    return primaryResult.error ? primaryResult : fallbackResult;
+    return { images };
   } catch (error) {
     console.error("generateImage unexpected error:", error);
     return {

@@ -285,6 +285,73 @@ async function loadImageElement(src: string): Promise<HTMLImageElement> {
   });
 }
 
+function isNearNeutralPixel(
+  r: number,
+  g: number,
+  b: number,
+  a: number,
+) {
+  if (a < 24) return true;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const isVeryLight = r > 236 && g > 232 && b > 224;
+  const isLowSaturation = max - min < 18 && max > 214;
+  return isVeryLight || isLowSaturation;
+}
+
+function detectVerticalTrim(image: HTMLImageElement) {
+  const width = image.naturalWidth || image.width;
+  const height = image.naturalHeight || image.height;
+  const sampleCanvas = document.createElement("canvas");
+  sampleCanvas.width = width;
+  sampleCanvas.height = height;
+  const sampleCtx = sampleCanvas.getContext("2d", { willReadFrequently: true });
+  if (!sampleCtx) {
+    return { top: 0, height };
+  }
+
+  sampleCtx.drawImage(image, 0, 0, width, height);
+  const data = sampleCtx.getImageData(0, 0, width, height).data;
+  const maxTrim = Math.floor(height * 0.18);
+  const blankThreshold = 0.985;
+
+  const isBlankRow = (row: number) => {
+    let neutralCount = 0;
+    const start = row * width * 4;
+    for (let x = 0; x < width; x += 1) {
+      const offset = start + x * 4;
+      if (
+        isNearNeutralPixel(
+          data[offset],
+          data[offset + 1],
+          data[offset + 2],
+          data[offset + 3],
+        )
+      ) {
+        neutralCount += 1;
+      }
+    }
+    return neutralCount / width >= blankThreshold;
+  };
+
+  let top = 0;
+  while (top < Math.min(maxTrim, height - 1) && isBlankRow(top)) {
+    top += 1;
+  }
+
+  let bottom = height - 1;
+  let trimmedBottom = 0;
+  while (trimmedBottom < maxTrim && bottom > top && isBlankRow(bottom)) {
+    bottom -= 1;
+    trimmedBottom += 1;
+  }
+
+  return {
+    top,
+    height: Math.max(1, bottom - top + 1),
+  };
+}
+
 const DetailDesignPage = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -332,6 +399,12 @@ const DetailDesignPage = () => {
     () => planOptions[selectedOptionIndex] || null,
     [planOptions, selectedOptionIndex],
   );
+  const orderedGeneratedScreens = useMemo(() => {
+    if (!activePlan) return generatedScreens;
+    return activePlan.screens
+      .map((screen) => generatedScreens.find((item) => item.screen === screen.screen))
+      .filter(Boolean) as GeneratedScreenState[];
+  }, [activePlan, generatedScreens]);
   const activeDetailJob = useMemo(
     () => (detailJobId ? getJob(detailJobId) : null),
     [detailJobId, getJob, jobs],
@@ -725,13 +798,18 @@ const DetailDesignPage = () => {
       composedEntries.map(async (item) => ({
         screen: item.screen,
         image: await loadImageElement(item.url),
+        trim: undefined as { top: number; height: number } | undefined,
       })),
     );
+
+    loaded.forEach((entry) => {
+      entry.trim = detectVerticalTrim(entry.image);
+    });
 
     const gap = 0;
     const width = Math.max(...loaded.map((item) => item.image.naturalWidth || item.image.width));
     const height =
-      loaded.reduce((sum, item) => sum + (item.image.naturalHeight || item.image.height), 0) +
+      loaded.reduce((sum, item) => sum + (item.trim?.height || item.image.naturalHeight || item.image.height), 0) +
       gap * Math.max(0, loaded.length - 1);
 
     const canvas = document.createElement("canvas");
@@ -746,11 +824,12 @@ const DetailDesignPage = () => {
     ctx.fillRect(0, 0, width, height);
 
     let offsetY = 0;
-    loaded.forEach(({ image }) => {
+    loaded.forEach(({ image, trim }) => {
       const imageWidth = image.naturalWidth || image.width;
-      const imageHeight = image.naturalHeight || image.height;
+      const imageHeight = trim?.height || image.naturalHeight || image.height;
+      const sourceTop = trim?.top || 0;
       const drawX = Math.round((width - imageWidth) / 2);
-      ctx.drawImage(image, drawX, offsetY, imageWidth, imageHeight);
+      ctx.drawImage(image, 0, sourceTop, imageWidth, imageHeight, drawX, offsetY, imageWidth, imageHeight);
       offsetY += imageHeight + gap;
     });
 
@@ -773,7 +852,7 @@ const DetailDesignPage = () => {
   const handlePreviewLongImage = async () => {
     setIsPreparingPreview(true);
     try {
-      const composed = await composeLongPosterImage(generatedScreens);
+      const composed = await composeLongPosterImage(orderedGeneratedScreens);
       setPreviewImageUrl(composed);
       setPreviewTitle("详情页长图预览");
     } catch (previewError) {
@@ -799,7 +878,7 @@ const DetailDesignPage = () => {
 
   const handleDownloadLongImage = async () => {
     try {
-      const composed = await composeLongPosterImage(generatedScreens);
+      const composed = await composeLongPosterImage(orderedGeneratedScreens);
       const link = document.createElement("a");
       link.href = composed;
       link.download = `detail-long-${Date.now()}.png`;
@@ -821,12 +900,15 @@ const DetailDesignPage = () => {
     }
   };
 
-  const createScreenJobPayload = (screens: DetailPlanScreen[]): GeneratedScreenState[] => {
+  const createScreenJobPayload = (
+    screens: DetailPlanScreen[],
+    promptOverrides?: Record<number, string>,
+  ): GeneratedScreenState[] => {
     if (!activePlan) return [];
 
     return screens.map((screen) => {
       const current = generatedScreens.find((item) => item.screen === screen.screen);
-      const prompt = buildScreenPrompt({
+      const systemPrompt = buildScreenPrompt({
         plan: activePlan,
         screen,
         productSummary,
@@ -836,6 +918,10 @@ const DetailDesignPage = () => {
         targetLanguage: generationLanguage,
         screenIdea: useScreenIdeas ? screenIdeas[screen.screen - 1] : "",
       });
+      const prompt =
+        promptOverrides?.[screen.screen]?.trim() ||
+        current?.prompt?.trim() ||
+        systemPrompt;
 
       return {
         screen: screen.screen,
@@ -851,13 +937,16 @@ const DetailDesignPage = () => {
     });
   };
 
-  const launchDetailGeneration = (screens: DetailPlanScreen[]) => {
+  const launchDetailGeneration = (
+    screens: DetailPlanScreen[],
+    promptOverrides?: Record<number, string>,
+  ) => {
     if (!activePlan || !productImages.length) {
       setGenerationError("请先完成方案策划并保留至少 1 张商品图");
       return;
     }
 
-    const nextScreens = createScreenJobPayload(screens);
+    const nextScreens = createScreenJobPayload(screens, promptOverrides);
     setGeneratedScreens((current) => {
       const merged = [...current];
       nextScreens.forEach((screen) => {
@@ -894,7 +983,9 @@ const DetailDesignPage = () => {
   };
 
   const handleRegenerateScreen = async (screen: DetailPlanScreen) => {
-    launchDetailGeneration([screen]);
+    const currentPrompt =
+      generatedScreens.find((item) => item.screen === screen.screen)?.prompt || "";
+    launchDetailGeneration([screen], { [screen.screen]: currentPrompt });
   };
 
   const toggleScreenSelection = (screenNumber: number) => {
@@ -903,6 +994,42 @@ const DetailDesignPage = () => {
         ? current.filter((item) => item !== screenNumber)
         : [...current, screenNumber].sort((a, b) => a - b),
     );
+  };
+
+  const movePlanScreen = (screenNumber: number, direction: "up" | "down") => {
+    if (!activePlan) return;
+    const currentIndex = activePlan.screens.findIndex((screen) => screen.screen === screenNumber);
+    if (currentIndex < 0) return;
+    const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+    if (targetIndex < 0 || targetIndex >= activePlan.screens.length) return;
+
+    setPlanOptions((current) =>
+      current.map((option, index) => {
+        if (index !== selectedOptionIndex) return option;
+        const nextScreens = [...option.screens];
+        const [moved] = nextScreens.splice(currentIndex, 1);
+        nextScreens.splice(targetIndex, 0, moved);
+        return { ...option, screens: nextScreens };
+      }),
+    );
+  };
+
+  const resetScreenPrompt = (screen: DetailPlanScreen) => {
+    if (!activePlan) return;
+    const nextPrompt = buildScreenPrompt({
+      plan: activePlan,
+      screen,
+      productSummary,
+      visibleText,
+      productInfo: appendPlanningContext(),
+      targetPlatform,
+      targetLanguage: generationLanguage,
+      screenIdea: useScreenIdeas ? screenIdeas[screen.screen - 1] : "",
+    });
+    updateGeneratedScreen(screen.screen, (current) => ({
+      ...current,
+      prompt: nextPrompt,
+    }));
   };
 
   const handleGenerateSelectedScreens = async () => {
@@ -1474,6 +1601,29 @@ const DetailDesignPage = () => {
                             </span>
                           ))}
                         </div>
+                        <div className="mt-3 rounded-2xl border border-border bg-muted/30 p-3">
+                          <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                            分屏预览
+                          </div>
+                          <div className="space-y-2">
+                            {option.screens.slice(0, 3).map((screen, screenIndex) => (
+                              <div
+                                key={`${option.planName}-mini-${screen.screen}`}
+                                className="flex items-center gap-2 text-xs text-foreground"
+                              >
+                                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-background text-[10px] font-semibold text-primary">
+                                  {screenIndex + 1}
+                                </span>
+                                <span className="line-clamp-1">{screen.title}</span>
+                              </div>
+                            ))}
+                            {option.screens.length > 3 && (
+                              <div className="text-[11px] text-muted-foreground">
+                                另外还有 {option.screens.length - 3} 屏
+                              </div>
+                            )}
+                          </div>
+                        </div>
                         <div className="mt-4 flex items-center justify-between text-xs">
                           <span className="text-muted-foreground">目标人群：{option.audience}</span>
                           {active ? (
@@ -1579,6 +1729,28 @@ const DetailDesignPage = () => {
                               {screen.screen}
                             </span>
                             <span className="font-medium text-foreground">{screen.title}</span>
+                            <div className="ml-auto flex items-center gap-1">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 rounded-lg"
+                                onClick={() => movePlanScreen(screen.screen, "up")}
+                                disabled={activePlan.screens[0]?.screen === screen.screen}
+                              >
+                                <ChevronUp className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 rounded-lg"
+                                onClick={() => movePlanScreen(screen.screen, "down")}
+                                disabled={activePlan.screens[activePlan.screens.length - 1]?.screen === screen.screen}
+                              >
+                                <ChevronDown className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
                           </div>
                           <p className="text-sm text-muted-foreground">{screen.goal}</p>
                           <p className="mt-2 text-sm leading-6 text-foreground">
@@ -1698,6 +1870,37 @@ const DetailDesignPage = () => {
                                 : `建议纯商品表达，${screen.humanModelReason || "把注意力留给商品本体。"}`
                               }
                             </div>
+                          </div>
+
+                          <div className="rounded-2xl border border-border bg-card p-3">
+                            <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                              <div>
+                                <div className="text-sm font-medium text-foreground">本屏生成提示词</div>
+                                <div className="text-xs text-muted-foreground">
+                                  可以先微调这一屏的提示词，再单独重生，不会影响其他屏。
+                                </div>
+                              </div>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 rounded-xl text-xs"
+                                onClick={() => resetScreenPrompt(screen)}
+                              >
+                                <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+                                恢复系统提示词
+                              </Button>
+                            </div>
+                            <Textarea
+                              value={generated?.prompt || ""}
+                              onChange={(event) =>
+                                updateGeneratedScreen(screen.screen, (current) => ({
+                                  ...current,
+                                  prompt: event.target.value,
+                                }))
+                              }
+                              className="min-h-32 rounded-xl bg-background"
+                            />
                           </div>
 
                           <div className="flex gap-2">

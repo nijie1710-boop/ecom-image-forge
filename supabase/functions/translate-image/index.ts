@@ -30,6 +30,10 @@ const TARGET_LANGUAGE_LABELS: Record<string, string> = {
   vi: "Vietnamese",
 };
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function jsonResponse(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {
     status,
@@ -140,33 +144,45 @@ async function callReplaceModel(apiKey: string, mimeType: string, imageBase64: s
   const models = [
     "gemini-2.5-flash-image",
     "gemini-3-pro-image-preview",
+    "gemini-3.1-flash-image-preview",
   ];
 
   let lastFailure = "";
 
   for (const model of models) {
-    const result = await callModel(
-      apiKey,
-      model,
-      [
-        { text: instruction },
-        { inlineData: { mimeType, data: imageBase64 } },
-      ],
-      { expectImage: true },
-    );
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const result = await callModel(
+        apiKey,
+        model,
+        [
+          { text: instruction },
+          { inlineData: { mimeType, data: imageBase64 } },
+        ],
+        { expectImage: true },
+      );
 
-    if (result.response.ok) {
-      const imageResult = extractImageResult(result.parsed);
-      if (imageResult) {
-        return { ...result, model, imageResult };
+      if (result.response.ok) {
+        const imageResult = extractImageResult(result.parsed);
+        if (imageResult) {
+          return { ...result, model, imageResult };
+        }
+
+        const responsePreview = JSON.stringify(result.parsed).slice(0, 300) || result.rawText.slice(0, 300);
+        lastFailure = `${model}:200:EMPTY_IMAGE_RESULT:${responsePreview}`;
+        if (attempt < 1) {
+          await sleep(900);
+          continue;
+        }
+        break;
       }
 
-      const responsePreview = JSON.stringify(result.parsed).slice(0, 300) || result.rawText.slice(0, 300);
-      lastFailure = `${model}:200:EMPTY_IMAGE_RESULT:${responsePreview}`;
-      continue;
+      lastFailure = `${model}:${result.response.status}:${result.rawText.slice(0, 300)}`;
+      if (attempt < 1 && [408, 429, 500, 502, 503, 504].includes(result.response.status)) {
+        await sleep(900);
+        continue;
+      }
+      break;
     }
-
-    lastFailure = `${model}:${result.response.status}:${result.rawText.slice(0, 300)}`;
   }
 
   return {

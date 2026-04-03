@@ -14,6 +14,10 @@ type SupportedModel =
 
 type SupportedResolution = "0.5k" | "1k" | "2k" | "4k";
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function parseJwtPayload(token: string): Record<string, unknown> | null {
   try {
     const parts = token.split(".");
@@ -186,12 +190,40 @@ function extractPromptSections(prompt: string) {
 
 function buildModelFallbacks(model: SupportedModel): string[] {
   if (model === "gemini-3.1-flash-image-preview") {
-    return ["gemini-3.1-flash-image-preview", "gemini-2.5-flash-image"];
+    return [
+      "gemini-3.1-flash-image-preview",
+      "gemini-2.5-flash-image",
+      "gemini-3-pro-image-preview",
+    ];
   }
   if (model === "gemini-2.5-flash-image") {
-    return ["gemini-2.5-flash-image", "gemini-3.1-flash-image-preview"];
+    return [
+      "gemini-2.5-flash-image",
+      "gemini-3.1-flash-image-preview",
+      "gemini-3-pro-image-preview",
+    ];
   }
-  return ["gemini-3-pro-image-preview", "gemini-2.5-flash-image"];
+  return [
+    "gemini-3-pro-image-preview",
+    "gemini-2.5-flash-image",
+    "gemini-3.1-flash-image-preview",
+  ];
+}
+
+function isRetryableModelFailure(status: number, detail: string): boolean {
+  const normalized = detail.toLowerCase();
+  if ([408, 429, 500, 502, 503, 504].includes(status)) return true;
+  return [
+    "timeout",
+    "temporarily unavailable",
+    "try again",
+    "internal",
+    "rate limit",
+    "resource exhausted",
+    "quota",
+    "no image returned",
+    "empty",
+  ].some((keyword) => normalized.includes(keyword));
 }
 
 async function callImageModel(
@@ -203,68 +235,89 @@ async function callImageModel(
   let lastError = "Unknown model error";
 
   for (const modelName of fallbacks) {
-    const apiUrl =
-      `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const apiUrl =
+        `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
-    const response = await fetch(apiUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts }],
-        generationConfig: {
-          responseModalities: ["text", "image"],
-          maxOutputTokens: 512,
-        },
-        safetySettings: [
-          { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
-          { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
-          { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
-          { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
-        ],
-      }),
-    });
+      const response = await fetch(apiUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts }],
+          generationConfig: {
+            responseModalities: ["text", "image"],
+            maxOutputTokens: 512,
+          },
+          safetySettings: [
+            { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+            { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+            { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+            { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
+          ],
+        }),
+      });
 
-    const rawResponse = await response.text();
-    console.error("generate-image model response:", modelName, response.status, rawResponse.substring(0, 280));
+      const rawResponse = await response.text();
+      console.error(
+        "generate-image model response:",
+        modelName,
+        `attempt-${attempt + 1}`,
+        response.status,
+        rawResponse.substring(0, 280),
+      );
 
-    if (!response.ok) {
-      let detail = rawResponse.substring(0, 240);
-      try {
-        const parsed = JSON.parse(rawResponse);
-        detail = parsed?.error?.message || detail;
-      } catch {
-        // ignore
+      if (!response.ok) {
+        let detail = rawResponse.substring(0, 240);
+        try {
+          const parsed = JSON.parse(rawResponse);
+          detail = parsed?.error?.message || detail;
+        } catch {
+          // ignore
+        }
+        lastError = `${modelName}: ${detail}`;
+        if (attempt < 1 && isRetryableModelFailure(response.status, detail)) {
+          await sleep(1000 * (attempt + 1));
+          continue;
+        }
+        break;
       }
-      lastError = `${modelName}: ${detail}`;
-      continue;
-    }
 
-    let data: Record<string, unknown>;
-    try {
-      data = JSON.parse(rawResponse);
-    } catch {
-      lastError = `${modelName}: invalid JSON response`;
-      continue;
-    }
+      let data: Record<string, unknown>;
+      try {
+        data = JSON.parse(rawResponse);
+      } catch {
+        lastError = `${modelName}: invalid JSON response`;
+        if (attempt < 1) {
+          await sleep(800);
+          continue;
+        }
+        break;
+      }
 
-    const candidates = (data as {
-      candidates?: Array<{
-        content?: {
-          parts?: Array<{ inlineData?: { mimeType: string; data: string } }>;
+      const candidates = (data as {
+        candidates?: Array<{
+          content?: {
+            parts?: Array<{ inlineData?: { mimeType: string; data: string } }>;
+          };
+        }>;
+      }).candidates;
+      const partsOut = candidates?.[0]?.content?.parts || [];
+      const imagePart = partsOut.find((part) => part.inlineData?.data);
+
+      if (imagePart?.inlineData?.data) {
+        return {
+          imageUrl: `data:${imagePart.inlineData.mimeType};base64,${imagePart.inlineData.data}`,
+          modelUsed: modelName,
         };
-      }>;
-    }).candidates;
-    const partsOut = candidates?.[0]?.content?.parts || [];
-    const imagePart = partsOut.find((part) => part.inlineData?.data);
+      }
 
-    if (imagePart?.inlineData?.data) {
-      return {
-        imageUrl: `data:${imagePart.inlineData.mimeType};base64,${imagePart.inlineData.data}`,
-        modelUsed: modelName,
-      };
+      lastError = `${modelName}: no image returned`;
+      if (attempt < 1) {
+        await sleep(800);
+        continue;
+      }
+      break;
     }
-
-    lastError = `${modelName}: no image returned`;
   }
 
   throw new Error(lastError);
@@ -326,6 +379,12 @@ serve(async (req: Request) => {
 
     const productSource = coerceImageInput(imageBase64) || coerceImageInput(referenceImageUrl);
     const productImage = productSource ? await resolveImageToBase64(productSource) : null;
+    if (!productImage) {
+      return new Response(JSON.stringify({ error: "PRODUCT_IMAGE_REQUIRED" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
     const modelSource = coerceImageInput(modelImage);
     const modelReferenceImage = modelSource ? await resolveImageToBase64(modelSource) : null;
     const galleryLimit = modelReferenceImage ? 1 : 2;
