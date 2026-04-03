@@ -41,6 +41,11 @@ function stripDataPrefix(imageUrl: string) {
   return imageUrl.replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/, "");
 }
 
+function detectMimeType(imageUrl: string) {
+  const match = imageUrl.match(/^data:([^;]+);base64,/i);
+  return match?.[1] || "image/jpeg";
+}
+
 function parseJsonArray(text: string): TranslationItem[] {
   try {
     const match = text.match(/\[[\s\S]*\]/);
@@ -59,7 +64,12 @@ function parseJsonArray(text: string): TranslationItem[] {
   }
 }
 
-async function callModel(apiKey: string, model: string, parts: unknown[]) {
+async function callModel(
+  apiKey: string,
+  model: string,
+  parts: unknown[],
+  options?: { expectImage?: boolean },
+) {
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
     {
@@ -67,6 +77,12 @@ async function callModel(apiKey: string, model: string, parts: unknown[]) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         contents: [{ parts }],
+        generationConfig: options?.expectImage
+          ? {
+              responseModalities: ["text", "image"],
+              maxOutputTokens: 512,
+            }
+          : undefined,
       }),
     },
   );
@@ -81,6 +97,41 @@ async function callModel(apiKey: string, model: string, parts: unknown[]) {
   }
 
   return { response, parsed, rawText };
+}
+
+async function callReplaceModel(apiKey: string, mimeType: string, imageBase64: string, instruction: string) {
+  const models = [
+    "nano-banana-pro-preview",
+    "gemini-2.5-flash-image",
+    "gemini-3.1-flash-image-preview",
+  ];
+
+  let lastFailure = "";
+
+  for (const model of models) {
+    const result = await callModel(
+      apiKey,
+      model,
+      [
+        { text: instruction },
+        { inlineData: { mimeType, data: imageBase64 } },
+      ],
+      { expectImage: true },
+    );
+
+    if (result.response.ok) {
+      return { ...result, model };
+    }
+
+    lastFailure = `${model}:${result.response.status}:${result.rawText.slice(0, 300)}`;
+  }
+
+  return {
+    response: new Response(null, { status: 500 }),
+    parsed: {},
+    rawText: lastFailure,
+    model: models[0],
+  };
 }
 
 serve(async (req: Request) => {
@@ -127,6 +178,7 @@ serve(async (req: Request) => {
     if (!imageUrl) return jsonResponse({ error: "IMAGE_REQUIRED" }, 400);
 
     const imageBase64 = stripDataPrefix(imageUrl);
+    const mimeType = detectMimeType(imageUrl);
     const targetLanguageLabel =
       TARGET_LANGUAGE_LABELS[targetLanguage] || TARGET_LANGUAGE_LABELS.en;
 
@@ -143,7 +195,7 @@ serve(async (req: Request) => {
 
       const { response, parsed } = await callModel(geminiApiKey, "gemini-2.5-flash", [
         { text: instruction },
-        { inlineData: { mimeType: "image/jpeg", data: imageBase64 } },
+        { inlineData: { mimeType, data: imageBase64 } },
       ]);
 
       if (!response.ok) {
@@ -201,10 +253,12 @@ serve(async (req: Request) => {
         "Only replace text content.",
       ].join("\n");
 
-      const { response, parsed } = await callModel(geminiApiKey, "nano-banana-pro-preview", [
-        { text: instruction },
-        { inlineData: { mimeType: "image/jpeg", data: imageBase64 } },
-      ]);
+      const { response, parsed, rawText, model } = await callReplaceModel(
+        geminiApiKey,
+        mimeType,
+        imageBase64,
+        instruction,
+      );
 
       if (!response.ok) {
         await supabase.rpc("add_balance", {
@@ -213,7 +267,15 @@ serve(async (req: Request) => {
           p_payment_method: "refund",
           p_notes: "图文翻译失败退款",
         });
-        return jsonResponse({ error: "REPLACE_UPSTREAM_FAILED", status: response.status }, 500);
+        return jsonResponse(
+          {
+            error: "REPLACE_UPSTREAM_FAILED",
+            status: response.status,
+            model,
+            detail: rawText.slice(0, 500),
+          },
+          500,
+        );
       }
 
       const part = parsed?.candidates?.[0]?.content?.parts?.[0];
