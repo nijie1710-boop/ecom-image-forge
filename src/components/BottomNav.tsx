@@ -1,12 +1,16 @@
-import { useLocation, Link } from "react-router-dom";
-import { LayoutDashboard, Wand2, Languages, Image, User } from "lucide-react";
+import { Link, useLocation } from "react-router-dom";
+import { creationNavItems } from "@/lib/dashboard-nav";
+import { cn } from "@/lib/utils";
+import { LayoutDashboard, FolderOpen } from "lucide-react";
 
 const navItems = [
   { path: "/dashboard", icon: LayoutDashboard, label: "首页", end: true },
-  { path: "/dashboard/generate", icon: Wand2, label: "生成", isCenter: true },
-  { path: "/dashboard/translate", icon: Languages, label: "翻译" },
-  { path: "/dashboard/images", icon: Image, label: "图片" },
-  { path: "/dashboard/account", icon: User, label: "我的" },
+  ...creationNavItems.map((item) => ({
+    path: item.path,
+    icon: item.icon,
+    label: item.shortLabel || item.label,
+  })),
+  { path: "/dashboard/images", icon: FolderOpen, label: "图片库" },
 ];
 
 export function BottomNav() {
@@ -18,49 +22,28 @@ export function BottomNav() {
   };
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 md:hidden z-50">
-      {/* Frosted glass background */}
-      <div className="bg-card/90 backdrop-blur-xl border-t border-border/60 safe-area-bottom">
-        <div className="flex items-end justify-around h-16 px-2">
+    <div className="fixed bottom-0 left-0 right-0 z-50 md:hidden">
+      <div className="border-t border-border/60 bg-background/95 backdrop-blur-xl safe-area-bottom">
+        <div className="grid h-16 grid-cols-5 px-2">
           {navItems.map((item) => {
-            const active = isActive(item.path, item.end);
             const Icon = item.icon;
-
-            if (item.isCenter) {
-              return (
-                <Link
-                  key={item.path}
-                  to={item.path}
-                  className="relative -top-3 flex flex-col items-center"
-                >
-                  <div
-                    className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-lg transition-transform active:scale-95 ${
-                      active
-                        ? 'bg-primary shadow-primary/30'
-                        : 'bg-primary/90 shadow-primary/20'
-                    }`}
-                  >
-                    <Icon className="h-6 w-6 text-primary-foreground" />
-                  </div>
-                  <span className={`text-[10px] mt-1 font-medium ${active ? 'text-primary' : 'text-muted-foreground'}`}>
-                    {item.label}
-                  </span>
-                </Link>
-              );
-            }
+            const active = isActive(item.path, item.end);
 
             return (
               <Link
                 key={item.path}
                 to={item.path}
-                className="flex flex-col items-center justify-center flex-1 py-2 group"
+                className="flex items-center justify-center"
               >
-                <div className={`p-1.5 rounded-xl transition-colors ${active ? 'bg-primary/10' : ''}`}>
-                  <Icon className={`h-5 w-5 transition-colors ${active ? 'text-primary' : 'text-muted-foreground group-active:text-foreground'}`} />
+                <div
+                  className={cn(
+                    "flex w-full flex-col items-center rounded-2xl px-1 py-2 transition-colors",
+                    active ? "bg-primary/10 text-primary" : "text-muted-foreground",
+                  )}
+                >
+                  <Icon className={cn("h-5 w-5", active ? "text-primary" : "text-muted-foreground")} />
+                  <span className="mt-1 text-[10px] font-medium">{item.label}</span>
                 </div>
-                <span className={`text-[10px] mt-0.5 font-medium ${active ? 'text-primary' : 'text-muted-foreground'}`}>
-                  {item.label}
-                </span>
               </Link>
             );
           })}
