@@ -996,6 +996,13 @@ const DetailDesignPage = () => {
     );
   };
 
+  const selectLeadingScreens = (count: number) => {
+    if (!activePlan) return;
+    setSelectedScreenNumbers(
+      activePlan.screens.slice(0, count).map((screen) => screen.screen),
+    );
+  };
+
   const movePlanScreen = (screenNumber: number, direction: "up" | "down") => {
     if (!activePlan) return;
     const currentIndex = activePlan.screens.findIndex((screen) => screen.screen === screenNumber);
@@ -1472,6 +1479,25 @@ const DetailDesignPage = () => {
                     variant="outline"
                     size="sm"
                     className="rounded-xl"
+                    onClick={() => selectLeadingScreens(1)}
+                  >
+                    只生首屏
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="rounded-xl"
+                    onClick={() => selectLeadingScreens(2)}
+                    disabled={activePlan.screens.length < 2}
+                  >
+                    只生前 2 屏
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="rounded-xl"
                     onClick={() => setSelectedScreenNumbers(activePlan.screens.map((screen) => screen.screen))}
                   >
                     全选
@@ -1504,7 +1530,7 @@ const DetailDesignPage = () => {
                 <Button
                   type="button"
                   onClick={handleGenerateSelectedScreens}
-                  disabled={isGeneratingScreens}
+                  disabled={isGeneratingScreens || !selectedScreenNumbers.length}
                   className="h-12 w-full rounded-2xl text-sm font-semibold"
                 >
                   {isGeneratingScreens ? (
