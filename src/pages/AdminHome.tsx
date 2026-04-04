@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { CreditCard, FolderOpen, ImagePlus, Users } from "lucide-react";
+import { CreditCard, FolderOpen, ImagePlus, ListChecks, Users } from "lucide-react";
 import { Link } from "react-router-dom";
 import { callAdminApi, type UserWithBalance } from "@/lib/admin-api";
 import { WorkspaceSection, WorkspaceStatGrid } from "@/components/workspace/WorkspaceBlocks";
@@ -61,19 +61,21 @@ const AdminHome = () => {
           </div>
         </Link>
 
-        <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-            <ImagePlus className="h-5 w-5" />
+        <Link to="/admin/tasks" className="block">
+          <div className="rounded-3xl border border-border bg-card p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-md">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+              <ListChecks className="h-5 w-5" />
+            </div>
+            <h2 className="mt-4 text-lg font-semibold text-foreground">任务管理</h2>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              查看最近的 AI 生图、AI 详情页和图文翻译任务，先把后台最常用的排查入口搭起来。
+            </p>
           </div>
-          <h2 className="mt-4 text-lg font-semibold text-foreground">任务与生成</h2>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            下一步建议补任务排查、失败统计、模型使用情况和重试管理，这会是后台最常用的一块。
-          </p>
-        </div>
+        </Link>
 
         <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-            <FolderOpen className="h-5 w-5" />
+            <ImagePlus className="h-5 w-5" />
           </div>
           <h2 className="mt-4 text-lg font-semibold text-foreground">图片与计费</h2>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
@@ -92,8 +94,8 @@ const AdminHome = () => {
             },
             {
               icon: ImagePlus,
-              title: "补任务排查",
-              desc: "加失败任务、模型报错和用户最近生成记录，会让后台更像真正运维台。",
+              title: "补图片管理",
+              desc: "把生成结果、来源、所属任务和最佳图管理纳入后台，会更方便排查用户问题。",
             },
             {
               icon: FolderOpen,

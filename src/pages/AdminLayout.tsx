@@ -1,5 +1,5 @@
 import { Link, Outlet, useLocation } from "react-router-dom";
-import { LayoutDashboard, Shield, Users } from "lucide-react";
+import { LayoutDashboard, ListChecks, Shield, Users } from "lucide-react";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { cn } from "@/lib/utils";
@@ -17,6 +17,12 @@ const adminNav = [
     label: "用户与积分",
     description: "查看用户余额、充值情况并进行手动补充",
     icon: Users,
+  },
+  {
+    path: "/admin/tasks",
+    label: "任务管理",
+    description: "查看最近任务、消耗记录和后台处理状态",
+    icon: ListChecks,
   },
 ];
 

@@ -38,3 +38,17 @@ export interface UserWithBalance {
   created_at: string;
   created_at_auth?: string;
 }
+
+export interface AdminTask {
+  id: string;
+  user_id: string;
+  email: string;
+  amount: number;
+  credits: number;
+  operation_type: string;
+  task_type: string;
+  status: string;
+  description: string;
+  created_at: string;
+  related_record_id?: string | null;
+}
