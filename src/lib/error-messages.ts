@@ -70,6 +70,15 @@ export function normalizeUserErrorMessage(
   }
 
   if (
+    lower.includes("quotaexceedederror") ||
+    lower.includes("storage quota") ||
+    lower.includes("localstorage") ||
+    lower.includes("the quota has been exceeded")
+  ) {
+    return "图片已经生成成功，但保存到本地缓存时空间不足。你可以先清理部分图片记录，再继续使用。";
+  }
+
+  if (
     lower.includes("quota") ||
     lower.includes("insufficient_balance") ||
     lower.includes("billing") ||
@@ -129,6 +138,10 @@ export function errorHintFromMessage(message: string): string | null {
 
   if (lower.includes("额度") || lower.includes("限流") || lower.includes("余额")) {
     return "建议：先切换到更低成本模型，或检查上游 API 账号余额与配额。";
+  }
+
+  if (lower.includes("本地缓存") || lower.includes("空间不足")) {
+    return "建议：先清理图片库或浏览器站点缓存，再继续生成。";
   }
 
   if (lower.includes("图片处理") || lower.includes("图片加载")) {

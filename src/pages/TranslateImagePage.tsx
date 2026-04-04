@@ -370,36 +370,44 @@ export default function TranslateImagePage() {
       }
     }
 
-    const localHistory = JSON.parse(localStorage.getItem(LOCAL_HISTORY_KEY) || "[]");
-    localStorage.setItem(
-      LOCAL_HISTORY_KEY,
-      JSON.stringify(
-        [
-          {
-            id: crypto.randomUUID(),
-            image_url: permanentUrl,
-            prompt: `图文翻译 · ${job.fileName}`,
-            style: "翻译",
-            scene: "translate",
-            task_kind: "translate",
-            image_type: "图文翻译",
-            aspect_ratio: "original",
-            created_at: new Date().toISOString(),
-          },
-          ...localHistory,
-        ].slice(0, 150),
-      ),
-    );
+    try {
+      const localHistory = JSON.parse(localStorage.getItem(LOCAL_HISTORY_KEY) || "[]");
+      localStorage.setItem(
+        LOCAL_HISTORY_KEY,
+        JSON.stringify(
+          [
+            {
+              id: crypto.randomUUID(),
+              image_url: permanentUrl,
+              prompt: `图文翻译 · ${job.fileName}`,
+              style: "翻译",
+              scene: "translate",
+              task_kind: "translate",
+              image_type: "图文翻译",
+              aspect_ratio: "original",
+              created_at: new Date().toISOString(),
+            },
+            ...localHistory,
+          ].slice(0, 150),
+        ),
+      );
+    } catch (error) {
+      console.warn("save translation local history failed:", error);
+    }
 
-    upsertCuratedImage({
-      image_url: permanentUrl,
-      prompt: `图文翻译 · ${job.fileName}`,
-      style: "翻译",
-      scene: "translate",
-      image_type: "图文翻译",
-      aspect_ratio: "original",
-      task_kind: "translate",
-    });
+    try {
+      upsertCuratedImage({
+        image_url: permanentUrl,
+        prompt: `图文翻译 · ${job.fileName}`,
+        style: "翻译",
+        scene: "translate",
+        image_type: "图文翻译",
+        aspect_ratio: "original",
+        task_kind: "translate",
+      });
+    } catch (error) {
+      console.warn("save curated translation image failed:", error);
+    }
 
     try {
       const {
@@ -533,7 +541,12 @@ export default function TranslateImagePage() {
 
       try {
         const localImage = await renderTranslatedImageLocally(job.originalImage, job.translations);
-        const permanentUrl = await persistTranslatedImage(job, localImage);
+        let permanentUrl = localImage;
+        try {
+          permanentUrl = await persistTranslatedImage(job, localImage);
+        } catch (persistError) {
+          console.warn("persist translated image failed, fallback to local preview:", persistError);
+        }
         updateJob(job.id, (current) => ({
           ...current,
           translatedImage: permanentUrl,
