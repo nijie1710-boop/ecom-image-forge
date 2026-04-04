@@ -532,18 +532,8 @@ export default function TranslateImagePage() {
       updateJob(job.id, (current) => ({ ...current, status: "rendering", error: null, hint: null }));
 
       try {
-        const { data, error } = await supabase.functions.invoke("translate-image", {
-          body: {
-            imageUrl: job.originalImage,
-            step: "replace",
-            translations: job.translations,
-            targetLanguage,
-          },
-        });
-        if (error) throw new Error(await readInvokeError(error));
-        if (!data?.imageUrl) throw new Error("翻译图片生成失败");
-
-        const permanentUrl = await persistTranslatedImage(job, data.imageUrl);
+        const localImage = await renderTranslatedImageLocally(job.originalImage, job.translations);
+        const permanentUrl = await persistTranslatedImage(job, localImage);
         updateJob(job.id, (current) => ({
           ...current,
           translatedImage: permanentUrl,
@@ -552,31 +542,17 @@ export default function TranslateImagePage() {
           hint: null,
         }));
       } catch (error) {
-        try {
-          const fallbackImage = await renderTranslatedImageLocally(job.originalImage, job.translations);
-          const permanentUrl = await persistTranslatedImage(job, fallbackImage);
-          updateJob(job.id, (current) => ({
-            ...current,
-            translatedImage: permanentUrl,
-            status: "done",
-            error: null,
-            hint: null,
-          }));
-          toast.warning("AI 替换失败，已改用本地稳定模式生成翻译图");
-          return;
-        } catch {
-          const message = normalizeUserErrorMessage(error, "翻译图片生成失败");
-          updateJob(job.id, (current) => ({
-            ...current,
-            status: "error",
-            error: message,
-            hint: errorHintFromMessage(message),
-          }));
-          throw error;
-        }
+        const message = normalizeUserErrorMessage(error, "翻译图片生成失败");
+        updateJob(job.id, (current) => ({
+          ...current,
+          status: "error",
+          error: message,
+          hint: errorHintFromMessage(message),
+        }));
+        throw error;
       }
     },
-    [persistTranslatedImage, targetLanguage, updateJob],
+    [persistTranslatedImage, updateJob],
   );
 
   const handleRecognize = useCallback(async () => {
