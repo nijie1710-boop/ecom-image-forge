@@ -7,6 +7,7 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { GenerationProvider } from "@/contexts/GenerationContext";
 import { GenerationFloatingIndicator } from "@/components/GenerationFloatingIndicator";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { AdminRoute } from "@/components/AdminRoute";
 import LandingPage from "./pages/LandingPage";
 import AuthPage from "./pages/AuthPage";
 import DashboardLayout from "./pages/DashboardLayout";
@@ -20,6 +21,8 @@ import AccountPage from "./pages/AccountPage";
 import EditPage from "./pages/EditPage";
 import TranslateImagePage from "./pages/TranslateImagePage";
 import AdminPage from "./pages/AdminPage";
+import AdminHome from "./pages/AdminHome";
+import AdminLayout from "./pages/AdminLayout";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
 import NotFound from "./pages/NotFound";
 
@@ -55,7 +58,17 @@ const App = () => (
                 <Route path="account" element={<AccountPage />} />
                 <Route path="edit" element={<EditPage />} />
                 <Route path="translate" element={<TranslateImagePage />} />
-                <Route path="admin" element={<AdminPage />} />
+              </Route>
+              <Route
+                path="/admin"
+                element={
+                  <AdminRoute>
+                    <AdminLayout />
+                  </AdminRoute>
+                }
+              >
+                <Route index element={<AdminHome />} />
+                <Route path="users" element={<AdminPage />} />
               </Route>
               <Route path="*" element={<NotFound />} />
             </Routes>

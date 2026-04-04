@@ -1,5 +1,5 @@
 import { useLocation } from "react-router-dom";
-import { Sparkles } from "lucide-react";
+import { Shield, Sparkles } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import {
   Sidebar,
@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
 import { matchDashboardNavItem, sidebarSections } from "@/lib/dashboard-nav";
+import { useAuth } from "@/contexts/AuthContext";
 import logo from "@/assets/logo.png";
 
 const allNavItems = sidebarSections.flatMap((section) => section.items);
@@ -29,6 +30,7 @@ export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
   const location = useLocation();
+  const { isAdmin } = useAuth();
   const currentItem = matchDashboardNavItem(location.pathname, allNavItems);
   const CurrentIcon = currentItem?.icon;
 
@@ -117,6 +119,34 @@ export function AppSidebar() {
             {sectionIndex < sidebarSections.length - 1 && <SidebarSeparator className="my-2" />}
           </div>
         ))}
+
+        {isAdmin && (
+          <div className="rounded-2xl border border-primary/20 bg-primary/5 p-2">
+            <SidebarMenu className="gap-1.5">
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild className="h-auto rounded-2xl p-0">
+                  <NavLink
+                    to="/admin"
+                    className="flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-primary transition hover:bg-primary/10"
+                    activeClassName=""
+                  >
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary">
+                      <Shield className="h-4 w-4" />
+                    </span>
+                    {!collapsed && (
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-medium">管理后台</span>
+                        <span className="block truncate text-xs text-sidebar-foreground/60">
+                          仅管理员可见
+                        </span>
+                      </span>
+                    )}
+                  </NavLink>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </div>
+        )}
 
         {!collapsed && (
           <div className="mt-auto rounded-2xl border border-primary/15 bg-primary/5 p-3">
