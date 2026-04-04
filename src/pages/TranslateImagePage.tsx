@@ -40,6 +40,13 @@ interface TranslationItem {
   original: string;
   translated: string;
   position: string;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  align?: "left" | "center" | "right";
+  textColor?: string;
+  backgroundColor?: string;
 }
 
 type JobStatus = "uploaded" | "ocring" | "editing" | "rendering" | "done" | "error";
@@ -119,6 +126,130 @@ const compressImageForTranslation = (file: File) =>
     reader.onerror = () => reject(new Error("图片读取失败"));
     reader.readAsDataURL(file);
   });
+
+function clampPercent(value?: number, fallback = 0) {
+  if (typeof value !== "number" || Number.isNaN(value)) return fallback;
+  return Math.min(100, Math.max(0, value));
+}
+
+function hasRenderableBox(item: TranslationItem) {
+  return (
+    typeof item.x === "number" &&
+    typeof item.y === "number" &&
+    typeof item.width === "number" &&
+    typeof item.height === "number"
+  );
+}
+
+async function renderTranslatedImageLocally(
+  imageUrl: string,
+  translations: TranslationItem[],
+) {
+  const image = new Image();
+  image.decoding = "async";
+
+  await new Promise<void>((resolve, reject) => {
+    image.onload = () => resolve();
+    image.onerror = () => reject(new Error("原图加载失败，无法本地生成翻译图"));
+    image.src = imageUrl;
+  });
+
+  const canvas = document.createElement("canvas");
+  canvas.width = image.naturalWidth || image.width;
+  canvas.height = image.naturalHeight || image.height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("浏览器画布初始化失败，无法本地生成翻译图");
+
+  ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+  const renderQueue = translations.filter(hasRenderableBox);
+  if (!renderQueue.length) {
+    throw new Error("识别结果缺少文字定位信息，无法本地生成翻译图");
+  }
+
+  for (const item of renderQueue) {
+    const x = (clampPercent(item.x) / 100) * canvas.width;
+    const y = (clampPercent(item.y) / 100) * canvas.height;
+    const width = (clampPercent(item.width, 12) / 100) * canvas.width;
+    const height = (clampPercent(item.height, 6) / 100) * canvas.height;
+    const padding = Math.max(6, Math.round(Math.min(width, height) * 0.08));
+    const boxX = Math.max(0, x);
+    const boxY = Math.max(0, y);
+    const boxW = Math.max(24, Math.min(canvas.width - boxX, width));
+    const boxH = Math.max(18, Math.min(canvas.height - boxY, height));
+
+    ctx.save();
+    ctx.fillStyle = item.backgroundColor || "rgba(255,255,255,0.9)";
+    ctx.fillRect(boxX, boxY, boxW, boxH);
+
+    const maxFont = Math.max(14, Math.floor(boxH * 0.42));
+    let fontSize = maxFont;
+    const maxWidth = boxW - padding * 2;
+    const lines = (size: number) => {
+      ctx.font = `600 ${size}px "Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif`;
+      const words = item.translated.split(/\s+/).filter(Boolean);
+      if (words.length <= 1) {
+        const chars = item.translated.split("");
+        const rows: string[] = [];
+        let current = "";
+        for (const char of chars) {
+          const candidate = current + char;
+          if (ctx.measureText(candidate).width > maxWidth && current) {
+            rows.push(current);
+            current = char;
+          } else {
+            current = candidate;
+          }
+        }
+        if (current) rows.push(current);
+        return rows;
+      }
+
+      const rows: string[] = [];
+      let current = "";
+      for (const word of words) {
+        const candidate = current ? `${current} ${word}` : word;
+        if (ctx.measureText(candidate).width > maxWidth && current) {
+          rows.push(current);
+          current = word;
+        } else {
+          current = candidate;
+        }
+      }
+      if (current) rows.push(current);
+      return rows;
+    };
+
+    let wrapped = lines(fontSize);
+    while (fontSize > 12 && wrapped.length * fontSize * 1.3 > boxH - padding * 2) {
+      fontSize -= 1;
+      wrapped = lines(fontSize);
+    }
+
+    ctx.font = `600 ${fontSize}px "Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif`;
+    ctx.fillStyle = item.textColor || "#111111";
+    ctx.textBaseline = "middle";
+    ctx.textAlign = item.align || "center";
+
+    const lineHeight = fontSize * 1.28;
+    const totalHeight = wrapped.length * lineHeight;
+    let textY = boxY + boxH / 2 - totalHeight / 2 + lineHeight / 2;
+    const textX =
+      item.align === "left"
+        ? boxX + padding
+        : item.align === "right"
+          ? boxX + boxW - padding
+          : boxX + boxW / 2;
+
+    for (const line of wrapped) {
+      ctx.fillText(line, textX, textY, maxWidth);
+      textY += lineHeight;
+    }
+    ctx.restore();
+  }
+
+  return canvas.toDataURL("image/png");
+}
 
 async function readInvokeError(error: any) {
   if (!error) return "服务暂时不可用，请稍后重试。";
@@ -401,14 +532,28 @@ export default function TranslateImagePage() {
           hint: null,
         }));
       } catch (error) {
-        const message = normalizeUserErrorMessage(error, "翻译图片生成失败");
-        updateJob(job.id, (current) => ({
-          ...current,
-          status: "error",
-          error: message,
-          hint: errorHintFromMessage(message),
-        }));
-        throw error;
+        try {
+          const fallbackImage = await renderTranslatedImageLocally(job.originalImage, job.translations);
+          const permanentUrl = await persistTranslatedImage(job, fallbackImage);
+          updateJob(job.id, (current) => ({
+            ...current,
+            translatedImage: permanentUrl,
+            status: "done",
+            error: null,
+            hint: null,
+          }));
+          toast.warning("AI 替换失败，已改用本地稳定模式生成翻译图");
+          return;
+        } catch {
+          const message = normalizeUserErrorMessage(error, "翻译图片生成失败");
+          updateJob(job.id, (current) => ({
+            ...current,
+            status: "error",
+            error: message,
+            hint: errorHintFromMessage(message),
+          }));
+          throw error;
+        }
       }
     },
     [persistTranslatedImage, targetLanguage, updateJob],

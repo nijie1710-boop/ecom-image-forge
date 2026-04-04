@@ -11,6 +11,13 @@ type TranslationItem = {
   original: string;
   translated: string;
   position: string;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  align?: "left" | "center" | "right";
+  textColor?: string;
+  backgroundColor?: string;
 };
 
 const TARGET_LANGUAGE_LABELS: Record<string, string> = {
@@ -62,6 +69,16 @@ function parseJsonArray(text: string): TranslationItem[] {
         original: String(item.original).trim(),
         translated: String(item.translated).trim(),
         position: String(item.position || "unknown").trim(),
+        x: Number.isFinite(Number(item.x)) ? Number(item.x) : undefined,
+        y: Number.isFinite(Number(item.y)) ? Number(item.y) : undefined,
+        width: Number.isFinite(Number(item.width)) ? Number(item.width) : undefined,
+        height: Number.isFinite(Number(item.height)) ? Number(item.height) : undefined,
+        align:
+          item.align === "left" || item.align === "center" || item.align === "right"
+            ? item.align
+            : undefined,
+        textColor: item.textColor ? String(item.textColor).trim() : undefined,
+        backgroundColor: item.backgroundColor ? String(item.backgroundColor).trim() : undefined,
       }));
   } catch {
     return [];
@@ -248,7 +265,10 @@ serve(async (req: Request) => {
         "Detect all visible text blocks that should be translated.",
         `Translate them into ${targetLanguageLabel}.`,
         "Return only a JSON array.",
-        '[{"original":"source text","translated":"target text","position":"short position description"}]',
+        '[{"original":"source text","translated":"target text","position":"short position description","x":12.5,"y":8.3,"width":40.0,"height":10.0,"align":"center","textColor":"#ffffff","backgroundColor":"#000000"}]',
+        "x, y, width, height must be estimated percentages based on the full image canvas, using a 0-100 scale.",
+        "align must be one of left, center, right.",
+        "textColor and backgroundColor should be helpful estimates when visible.",
         "Keep translated text concise for image layout.",
         "If there is no useful text, return [] only.",
       ].join("\n");

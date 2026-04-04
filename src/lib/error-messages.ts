@@ -15,24 +15,26 @@ export function normalizeUserErrorMessage(
   try {
     const parsed = JSON.parse(normalized);
 
-    if (parsed?.message) return parsed.message;
+    if (parsed?.message) return String(parsed.message);
 
     if (parsed?.error === "INSUFFICIENT_BALANCE") {
-      return "积分不足，当前无法继续生成翻译图，请先充值后再试。";
+      return "当前 AI 接口额度不足或触发限流，请稍后重试，或检查上游账号余额与配额。";
     }
 
     if (parsed?.error === "UNAUTHORIZED") {
       return "当前登录状态已失效，请刷新页面后重新登录。";
     }
 
-    if (parsed?.error === "OCR_UPSTREAM_FAILED" || parsed?.error === "REPLACE_UPSTREAM_FAILED") {
-      const model = parsed?.model ? ` 模型：${parsed.model}` : "";
-      const detail = parsed?.detail ? ` 详情：${String(parsed.detail).slice(0, 140)}` : "";
-      return `AI 服务暂时不可用，请稍后重试；如果连续失败，建议检查当前模型额度。${model}${detail}`;
+    if (parsed?.error === "OCR_UPSTREAM_FAILED") {
+      return "文字识别失败，当前 OCR 服务暂时不可用，请稍后重试。";
+    }
+
+    if (parsed?.error === "REPLACE_UPSTREAM_FAILED") {
+      return "AI 已识别文字，但自动替换生成图片失败。我已为你保留识别结果，请稍后重试或直接修改译文。";
     }
 
     if (parsed?.error === "EMPTY_IMAGE_RESULT") {
-      return "AI 已完成替换请求，但这一次没有返回可用图片。请稍后重试；如果连续失败，说明当前替换模型没有稳定产出图片。";
+      return "AI 已响应，但这次没有返回可用图片结果。我已为你保留识别结果，请稍后重试。";
     }
 
     if (parsed?.error === "IMAGE_REQUIRED") {
@@ -43,7 +45,7 @@ export function normalizeUserErrorMessage(
       return "请先识别文字并确认译文，再生成翻译图。";
     }
   } catch {
-    // ignore JSON parse errors and continue with string matching
+    // ignore JSON parse errors
   }
 
   const lower = normalized.toLowerCase();
@@ -75,7 +77,7 @@ export function normalizeUserErrorMessage(
     lower.includes("429") ||
     lower.includes("rate limit")
   ) {
-    return "当前 AI 接口额度不足或触发限流，请稍后再试，或检查上游账户余额与配额。";
+    return "当前 AI 接口额度不足或触发限流，请稍后重试，或检查上游账号余额与配额。";
   }
 
   if (
@@ -85,14 +87,11 @@ export function normalizeUserErrorMessage(
     lower.includes("502") ||
     lower.includes("503")
   ) {
-    return "上游模型响应超时，请稍后重试，或先降低图片尺寸再试。";
+    return "上游模型响应超时，请稍后重试，或先减小图片尺寸后再试。";
   }
 
-  if (
-    lower.includes("empty_image_result") ||
-    lower.includes("no image returned")
-  ) {
-    return "AI 已响应，但没有返回图片结果。请重试一次；如果连续失败，说明当前替换模型没有稳定产出图片。";
+  if (lower.includes("empty_image_result") || lower.includes("no image returned")) {
+    return "AI 已响应，但没有返回图片结果。我已为你保留识别结果，请稍后重试。";
   }
 
   if (
@@ -114,11 +113,7 @@ export function normalizeUserErrorMessage(
     return "图片加载失败，可能是文件损坏或跨域限制，请重新上传后再试。";
   }
 
-  if (
-    lower.includes("json") ||
-    lower.includes("schema") ||
-    lower.includes("format")
-  ) {
+  if (lower.includes("json") || lower.includes("schema") || lower.includes("format")) {
     return "AI 返回结果格式异常，请重新尝试一次；如果持续失败，需要检查后端函数返回结构。";
   }
 
@@ -133,7 +128,7 @@ export function errorHintFromMessage(message: string): string | null {
   }
 
   if (lower.includes("额度") || lower.includes("限流") || lower.includes("余额")) {
-    return "建议：先切换到更低成本模型，或检查上游 API 账户余额与配额。";
+    return "建议：先切换到更低成本模型，或检查上游 API 账号余额与配额。";
   }
 
   if (lower.includes("图片处理") || lower.includes("图片加载")) {
@@ -144,8 +139,8 @@ export function errorHintFromMessage(message: string): string | null {
     return "建议：先减少批量数量，或更换更小的图片再试。";
   }
 
-  if (lower.includes("没有返回图片") || lower.includes("empty_image_result")) {
-    return "建议：先重试一次；如果连续失败，说明当前替换模型没有稳定返回图片，需要继续调整模型链路。";
+  if (lower.includes("没有返回图片") || lower.includes("识别结果")) {
+    return "建议：识别结果已经保留。你可以先校对译文，再重新生成。";
   }
 
   if (lower.includes("连接失败") || lower.includes("部署异常")) {
