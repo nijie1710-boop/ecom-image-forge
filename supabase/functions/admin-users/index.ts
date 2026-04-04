@@ -152,6 +152,43 @@ Deno.serve(async (req) => {
         return json({ tasks });
       }
 
+      case "list_images": {
+        const { data: images, error } = await supabase
+          .from("generated_images")
+          .select("*")
+          .order("created_at", { ascending: false })
+          .limit(200);
+        if (error) throw error;
+
+        const {
+          data: { users: authUsers },
+          error: usersError,
+        } = await supabase.auth.admin.listUsers();
+        if (usersError) throw usersError;
+
+        const userMap = new Map(authUsers.map((item) => [item.id, item]));
+        const result = (images || []).map((image: any) => {
+          const authUser = userMap.get(image.user_id);
+          return {
+            ...image,
+            email: authUser?.email || "未知",
+          };
+        });
+
+        return json({ images: result });
+      }
+
+      case "delete_image": {
+        if (!userId) {
+          return json({ error: "缺少图片 ID" }, 400);
+        }
+
+        const { error } = await supabase.from("generated_images").delete().eq("id", userId);
+        if (error) throw error;
+
+        return json({ success: true });
+      }
+
       case "add_credits": {
         if (!userId || !amount || amount <= 0) {
           return json({ error: "参数错误" }, 400);

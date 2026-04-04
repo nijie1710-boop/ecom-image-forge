@@ -1,5 +1,5 @@
 import { Link, Outlet, useLocation } from "react-router-dom";
-import { LayoutDashboard, ListChecks, Shield, Users } from "lucide-react";
+import { FolderOpen, LayoutDashboard, ListChecks, Shield, Users } from "lucide-react";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { cn } from "@/lib/utils";
@@ -23,6 +23,12 @@ const adminNav = [
     label: "任务管理",
     description: "查看最近任务、消耗记录和后台处理状态",
     icon: ListChecks,
+  },
+  {
+    path: "/admin/images",
+    label: "图片管理",
+    description: "查看后台图片、用户来源和生成结果预览",
+    icon: FolderOpen,
   },
 ];
 

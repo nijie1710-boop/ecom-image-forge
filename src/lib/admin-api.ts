@@ -52,3 +52,17 @@ export interface AdminTask {
   created_at: string;
   related_record_id?: string | null;
 }
+
+export interface AdminImage {
+  id: string;
+  user_id: string;
+  email: string;
+  image_url: string;
+  prompt?: string | null;
+  image_type?: string | null;
+  style?: string | null;
+  scene?: string | null;
+  aspect_ratio?: string | null;
+  status?: string | null;
+  created_at: string;
+}

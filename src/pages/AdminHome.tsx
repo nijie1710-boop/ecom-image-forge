@@ -73,13 +73,25 @@ const AdminHome = () => {
           </div>
         </Link>
 
+        <Link to="/admin/images" className="block">
+          <div className="rounded-3xl border border-border bg-card p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-md">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+              <FolderOpen className="h-5 w-5" />
+            </div>
+            <h2 className="mt-4 text-lg font-semibold text-foreground">图片管理</h2>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              后台查看所有生成图片，按用户、图片类型和时间筛选，也可以直接预览和删除异常结果。
+            </p>
+          </div>
+        </Link>
+
         <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
             <ImagePlus className="h-5 w-5" />
           </div>
-          <h2 className="mt-4 text-lg font-semibold text-foreground">图片与计费</h2>
+          <h2 className="mt-4 text-lg font-semibold text-foreground">系统配置</h2>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            后面可以扩展图片审核、来源追踪、费用统计、套餐配置和功能开关，让后台更像完整运营面板。
+            后面可以继续扩展默认模型、默认分辨率、价格和功能开关，让后台更像完整运营面板。
           </p>
         </div>
       </div>
