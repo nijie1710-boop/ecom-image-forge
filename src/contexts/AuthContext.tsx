@@ -22,19 +22,26 @@ const AuthContext = createContext<AuthContextType>({
 
 export const useAuth = () => useContext(AuthContext);
 
-async function checkAdminRole(userId: string | undefined) {
-  if (!userId) return false;
+const ADMIN_EMAIL_ALLOWLIST = ["nijie1710@gmail.com"];
+
+async function checkAdminRole(user: User | null | undefined) {
+  if (!user?.id) return false;
+
+  const email = user.email?.toLowerCase();
+  if (email && ADMIN_EMAIL_ALLOWLIST.includes(email)) {
+    return true;
+  }
 
   const { data, error } = await supabase
     .from("user_roles")
     .select("role")
-    .eq("user_id", userId)
+    .eq("user_id", user.id)
     .eq("role", "admin")
     .maybeSingle();
 
   if (error) {
     console.error("load admin role failed:", error);
-    return false;
+    return Boolean(email && ADMIN_EMAIL_ALLOWLIST.includes(email));
   }
 
   return Boolean(data);
@@ -58,7 +65,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       setAdminLoading(true);
-      const admin = await checkAdminRole(nextSession.user.id);
+      const admin = await checkAdminRole(nextSession.user);
       setIsAdmin(admin);
       setAdminLoading(false);
     };
