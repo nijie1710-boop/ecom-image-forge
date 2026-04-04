@@ -141,6 +141,26 @@ function hasRenderableBox(item: TranslationItem) {
   );
 }
 
+function inferBoxFromPosition(item: TranslationItem, index: number, total: number) {
+  const pos = item.position.toLowerCase();
+  const isTop = /(top|title|headline|header|上|标题|顶部)/.test(pos);
+  const isBottom = /(bottom|footer|price|cta|下|底部|价格|按钮)/.test(pos);
+  const isLeft = /(left|左)/.test(pos);
+  const isRight = /(right|右)/.test(pos);
+  const isCenter = /(center|middle|居中|中央)/.test(pos);
+
+  const baseHeight = Math.max(8, 14 - total * 0.4);
+  const fallbackY = 18 + index * (baseHeight + 2);
+
+  return {
+    x: isLeft ? 8 : isRight ? 58 : isCenter ? 20 : 14,
+    y: isTop ? Math.min(38, fallbackY) : isBottom ? 78 + Math.min(index * 6, 12) : fallbackY,
+    width: isLeft || isRight ? 34 : isCenter ? 60 : 72,
+    height: isTop ? 10 : isBottom ? 9 : baseHeight,
+    align: (isLeft ? "left" : isRight ? "right" : "center") as "left" | "center" | "right",
+  };
+}
+
 async function renderTranslatedImageLocally(
   imageUrl: string,
   translations: TranslationItem[],
@@ -162,16 +182,16 @@ async function renderTranslatedImageLocally(
 
   ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
 
-  const renderQueue = translations.filter(hasRenderableBox);
-  if (!renderQueue.length) {
-    throw new Error("识别结果缺少文字定位信息，无法本地生成翻译图");
-  }
+  const renderQueue = translations.map((item, index) => ({
+    ...item,
+    ...(hasRenderableBox(item) ? null : inferBoxFromPosition(item, index, translations.length)),
+  }));
 
   for (const item of renderQueue) {
-    const x = (clampPercent(item.x) / 100) * canvas.width;
-    const y = (clampPercent(item.y) / 100) * canvas.height;
-    const width = (clampPercent(item.width, 12) / 100) * canvas.width;
-    const height = (clampPercent(item.height, 6) / 100) * canvas.height;
+    const x = (clampPercent(item.x, 12) / 100) * canvas.width;
+    const y = (clampPercent(item.y, 12) / 100) * canvas.height;
+    const width = (clampPercent(item.width, 24) / 100) * canvas.width;
+    const height = (clampPercent(item.height, 8) / 100) * canvas.height;
     const padding = Math.max(6, Math.round(Math.min(width, height) * 0.08));
     const boxX = Math.max(0, x);
     const boxY = Math.max(0, y);

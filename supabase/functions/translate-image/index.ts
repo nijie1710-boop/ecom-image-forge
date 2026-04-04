@@ -57,6 +57,11 @@ function detectMimeType(imageUrl: string) {
   return match?.[1] || "image/jpeg";
 }
 
+function safeNumber(value: unknown) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : undefined;
+}
+
 function parseJsonArray(text: string): TranslationItem[] {
   try {
     const match = text.match(/\[[\s\S]*\]/);
@@ -69,10 +74,10 @@ function parseJsonArray(text: string): TranslationItem[] {
         original: String(item.original).trim(),
         translated: String(item.translated).trim(),
         position: String(item.position || "unknown").trim(),
-        x: Number.isFinite(Number(item.x)) ? Number(item.x) : undefined,
-        y: Number.isFinite(Number(item.y)) ? Number(item.y) : undefined,
-        width: Number.isFinite(Number(item.width)) ? Number(item.width) : undefined,
-        height: Number.isFinite(Number(item.height)) ? Number(item.height) : undefined,
+        x: safeNumber(item.x),
+        y: safeNumber(item.y),
+        width: safeNumber(item.width),
+        height: safeNumber(item.height),
         align:
           item.align === "left" || item.align === "center" || item.align === "right"
             ? item.align
@@ -147,7 +152,6 @@ async function callModel(
 
   const rawText = await response.text();
   let parsed: any = {};
-
   try {
     parsed = JSON.parse(rawText);
   } catch {
@@ -184,7 +188,8 @@ async function callReplaceModel(apiKey: string, mimeType: string, imageBase64: s
           return { ...result, model, imageResult };
         }
 
-        const responsePreview = JSON.stringify(result.parsed).slice(0, 300) || result.rawText.slice(0, 300);
+        const responsePreview =
+          JSON.stringify(result.parsed).slice(0, 300) || result.rawText.slice(0, 300);
         lastFailure = `${model}:200:EMPTY_IMAGE_RESULT:${responsePreview}`;
         if (attempt < 1) {
           await sleep(900);
@@ -240,12 +245,7 @@ serve(async (req: Request) => {
 
     if (authError || !user) return jsonResponse({ error: "UNAUTHORIZED" }, 401);
 
-    const {
-      imageUrl,
-      step,
-      translations = [],
-      targetLanguage = "en",
-    } = body as {
+    const { imageUrl, step, translations = [], targetLanguage = "en" } = body as {
       imageUrl?: string;
       step?: string;
       translations?: TranslationItem[];
@@ -256,8 +256,7 @@ serve(async (req: Request) => {
 
     const imageBase64 = stripDataPrefix(imageUrl);
     const mimeType = detectMimeType(imageUrl);
-    const targetLanguageLabel =
-      TARGET_LANGUAGE_LABELS[targetLanguage] || TARGET_LANGUAGE_LABELS.en;
+    const targetLanguageLabel = TARGET_LANGUAGE_LABELS[targetLanguage] || TARGET_LANGUAGE_LABELS.en;
 
     if (step === "ocr") {
       const instruction = [
@@ -291,33 +290,6 @@ serve(async (req: Request) => {
         return jsonResponse({ error: "TRANSLATIONS_REQUIRED" }, 400);
       }
 
-      const cost = 1;
-      const { data: balanceData } = await supabase.rpc("get_user_balance", {
-        p_user_id: user.id,
-      });
-      const currentBalance = balanceData?.[0]?.balance ?? 0;
-
-      if (currentBalance < cost) {
-        return jsonResponse(
-          {
-            error: "INSUFFICIENT_BALANCE",
-            message: `余额不足，图文翻译需要 ${cost} 积分，当前仅剩 ${currentBalance} 积分。`,
-          },
-          402,
-        );
-      }
-
-      const { data: deductResult, error: deductError } = await supabase.rpc("deduct_balance", {
-        p_user_id: user.id,
-        p_amount: cost,
-        p_operation_type: "translate_image",
-        p_description: `图文翻译 -> ${targetLanguageLabel}`,
-      });
-
-      if (deductError || !deductResult?.[0]?.success) {
-        return jsonResponse({ error: "BALANCE_DEDUCT_FAILED" }, 500);
-      }
-
       const replacementInstructions = translations
         .map(
           (item, index) =>
@@ -341,12 +313,6 @@ serve(async (req: Request) => {
       );
 
       if (!response.ok) {
-        await supabase.rpc("add_balance", {
-          p_user_id: user.id,
-          p_amount: cost,
-          p_payment_method: "refund",
-          p_notes: "图文翻译失败退款",
-        });
         return jsonResponse(
           {
             error: "REPLACE_UPSTREAM_FAILED",
@@ -359,12 +325,6 @@ serve(async (req: Request) => {
       }
 
       if (!imageResult) {
-        await supabase.rpc("add_balance", {
-          p_user_id: user.id,
-          p_amount: cost,
-          p_payment_method: "refund",
-          p_notes: "图文翻译失败退款",
-        });
         return jsonResponse(
           {
             error: "EMPTY_IMAGE_RESULT",
@@ -374,6 +334,7 @@ serve(async (req: Request) => {
         );
       }
 
+      let finalImageUrl = imageResult;
       if (imageResult.startsWith("data:")) {
         try {
           const base64Part = imageResult.split(",")[1];
@@ -394,15 +355,16 @@ serve(async (req: Request) => {
               body: bytes,
             },
           );
+
           if (uploadResp.ok) {
-            imageResult = `${supabaseUrl}/storage/v1/object/public/generated-images/${fileName}`;
+            finalImageUrl = `${supabaseUrl}/storage/v1/object/public/generated-images/${fileName}`;
           }
         } catch (error) {
           console.error("upload translated image failed", error);
         }
       }
 
-      return jsonResponse({ imageUrl: imageResult });
+      return jsonResponse({ imageUrl: finalImageUrl });
     }
 
     return jsonResponse({ error: "UNKNOWN_STEP" }, 400);
