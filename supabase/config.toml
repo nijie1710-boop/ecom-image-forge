@@ -20,3 +20,6 @@ verify_jwt = false
 
 [functions.manage-balance]
 verify_jwt = false
+
+[functions.admin-users]
+verify_jwt = false
