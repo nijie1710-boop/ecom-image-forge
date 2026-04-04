@@ -12,12 +12,16 @@ import {
 } from "@/components/ui/dialog";
 import { callAdminApi, type AdminImage } from "@/lib/admin-api";
 
-const TYPE_FILTERS = ["全部", "主图", "详情图"] as const;
+const TYPE_FILTERS = [
+  { value: "all", label: "全部" },
+  { value: "主图", label: "主图" },
+  { value: "详情图", label: "详情图" },
+] as const;
 
 const AdminImagesPage = () => {
   const queryClient = useQueryClient();
   const [keyword, setKeyword] = useState("");
-  const [typeFilter, setTypeFilter] = useState<(typeof TYPE_FILTERS)[number]>("全部");
+  const [typeFilter, setTypeFilter] = useState<(typeof TYPE_FILTERS)[number]["value"]>("all");
   const [previewImage, setPreviewImage] = useState<AdminImage | null>(null);
 
   const { data, isLoading, error, refetch } = useQuery({
@@ -36,7 +40,7 @@ const AdminImagesPage = () => {
     },
   });
 
-  const images = (data?.images || []) as AdminImage[];
+  const images = useMemo(() => (data?.images || []) as AdminImage[], [data]);
 
   const filteredImages = useMemo(() => {
     const normalizedKeyword = keyword.trim().toLowerCase();
@@ -48,7 +52,7 @@ const AdminImagesPage = () => {
         image.image_type?.toLowerCase().includes(normalizedKeyword) ||
         image.scene?.toLowerCase().includes(normalizedKeyword);
 
-      const typeMatched = typeFilter === "全部" ? true : image.image_type === typeFilter;
+      const typeMatched = typeFilter === "all" ? true : image.image_type === typeFilter;
       return keywordMatched && typeMatched;
     });
   }, [images, keyword, typeFilter]);
@@ -74,7 +78,7 @@ const AdminImagesPage = () => {
             </div>
             <h1 className="mt-3 text-2xl font-semibold text-foreground">后台图片库</h1>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              查看云端生成结果，按用户和图片类型筛选，遇到异常结果可以直接删除记录。
+              查看云端生成结果，按用户和图片类型筛选；遇到异常结果可以直接删除记录。
             </p>
           </div>
 
@@ -99,16 +103,16 @@ const AdminImagesPage = () => {
         <div className="flex flex-wrap gap-2">
           {TYPE_FILTERS.map((item) => (
             <button
-              key={item}
+              key={item.value}
               type="button"
-              onClick={() => setTypeFilter(item)}
+              onClick={() => setTypeFilter(item.value)}
               className={`rounded-full border px-3 py-1.5 text-sm transition ${
-                typeFilter === item
+                typeFilter === item.value
                   ? "border-primary/30 bg-primary/10 text-primary"
                   : "border-border bg-background text-muted-foreground hover:text-foreground"
               }`}
             >
-              {item}
+              {item.label}
             </button>
           ))}
         </div>
@@ -132,15 +136,23 @@ const AdminImagesPage = () => {
             <div key={image.id} className="overflow-hidden rounded-3xl border border-border bg-card shadow-sm">
               <div className="relative">
                 <button type="button" className="block w-full text-left" onClick={() => setPreviewImage(image)}>
-                  <img src={image.image_url} alt={image.prompt || "图片预览"} className="aspect-[4/5] w-full object-cover" />
+                  <img
+                    src={image.image_url}
+                    alt={image.prompt || "图片预览"}
+                    className="aspect-[4/5] w-full object-cover"
+                  />
                 </button>
 
                 <div className="absolute left-3 top-3 flex gap-2">
                   {image.image_type && (
-                    <span className="rounded-full bg-black/60 px-2.5 py-1 text-[11px] text-white">{image.image_type}</span>
+                    <span className="rounded-full bg-black/60 px-2.5 py-1 text-[11px] text-white">
+                      {image.image_type}
+                    </span>
                   )}
                   {image.aspect_ratio && (
-                    <span className="rounded-full bg-white/90 px-2.5 py-1 text-[11px] text-foreground">{image.aspect_ratio}</span>
+                    <span className="rounded-full bg-white/90 px-2.5 py-1 text-[11px] text-foreground">
+                      {image.aspect_ratio}
+                    </span>
                   )}
                 </div>
               </div>
@@ -196,7 +208,11 @@ const AdminImagesPage = () => {
               </DialogHeader>
 
               <div className="overflow-hidden rounded-2xl border border-border bg-muted/20">
-                <img src={previewImage.image_url} alt={previewImage.prompt || "图片预览"} className="max-h-[78vh] w-full object-contain" />
+                <img
+                  src={previewImage.image_url}
+                  alt={previewImage.prompt || "图片预览"}
+                  className="max-h-[78vh] w-full object-contain"
+                />
               </div>
 
               <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">

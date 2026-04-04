@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { CreditCard, FolderOpen, ImagePlus, ListChecks, Users } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -10,25 +11,30 @@ const AdminHome = () => {
     queryFn: () => callAdminApi({ action: "list_users" }),
   });
 
-  const users = (data?.users || []) as UserWithBalance[];
+  const users = useMemo(() => (data?.users || []) as UserWithBalance[], [data]);
   const totalBalance = users.reduce((sum, user) => sum + Number(user.balance || 0), 0);
   const totalRecharged = users.reduce((sum, user) => sum + Number(user.total_recharged || 0), 0);
   const totalConsumed = users.reduce((sum, user) => sum + Number(user.total_consumed || 0), 0);
-  const activeUsers = users.filter((user) => Number(user.total_recharged || 0) > 0 || Number(user.total_consumed || 0) > 0).length;
+  const activeUsers = users.filter(
+    (user) => Number(user.total_recharged || 0) > 0 || Number(user.total_consumed || 0) > 0,
+  ).length;
 
   return (
     <div className="space-y-6">
       <div className="rounded-3xl border border-border bg-card p-6 shadow-sm">
         <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-xs font-medium text-primary">
-          管理概览
+          后台总览
         </div>
-        <h1 className="mt-3 text-2xl font-semibold text-foreground">后台总览</h1>
+        <h1 className="mt-3 text-2xl font-semibold text-foreground">管理后台总览</h1>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          先把用户、积分和后台入口整理清楚，方便你每天查看运营状态。后面可以继续往这套后台里补任务管理、图片审核和系统配置。
+          先把用户、积分、任务和图片管理串起来，方便你每天查看平台运行状态，再逐步补系统配置和运营能力。
         </p>
       </div>
 
-      <WorkspaceSection title="核心指标" description="第一版先聚焦用户与积分，保证后台能承接最常用的日常操作。">
+      <WorkspaceSection
+        title="核心指标"
+        description="先聚焦用户与积分，保证后台能承接最常用的日常操作。"
+      >
         {isLoading ? (
           <div className="text-sm text-muted-foreground">正在加载后台数据...</div>
         ) : error ? (
@@ -56,7 +62,7 @@ const AdminHome = () => {
             </div>
             <h2 className="mt-4 text-lg font-semibold text-foreground">用户与积分</h2>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              查看用户列表、余额、累计充值与累计消耗，并支持管理员手动补发积分。
+              查看用户列表、余额、累计充值与累计消耗，并支持管理员手动补充积分。
             </p>
           </div>
         </Link>
@@ -68,7 +74,7 @@ const AdminHome = () => {
             </div>
             <h2 className="mt-4 text-lg font-semibold text-foreground">任务管理</h2>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              查看最近的 AI 生图、AI 详情页和图文翻译任务，先把后台最常用的排查入口搭起来。
+              查看最近的 AI 生图、AI 详情页和图文翻译任务，快速判断用户最近做了什么。
             </p>
           </div>
         </Link>
@@ -80,7 +86,7 @@ const AdminHome = () => {
             </div>
             <h2 className="mt-4 text-lg font-semibold text-foreground">图片管理</h2>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              后台查看所有生成图片，按用户、图片类型和时间筛选，也可以直接预览和删除异常结果。
+              后台查看所有生成图片，按用户、类型和时间筛选，也可以直接预览和删除异常结果。
             </p>
           </div>
         </Link>
@@ -91,28 +97,31 @@ const AdminHome = () => {
           </div>
           <h2 className="mt-4 text-lg font-semibold text-foreground">系统配置</h2>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            后面可以继续扩展默认模型、默认分辨率、价格和功能开关，让后台更像完整运营面板。
+            下一阶段可以继续补默认模型、分辨率、价格规则和功能开关，让后台更像完整运营面板。
           </p>
         </div>
       </div>
 
-      <WorkspaceSection title="下一步建议" description="后台第一版已经能独立进入，接下来最值得补的是下面三块。">
+      <WorkspaceSection
+        title="下一步建议"
+        description="后台第一版已经能独立进入，接下来最值得补的是下面三块。"
+      >
         <div className="grid gap-3 md:grid-cols-3">
           {[
             {
               icon: CreditCard,
-              title: "先把积分流程管起来",
+              title: "把积分流程管起来",
               desc: "优先把用户余额、充值和异常补发流程做好，最容易立刻派上用场。",
             },
             {
               icon: ImagePlus,
-              title: "补图片管理",
-              desc: "把生成结果、来源、所属任务和最佳图管理纳入后台，会更方便排查用户问题。",
+              title: "把图片管理补扎实",
+              desc: "把生成结果、来源、所属任务和异常图统一纳入后台，会更方便排查用户问题。",
             },
             {
               icon: FolderOpen,
-              title: "补配置中心",
-              desc: "把默认模型、默认分辨率、价格和功能开关逐步搬到后台控制。",
+              title: "逐步补系统配置",
+              desc: "把默认模型、默认分辨率、价格和功能开关逐步搬到后台配置里。",
             },
           ].map((item) => {
             const Icon = item.icon;

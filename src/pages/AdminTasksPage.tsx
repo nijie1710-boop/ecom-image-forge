@@ -1,45 +1,108 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ListChecks, RefreshCw, Search, Sparkles } from "lucide-react";
+import { ExternalLink, ListChecks, RefreshCw, Search, Sparkles } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { callAdminApi, type AdminTask } from "@/lib/admin-api";
 
-const FILTERS = ["全部", "AI 生图", "AI 详情页", "图文翻译", "手动调整"] as const;
+const TASK_FILTERS = [
+  { value: "all", label: "全部" },
+  { value: "generate_image", label: "AI 生图" },
+  { value: "generate_copy", label: "AI 详情页" },
+  { value: "translate_image", label: "图文翻译" },
+  { value: "manual_adjustment", label: "手动调整" },
+] as const;
 
-const statusClassMap: Record<string, string> = {
-  已完成: "bg-emerald-500/10 text-emerald-600",
-  已退款: "bg-amber-500/10 text-amber-600",
-  已补发: "bg-sky-500/10 text-sky-600",
-  已记录: "bg-muted text-muted-foreground",
+const taskTypeLabelMap: Record<string, string> = {
+  generate_image: "AI 生图",
+  generate_copy: "AI 详情页",
+  translate_image: "图文翻译",
+  manual_adjustment: "手动调整",
+  unknown: "其他任务",
 };
 
+const statusLabelMap: Record<string, string> = {
+  completed: "已完成",
+  refunded: "已退款",
+  credited: "已补发",
+  recorded: "已记录",
+};
+
+const statusClassMap: Record<string, string> = {
+  completed: "bg-emerald-500/10 text-emerald-600",
+  refunded: "bg-amber-500/10 text-amber-600",
+  credited: "bg-sky-500/10 text-sky-600",
+  recorded: "bg-muted text-muted-foreground",
+};
+
+function normalizeTaskType(task: AdminTask) {
+  return taskTypeLabelMap[task.operation_type] || task.task_type || "其他任务";
+}
+
+function normalizeTaskStatus(task: AdminTask) {
+  if (task.operation_type === "manual_adjustment" && (task.description || "").includes("退款")) {
+    return "refunded";
+  }
+  if ((task.amount || 0) < 0) {
+    return "completed";
+  }
+  if ((task.amount || 0) > 0) {
+    return "credited";
+  }
+  return "recorded";
+}
+
+function getRetryPath(task: AdminTask) {
+  switch (task.operation_type) {
+    case "generate_image":
+      return "/dashboard/generate";
+    case "generate_copy":
+      return "/dashboard/detail-design";
+    case "translate_image":
+      return "/dashboard/translate";
+    default:
+      return null;
+  }
+}
+
 const AdminTasksPage = () => {
+  const navigate = useNavigate();
   const [keyword, setKeyword] = useState("");
-  const [filter, setFilter] = useState<(typeof FILTERS)[number]>("全部");
+  const [filter, setFilter] = useState<(typeof TASK_FILTERS)[number]["value"]>("all");
+  const [selectedTask, setSelectedTask] = useState<AdminTask | null>(null);
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["admin-tasks"],
     queryFn: () => callAdminApi({ action: "list_tasks" }),
   });
 
-  const tasks = (data?.tasks || []) as AdminTask[];
+  const tasks = useMemo(() => (data?.tasks || []) as AdminTask[], [data]);
 
   const filteredTasks = useMemo(() => {
     const normalizedKeyword = keyword.trim().toLowerCase();
     return tasks.filter((task) => {
-      const filterMatched = filter === "全部" ? true : task.task_type === filter;
-      const keywordMatched =
+      const matchesFilter = filter === "all" ? true : task.operation_type === filter;
+      const matchesKeyword =
         !normalizedKeyword ||
         task.email?.toLowerCase().includes(normalizedKeyword) ||
         task.user_id.toLowerCase().includes(normalizedKeyword) ||
         task.description?.toLowerCase().includes(normalizedKeyword);
 
-      return filterMatched && keywordMatched;
+      return matchesFilter && matchesKeyword;
     });
   }, [tasks, filter, keyword]);
 
   const totalCredits = filteredTasks.reduce((sum, task) => sum + Number(task.credits || 0), 0);
+  const latestTaskType = filteredTasks[0] ? normalizeTaskType(filteredTasks[0]) : "暂无记录";
 
   return (
     <div className="space-y-6">
@@ -52,7 +115,7 @@ const AdminTasksPage = () => {
             </div>
             <h1 className="mt-3 text-2xl font-semibold text-foreground">后台任务列表</h1>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              第一版先基于积分消费记录汇总最近任务，方便你排查用户最近做了什么、什么时候做的、消耗了多少积分。
+              第一版基于消费记录汇总最近任务，方便你排查用户最近做了什么、什么时候做的以及消耗了多少积分。
             </p>
           </div>
 
@@ -85,26 +148,24 @@ const AdminTasksPage = () => {
         </div>
         <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
           <div className="text-sm text-muted-foreground">最近任务类型</div>
-          <div className="mt-3 text-lg font-semibold text-foreground">
-            {filteredTasks[0]?.task_type || "暂无记录"}
-          </div>
+          <div className="mt-3 text-lg font-semibold text-foreground">{latestTaskType}</div>
         </div>
       </div>
 
       <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
         <div className="flex flex-wrap gap-2">
-          {FILTERS.map((item) => (
+          {TASK_FILTERS.map((item) => (
             <button
-              key={item}
+              key={item.value}
               type="button"
-              onClick={() => setFilter(item)}
+              onClick={() => setFilter(item.value)}
               className={`rounded-full border px-3 py-1.5 text-sm transition ${
-                filter === item
+                filter === item.value
                   ? "border-primary/30 bg-primary/10 text-primary"
                   : "border-border bg-background text-muted-foreground hover:text-foreground"
               }`}
             >
-              {item}
+              {item.label}
             </button>
           ))}
         </div>
@@ -113,11 +174,11 @@ const AdminTasksPage = () => {
       <div className="rounded-3xl border border-border bg-card shadow-sm">
         <div className="border-b border-border px-5 py-4">
           <div className="text-lg font-semibold text-foreground">最近任务</div>
-          <div className="mt-1 text-sm text-muted-foreground">优先展示最近 200 条消费记录。</div>
+          <div className="mt-1 text-sm text-muted-foreground">优先显示最近 200 条消费记录。</div>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[920px]">
+          <table className="w-full min-w-[1080px]">
             <thead>
               <tr className="border-b border-border bg-muted/40">
                 <th className="px-5 py-3 text-left text-xs font-medium text-muted-foreground">用户</th>
@@ -126,53 +187,76 @@ const AdminTasksPage = () => {
                 <th className="px-5 py-3 text-right text-xs font-medium text-muted-foreground">积分变动</th>
                 <th className="px-5 py-3 text-left text-xs font-medium text-muted-foreground">描述</th>
                 <th className="px-5 py-3 text-left text-xs font-medium text-muted-foreground">时间</th>
+                <th className="px-5 py-3 text-center text-xs font-medium text-muted-foreground">操作</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={6} className="px-5 py-10 text-center text-sm text-muted-foreground">
+                  <td colSpan={7} className="px-5 py-10 text-center text-sm text-muted-foreground">
                     正在加载任务记录...
                   </td>
                 </tr>
               ) : error ? (
                 <tr>
-                  <td colSpan={6} className="px-5 py-10 text-center text-sm text-destructive">
+                  <td colSpan={7} className="px-5 py-10 text-center text-sm text-destructive">
                     {(error as Error).message}
                   </td>
                 </tr>
               ) : filteredTasks.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-5 py-10 text-center text-sm text-muted-foreground">
+                  <td colSpan={7} className="px-5 py-10 text-center text-sm text-muted-foreground">
                     暂无匹配任务
                   </td>
                 </tr>
               ) : (
-                filteredTasks.map((task) => (
-                  <tr key={task.id} className="border-b border-border last:border-0 hover:bg-muted/20">
-                    <td className="px-5 py-4">
-                      <div className="text-sm text-foreground">{task.email}</div>
-                      <div className="mt-1 font-mono text-[11px] text-muted-foreground">{task.user_id}</div>
-                    </td>
-                    <td className="px-5 py-4 text-sm text-foreground">{task.task_type}</td>
-                    <td className="px-5 py-4">
-                      <span
-                        className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${
-                          statusClassMap[task.status] || "bg-muted text-muted-foreground"
-                        }`}
-                      >
-                        {task.status}
-                      </span>
-                    </td>
-                    <td className="px-5 py-4 text-right text-sm font-medium text-primary">
-                      {task.amount > 0 ? `+${task.amount}` : task.amount}
-                    </td>
-                    <td className="px-5 py-4 text-sm text-muted-foreground">{task.description || "-"}</td>
-                    <td className="px-5 py-4 text-sm text-muted-foreground">
-                      {task.created_at ? new Date(task.created_at).toLocaleString() : "-"}
-                    </td>
-                  </tr>
-                ))
+                filteredTasks.map((task) => {
+                  const normalizedStatus = normalizeTaskStatus(task);
+                  const retryPath = getRetryPath(task);
+
+                  return (
+                    <tr key={task.id} className="border-b border-border last:border-0 hover:bg-muted/20">
+                      <td className="px-5 py-4">
+                        <div className="text-sm text-foreground">{task.email}</div>
+                        <div className="mt-1 font-mono text-[11px] text-muted-foreground">{task.user_id}</div>
+                      </td>
+                      <td className="px-5 py-4 text-sm text-foreground">{normalizeTaskType(task)}</td>
+                      <td className="px-5 py-4">
+                        <span
+                          className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${
+                            statusClassMap[normalizedStatus] || "bg-muted text-muted-foreground"
+                          }`}
+                        >
+                          {statusLabelMap[normalizedStatus] || "已记录"}
+                        </span>
+                      </td>
+                      <td className="px-5 py-4 text-right text-sm font-medium text-primary">
+                        {task.amount > 0 ? `+${task.amount}` : task.amount}
+                      </td>
+                      <td className="px-5 py-4 text-sm text-muted-foreground">{task.description || "-"}</td>
+                      <td className="px-5 py-4 text-sm text-muted-foreground">
+                        {task.created_at ? new Date(task.created_at).toLocaleString() : "-"}
+                      </td>
+                      <td className="px-5 py-4">
+                        <div className="flex items-center justify-center gap-2">
+                          <Button variant="outline" size="sm" onClick={() => setSelectedTask(task)}>
+                            查看详情
+                          </Button>
+                          {retryPath && (
+                            <Button
+                              size="sm"
+                              onClick={() => navigate(retryPath)}
+                              className="gap-1"
+                            >
+                              <ExternalLink className="h-3.5 w-3.5" />
+                              前往工具
+                            </Button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -185,13 +269,84 @@ const AdminTasksPage = () => {
             <Sparkles className="h-4 w-4" />
           </span>
           <div>
-            <div className="text-sm font-semibold text-foreground">第一版说明</div>
+            <div className="text-sm font-semibold text-foreground">当前阶段说明</div>
             <div className="mt-1 text-sm leading-6 text-muted-foreground">
-              当前任务管理先基于消费记录汇总展示，适合先排查用户最近做了哪些生成与翻译操作。后面如果你愿意，我可以继续给你补真正的任务表、失败重试和任务详情。
+              现在的任务管理还是基于消费记录汇总，所以已经支持查看详情和跳转到对应工具，但还不是“真正的后台重试队列”。
+              后面如果你愿意，我们可以继续补独立任务表、失败原因和一键重试。
             </div>
           </div>
         </div>
       </div>
+
+      <Dialog open={!!selectedTask} onOpenChange={(open) => !open && setSelectedTask(null)}>
+        <DialogContent className="max-w-2xl">
+          {selectedTask && (
+            <>
+              <DialogHeader>
+                <DialogTitle>任务详情</DialogTitle>
+                <DialogDescription>
+                  先查看这条任务的用户、时间、消耗和描述，再决定是否需要回到对应工具重做。
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="rounded-2xl border border-border bg-muted/20 p-4">
+                  <div className="text-xs text-muted-foreground">用户邮箱</div>
+                  <div className="mt-1 text-sm font-medium text-foreground">{selectedTask.email}</div>
+                </div>
+                <div className="rounded-2xl border border-border bg-muted/20 p-4">
+                  <div className="text-xs text-muted-foreground">任务类型</div>
+                  <div className="mt-1 text-sm font-medium text-foreground">
+                    {normalizeTaskType(selectedTask)}
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-border bg-muted/20 p-4">
+                  <div className="text-xs text-muted-foreground">状态</div>
+                  <div className="mt-1 text-sm font-medium text-foreground">
+                    {statusLabelMap[normalizeTaskStatus(selectedTask)] || "已记录"}
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-border bg-muted/20 p-4">
+                  <div className="text-xs text-muted-foreground">积分变动</div>
+                  <div className="mt-1 text-sm font-medium text-foreground">
+                    {selectedTask.amount > 0 ? `+${selectedTask.amount}` : selectedTask.amount}
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-border bg-muted/20 p-4 md:col-span-2">
+                  <div className="text-xs text-muted-foreground">用户 ID</div>
+                  <div className="mt-1 break-all font-mono text-xs text-foreground">{selectedTask.user_id}</div>
+                </div>
+                <div className="rounded-2xl border border-border bg-muted/20 p-4 md:col-span-2">
+                  <div className="text-xs text-muted-foreground">任务描述</div>
+                  <div className="mt-1 text-sm leading-6 text-foreground">{selectedTask.description || "-"}</div>
+                </div>
+                <div className="rounded-2xl border border-border bg-muted/20 p-4 md:col-span-2">
+                  <div className="text-xs text-muted-foreground">创建时间</div>
+                  <div className="mt-1 text-sm text-foreground">
+                    {selectedTask.created_at ? new Date(selectedTask.created_at).toLocaleString() : "-"}
+                  </div>
+                </div>
+              </div>
+
+              <DialogFooter className="gap-2 sm:justify-between">
+                <div className="text-xs text-muted-foreground">
+                  当前“重试”是回到对应工具重新发起，不会直接在后台重跑旧任务。
+                </div>
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={() => setSelectedTask(null)}>
+                    关闭
+                  </Button>
+                  {getRetryPath(selectedTask) && (
+                    <Button onClick={() => navigate(getRetryPath(selectedTask) || "/dashboard")}>
+                      前往工具重试
+                    </Button>
+                  )}
+                </div>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
