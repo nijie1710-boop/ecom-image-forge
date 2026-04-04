@@ -75,7 +75,7 @@ const galleryItems = [
 
 const DashboardHome = () => {
   return (
-    <div className="mx-auto max-w-[1480px] space-y-6 px-4 py-6 md:px-6">
+    <div className="mx-auto max-w-[1480px] space-y-4 px-3 py-4 sm:space-y-5 sm:px-4 sm:py-5 md:space-y-6 md:px-6 md:py-6">
       <WorkspaceHeader
         icon={Zap}
         badge="工作台首页"
@@ -84,26 +84,26 @@ const DashboardHome = () => {
         steps={["上传素材", "生成方案", "下载或继续编辑"]}
       />
 
-      <section className="grid gap-6 xl:grid-cols-[1.25fr_0.95fr]">
+      <section className="grid gap-4 lg:gap-5 xl:grid-cols-[1.25fr_0.95fr] xl:gap-6">
         <Link to="/dashboard/generate" className="block">
-          <div className="group relative overflow-hidden rounded-3xl bg-gradient-to-br from-primary via-primary/90 to-purple-600 p-6 text-primary-foreground shadow-sm transition-shadow hover:shadow-xl hover:shadow-primary/20 md:p-8">
-            <div className="relative z-10 flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+          <div className="group relative overflow-hidden rounded-[28px] bg-gradient-to-br from-primary via-primary/90 to-purple-600 p-5 text-primary-foreground shadow-sm transition-shadow hover:shadow-xl hover:shadow-primary/20 sm:p-6 md:p-8">
+            <div className="relative z-10 flex flex-col gap-4 sm:gap-5 md:flex-row md:items-end md:justify-between">
               <div className="max-w-xl">
-                <div className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-xs font-medium">
+                <div className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-[11px] font-medium sm:text-xs">
                   <Sparkles className="h-3.5 w-3.5" />
                   推荐从这里开始
                 </div>
-                <h2 className="mt-4 text-2xl font-bold md:text-3xl">开始 AI 创作</h2>
+                <h2 className="mt-4 text-xl font-bold sm:text-2xl md:text-3xl">开始 AI 创作</h2>
                 <p className="mt-2 text-sm leading-6 text-primary-foreground/80 md:text-base">
                   用一张商品图快速生成电商主图和场景图，或者继续进入 AI 详情页做整套长图方案。
                 </p>
               </div>
-              <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-2xl bg-white/20 transition-transform group-hover:scale-110">
-                <ArrowRight className="h-7 w-7" />
+              <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-white/20 transition-transform group-hover:scale-110 sm:h-14 sm:w-14">
+                <ArrowRight className="h-6 w-6 sm:h-7 sm:w-7" />
               </div>
             </div>
-            <div className="absolute -right-8 -top-10 h-36 w-36 rounded-full bg-white/5" />
-            <div className="absolute -bottom-12 -right-3 h-28 w-28 rounded-full bg-white/5" />
+            <div className="absolute -right-8 -top-10 h-32 w-32 rounded-full bg-white/5 sm:h-36 sm:w-36" />
+            <div className="absolute -bottom-12 -right-3 h-24 w-24 rounded-full bg-white/5 sm:h-28 sm:w-28" />
           </div>
         </Link>
 
@@ -115,9 +115,12 @@ const DashboardHome = () => {
             {steps.map((step, index) => {
               const Icon = step.icon;
               return (
-                <div key={step.title} className="flex items-start gap-3 rounded-2xl border border-border bg-background p-4">
-                  <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary/10">
-                    <Icon className="h-4.5 w-4.5 text-primary" />
+                <div
+                  key={step.title}
+                  className="flex items-start gap-3 rounded-2xl border border-border bg-background p-3.5 sm:p-4"
+                >
+                  <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-primary/10 sm:h-10 sm:w-10">
+                    <Icon className="h-4 w-4 text-primary sm:h-[18px] sm:w-[18px]" />
                   </div>
                   <div className="min-w-0">
                     <div className="text-sm font-semibold text-foreground">
@@ -136,19 +139,19 @@ const DashboardHome = () => {
         title="快速入口"
         description="3 个核心 AI 创作页面和图片库都可以从这里直接进入。"
       >
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 sm:gap-4 md:grid-cols-2 2xl:grid-cols-4">
           {quickActions.map((action) => {
             const Icon = action.icon;
             return (
               <Link key={action.path} to={action.path}>
-                <div className="group flex h-full items-start gap-4 rounded-3xl border border-border bg-background p-5 transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md">
+                <div className="group flex h-full items-start gap-3 rounded-[24px] border border-border bg-background p-4 transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md sm:gap-4 sm:p-5">
                   <div
-                    className={`flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${action.color} transition-transform group-hover:scale-105`}
+                    className={`flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${action.color} transition-transform group-hover:scale-105 sm:h-12 sm:w-12`}
                   >
                     <Icon className="h-5 w-5 text-white" />
                   </div>
                   <div className="min-w-0">
-                    <p className="text-base font-semibold text-foreground">{action.title}</p>
+                    <p className="text-sm font-semibold text-foreground sm:text-base">{action.title}</p>
                     <p className="mt-1 text-sm leading-6 text-muted-foreground">{action.desc}</p>
                   </div>
                 </div>
@@ -162,9 +165,9 @@ const DashboardHome = () => {
         title="示例展示"
         description="快速看看工作台当前更适合生成的常见风格和应用场景。"
       >
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2.5 sm:gap-3 md:grid-cols-4">
           {galleryItems.map((item) => (
-            <div key={item.label} className="group relative overflow-hidden rounded-3xl">
+            <div key={item.label} className="group relative overflow-hidden rounded-[24px]">
               <img
                 src={item.src}
                 alt={item.label}

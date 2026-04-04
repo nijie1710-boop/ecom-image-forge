@@ -53,7 +53,7 @@ export const sidebarSections: Array<{
       {
         path: "/dashboard",
         icon: LayoutDashboard,
-        label: "工作台",
+        label: "工作台首页",
         shortLabel: "首页",
         description: "查看最近任务、快速进入常用功能",
         end: true,
