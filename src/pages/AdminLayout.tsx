@@ -1,5 +1,5 @@
 import { Link, Outlet, useLocation } from "react-router-dom";
-import { CreditCard, LayoutDashboard, Shield, Users } from "lucide-react";
+import { LayoutDashboard, Shield, Users } from "lucide-react";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { cn } from "@/lib/utils";
@@ -9,13 +9,13 @@ const adminNav = [
     path: "/admin",
     end: true,
     label: "后台总览",
-    description: "查看核心指标与管理入口",
+    description: "查看核心指标、快捷入口和当前后台状态",
     icon: LayoutDashboard,
   },
   {
     path: "/admin/users",
     label: "用户与积分",
-    description: "查看用户余额并手动充值",
+    description: "查看用户余额、充值情况并进行手动补充",
     icon: Users,
   },
 ];
@@ -48,7 +48,7 @@ const AdminLayout = () => {
         </div>
       </header>
 
-      <div className="mx-auto grid max-w-[1480px] gap-6 px-4 py-6 md:px-6 xl:grid-cols-[260px_minmax(0,1fr)]">
+      <div className="mx-auto grid max-w-[1480px] gap-6 px-4 py-6 md:px-6 xl:grid-cols-[280px_minmax(0,1fr)]">
         <aside className="xl:sticky xl:top-24 xl:self-start">
           <div className="rounded-3xl border border-border bg-card p-4 shadow-sm">
             <div className="mb-4 text-sm font-semibold text-foreground">后台导航</div>
@@ -71,16 +71,14 @@ const AdminLayout = () => {
                     <span
                       className={cn(
                         "mt-0.5 flex h-9 w-9 items-center justify-center rounded-xl",
-                        active ? "bg-primary/15" : "bg-muted",
+                        active ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground",
                       )}
                     >
                       <Icon className="h-4 w-4" />
                     </span>
                     <span className="min-w-0">
                       <span className="block text-sm font-medium">{item.label}</span>
-                      <span className="mt-1 block text-xs leading-5 opacity-80">
-                        {item.description}
-                      </span>
+                      <span className="mt-1 block text-xs leading-5 opacity-80">{item.description}</span>
                     </span>
                   </Link>
                 );
@@ -88,7 +86,7 @@ const AdminLayout = () => {
             </div>
 
             <div className="mt-4 rounded-2xl bg-muted/60 p-3 text-xs leading-5 text-muted-foreground">
-              管理后台仅对拥有管理员角色的账号开放。建议把用户管理、任务排查、积分处理等操作集中在这里完成。
+              这里只对管理员开放。第一版后台优先承载用户、积分和日常运营入口，后面再逐步补任务管理、图片审核和系统配置。
             </div>
           </div>
         </aside>

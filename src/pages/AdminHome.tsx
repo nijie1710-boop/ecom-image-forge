@@ -14,6 +14,7 @@ const AdminHome = () => {
   const totalBalance = users.reduce((sum, user) => sum + Number(user.balance || 0), 0);
   const totalRecharged = users.reduce((sum, user) => sum + Number(user.total_recharged || 0), 0);
   const totalConsumed = users.reduce((sum, user) => sum + Number(user.total_consumed || 0), 0);
+  const activeUsers = users.filter((user) => Number(user.total_recharged || 0) > 0 || Number(user.total_consumed || 0) > 0).length;
 
   return (
     <div className="space-y-6">
@@ -23,14 +24,11 @@ const AdminHome = () => {
         </div>
         <h1 className="mt-3 text-2xl font-semibold text-foreground">后台总览</h1>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          这里先放第一版后台入口和核心指标，后面可以继续补任务管理、图片审核、配置管理和系统统计。
+          先把用户、积分和后台入口整理清楚，方便你每天查看运营状态。后面可以继续往这套后台里补任务管理、图片审核和系统配置。
         </p>
       </div>
 
-      <WorkspaceSection
-        title="核心指标"
-        description="第一版优先展示用户与积分数据，方便管理员快速进入日常处理。"
-      >
+      <WorkspaceSection title="核心指标" description="第一版先聚焦用户与积分，保证后台能承接最常用的日常操作。">
         {isLoading ? (
           <div className="text-sm text-muted-foreground">正在加载后台数据...</div>
         ) : error ? (
@@ -40,7 +38,8 @@ const AdminHome = () => {
         ) : (
           <WorkspaceStatGrid
             items={[
-              { label: "总用户数", value: String(users.length) },
+              { label: "用户总数", value: String(users.length) },
+              { label: "活跃用户", value: String(activeUsers) },
               { label: "用户余额合计", value: String(totalBalance) },
               { label: "累计充值", value: String(totalRecharged) },
               { label: "累计消耗", value: String(totalConsumed) },
@@ -57,7 +56,7 @@ const AdminHome = () => {
             </div>
             <h2 className="mt-4 text-lg font-semibold text-foreground">用户与积分</h2>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              查看用户列表、余额、累计充值与累计消耗，并支持管理员手动充值。
+              查看用户列表、余额、累计充值与累计消耗，并支持管理员手动补发积分。
             </p>
           </div>
         </Link>
@@ -68,7 +67,7 @@ const AdminHome = () => {
           </div>
           <h2 className="mt-4 text-lg font-semibold text-foreground">任务与生成</h2>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            后续可以在这里补任务排查、失败统计、模型使用情况和重试管理。
+            下一步建议补任务排查、失败统计、模型使用情况和重试管理，这会是后台最常用的一块。
           </p>
         </div>
 
@@ -78,15 +77,12 @@ const AdminHome = () => {
           </div>
           <h2 className="mt-4 text-lg font-semibold text-foreground">图片与计费</h2>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            后续可以扩展图片审核、来源追踪、费用统计、套餐配置和功能开关。
+            后面可以扩展图片审核、来源追踪、费用统计、套餐配置和功能开关，让后台更像完整运营面板。
           </p>
         </div>
       </div>
 
-      <WorkspaceSection
-        title="第一版建议"
-        description="管理后台已经能独立进入，后续最值得补的是任务管理、图片管理和系统配置。"
-      >
+      <WorkspaceSection title="下一步建议" description="后台第一版已经能独立进入，接下来最值得补的是下面三块。">
         <div className="grid gap-3 md:grid-cols-3">
           {[
             {
