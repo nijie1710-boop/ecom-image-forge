@@ -75,7 +75,7 @@ const generationLanguageOptions = [
   { value: "pure", label: "纯图片（无新增文字）" },
 ];
 
-const screenCountOptions = [3, 4, 5, 6, 7, 8];
+const screenCountOptions = [1, 2, 3, 4, 5, 6, 7, 8];
 
 const ratioOptions = [
   { value: "1:1", label: "1:1 正方形" },
@@ -114,6 +114,12 @@ const resolutionOptions: { value: OutputResolution; label: string }[] = [
   { value: "2k", label: "2K 高清" },
   { value: "4k", label: "4K 超清" },
 ];
+
+function toCssAspectRatio(ratio: string) {
+  const [width, height] = ratio.split(":").map(Number);
+  if (!width || !height) return "3 / 4";
+  return `${width} / ${height}`;
+}
 
 type ScreenStatus = "idle" | "running" | "done" | "error" | "canceled";
 
@@ -394,6 +400,7 @@ const DetailDesignPage = () => {
   const resultsSectionRef = useRef<HTMLElement | null>(null);
   const planningErrorHint = error ? errorHintFromMessage(error) : null;
   const generationErrorHint = generationError ? errorHintFromMessage(generationError) : null;
+  const previewAspectRatio = useMemo(() => toCssAspectRatio(selectedRatio), [selectedRatio]);
 
   const activePlan = useMemo(
     () => planOptions[selectedOptionIndex] || null,
@@ -557,6 +564,8 @@ const DetailDesignPage = () => {
       setGenerationError(normalizeUserErrorMessage(activeDetailJob.error, "逐屏生成失败，请稍后重试。"));
     } else if (activeDetailJob.status === "canceled") {
       setGenerationError("后台任务已取消");
+    } else {
+      setGenerationError(null);
     }
 
     if (activeDetailJob.status !== "running") {
@@ -1963,20 +1972,31 @@ const DetailDesignPage = () => {
                         <div className="space-y-3">
                           <div className="overflow-hidden rounded-2xl border border-border bg-card">
                             {generated?.status === "done" && generated.imageUrl ? (
-                              <img
-                                src={generated.imageUrl}
-                                alt={`${screen.title} generated result`}
-                                className="aspect-[3/4] w-full object-cover"
-                              />
+                              <div
+                                className="w-full overflow-hidden bg-muted/20"
+                                style={{ aspectRatio: previewAspectRatio }}
+                              >
+                                <img
+                                  src={generated.imageUrl}
+                                  alt={`${screen.title} generated result`}
+                                  className="h-full w-full object-contain"
+                                />
+                              </div>
                             ) : generated?.status === "running" ? (
-                              <div className="flex aspect-[3/4] items-center justify-center bg-muted/50">
+                              <div
+                                className="flex items-center justify-center bg-muted/50"
+                                style={{ aspectRatio: previewAspectRatio }}
+                              >
                                 <div className="text-center text-sm text-muted-foreground">
                                   <Loader2 className="mx-auto mb-3 h-6 w-6 animate-spin text-primary" />
                                   正在生成第 {screen.screen} 屏
                                 </div>
                               </div>
                             ) : (
-                              <div className="flex aspect-[3/4] items-center justify-center bg-muted/40 text-center text-sm text-muted-foreground">
+                              <div
+                                className="flex items-center justify-center bg-muted/40 text-center text-sm text-muted-foreground"
+                                style={{ aspectRatio: previewAspectRatio }}
+                              >
                                 <div>
                                   <ImagePlus className="mx-auto mb-3 h-7 w-7 text-primary/60" />
                                   还没有生成这屏内容

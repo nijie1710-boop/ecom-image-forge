@@ -419,6 +419,7 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             step: "完成",
             current: total,
             results: finalImages,
+            error: undefined,
           });
           params.onComplete?.(finalImages);
         } catch (error) {
@@ -535,6 +536,7 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             step: "完成",
             current: params.n,
             results,
+            error: undefined,
           });
           params.onComplete?.(results);
 
@@ -690,6 +692,7 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             step: "完成",
             current: params.screens.length,
             results: completedImages,
+            error: undefined,
           });
           params.onComplete?.(finalScreens);
 

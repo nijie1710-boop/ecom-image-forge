@@ -89,7 +89,7 @@ async function tryOptionalAuth(req: Request) {
 function clampScreenCount(value: unknown): number {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return 4;
-  return Math.min(Math.max(Math.round(parsed), 3), 8);
+  return Math.min(Math.max(Math.round(parsed), 1), 8);
 }
 
 function normalizeScreenIdeas(value: unknown, screenCount: number): string[] {

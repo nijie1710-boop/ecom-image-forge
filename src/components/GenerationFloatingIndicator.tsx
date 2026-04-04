@@ -32,7 +32,7 @@ export function GenerationFloatingIndicator() {
 
   const latestJob = visibleJobs[0];
   const normalizedError =
-    latestJob.status !== "running"
+    latestJob.status === "error"
       ? normalizeUserErrorMessage(latestJob.error, "本次任务失败，请稍后重试。")
       : null;
   const errorHint = normalizedError ? errorHintFromMessage(normalizedError) : null;
@@ -116,7 +116,7 @@ export function GenerationFloatingIndicator() {
               </>
             )}
 
-            {normalizedError && latestJob.status !== "running" && (
+            {normalizedError && (
               <div className="mt-1 text-xs leading-5 text-destructive">
                 <div>{normalizedError}</div>
                 {errorHint && <div className="mt-1 text-muted-foreground">{errorHint}</div>}

@@ -122,6 +122,27 @@ function normalizeResolution(value: string | undefined): SupportedResolution {
   return "2k";
 }
 
+function normalizeAspectRatio(value: string | undefined): string {
+  const normalized = String(value || "1:1").trim();
+  return /^\d+:\d+$/.test(normalized) ? normalized : "1:1";
+}
+
+function buildAspectRatioInstruction(ratio: string): string {
+  const map: Record<string, string> = {
+    "1:1": "square",
+    "2:3": "portrait",
+    "3:2": "landscape",
+    "3:4": "portrait",
+    "4:3": "landscape",
+    "4:5": "portrait",
+    "5:4": "landscape",
+    "9:16": "portrait",
+    "16:9": "landscape",
+    "21:9": "ultra-wide landscape",
+  };
+  return `ASPECT RATIO LOCK: The final image canvas must be exactly ${ratio} (${map[ratio] || "custom"}). Do not output any other canvas proportion.`;
+}
+
 function buildTextInstruction(language: string): string {
   const languageMap: Record<string, string> = {
     zh: "Simplified Chinese",
@@ -360,6 +381,7 @@ serve(async (req: Request) => {
     const {
       prompt,
       imageBase64,
+      aspectRatio,
       referenceImageUrl,
       referenceStyleUrl,
       referenceGallery,
@@ -399,6 +421,7 @@ serve(async (req: Request) => {
     const normalizedTextLanguage = normalizeTextLanguage(textLanguage);
     const normalizedModel = normalizeModel(model);
     const normalizedResolution = normalizeResolution(resolution);
+    const normalizedAspectRatio = normalizeAspectRatio(aspectRatio);
     const normalizedModelMode = normalizeModelMode(modelMode);
 
     const absoluteRules = [
@@ -483,6 +506,7 @@ serve(async (req: Request) => {
 
     const textInstruction = buildTextInstruction(normalizedTextLanguage);
     const resolutionInstruction = buildResolutionInstruction(normalizedResolution);
+    const aspectRatioInstruction = buildAspectRatioInstruction(normalizedAspectRatio);
     const modelInstruction = `MODEL TARGET: Prefer visual behavior suitable for ${normalizedModel}.`;
     const modelPresenceInstruction =
       normalizedModelMode === "with_model"
@@ -531,6 +555,7 @@ serve(async (req: Request) => {
       typeInstruction,
       textInstruction,
       resolutionInstruction,
+      aspectRatioInstruction,
       modelInstruction,
       modelPresenceInstruction,
       styleReferenceInstruction,
@@ -592,6 +617,7 @@ serve(async (req: Request) => {
       textLanguage: normalizedTextLanguage,
       model: normalizedModel,
       resolution: normalizedResolution,
+      aspectRatio: normalizedAspectRatio,
       modelMode: normalizedModelMode,
       parts: parts.length,
     });
@@ -604,6 +630,7 @@ serve(async (req: Request) => {
         modelRequested: normalizedModel,
         modelUsed,
         resolution: normalizedResolution,
+        aspectRatio: normalizedAspectRatio,
       },
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
