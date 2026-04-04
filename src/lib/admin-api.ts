@@ -1,29 +1,24 @@
 import { supabase } from "@/integrations/supabase/client";
 
-async function getAdminSessionToken() {
+export async function callAdminApi(body: Record<string, unknown>) {
   const {
     data: { session },
   } = await supabase.auth.getSession();
 
-  return session?.access_token || "";
-}
+  if (!session?.access_token) {
+    throw new Error("登录状态已失效，请先重新登录后再进入后台。");
+  }
 
-export async function callAdminApi(body: Record<string, unknown>) {
-  const token = await getAdminSessionToken();
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-
-  const response = await fetch(`${supabaseUrl}/functions/v1/admin-users`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify(body),
+  const { data, error } = await supabase.functions.invoke("admin-users", {
+    body,
   });
 
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data.error || "管理员请求失败");
+  if (error) {
+    throw new Error(error.message || "管理员请求失败，请稍后重试。");
+  }
+
+  if (data?.error) {
+    throw new Error(String(data.error));
   }
 
   return data;
