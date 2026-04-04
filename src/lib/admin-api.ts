@@ -5,24 +5,26 @@ export async function callAdminApi(body: Record<string, unknown>) {
     data: { session },
   } = await supabase.auth.getSession();
 
+  if (!session) {
+    throw new Error("登录状态已失效，请重新登录后再进入后台。");
+  }
+
   const { data, error } = await supabase.functions.invoke("admin-users", {
     body,
-    headers: {
-      "x-admin-email": session?.user?.email || "",
-      ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
-    },
   });
 
   if (error) {
-    const context = (error as Error & { context?: Response }).context;
-    if (context) {
+    const response = (error as Error & { context?: Response }).context;
+
+    if (response) {
       try {
-        const payload = await context.json();
+        const payload = await response.json();
         throw new Error(payload?.error || error.message || "管理员请求失败，请稍后重试。");
       } catch {
         throw new Error(error.message || "管理员请求失败，请稍后重试。");
       }
     }
+
     throw new Error(error.message || "管理员请求失败，请稍后重试。");
   }
 
