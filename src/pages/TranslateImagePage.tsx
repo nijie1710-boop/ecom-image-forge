@@ -161,9 +161,93 @@ function inferBoxFromPosition(item: TranslationItem, index: number, total: numbe
   };
 }
 
+function parseColor(color?: string) {
+  if (!color) return null;
+  const normalized = color.trim().toLowerCase();
+  if (!normalized || normalized === "transparent" || normalized === "none") return null;
+
+  const hex = normalized.replace("#", "");
+  if (/^[0-9a-f]{6}$/i.test(hex)) {
+    return {
+      r: Number.parseInt(hex.slice(0, 2), 16),
+      g: Number.parseInt(hex.slice(2, 4), 16),
+      b: Number.parseInt(hex.slice(4, 6), 16),
+      a: 1,
+    };
+  }
+
+  const rgbaMatch = normalized.match(/rgba?\(([^)]+)\)/);
+  if (rgbaMatch) {
+    const [r = 255, g = 255, b = 255, a = 1] = rgbaMatch[1]
+      .split(",")
+      .map((part) => Number(part.trim()));
+    return { r, g, b, a: Number.isFinite(a) ? a : 1 };
+  }
+
+  return null;
+}
+
+function rgbaString(color: { r: number; g: number; b: number; a?: number }) {
+  return `rgba(${Math.round(color.r)}, ${Math.round(color.g)}, ${Math.round(color.b)}, ${color.a ?? 1})`;
+}
+
+function luminance(color: { r: number; g: number; b: number }) {
+  return 0.299 * color.r + 0.587 * color.g + 0.114 * color.b;
+}
+
+function pickFontStack(language: string) {
+  switch (language) {
+    case "ja":
+      return `"Noto Sans JP","Hiragino Sans","Yu Gothic","Microsoft YaHei",sans-serif`;
+    case "ko":
+      return `"Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic","Microsoft YaHei",sans-serif`;
+    case "zh":
+    case "zh_tw":
+      return `"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif`;
+    default:
+      return `"Inter","Noto Sans","Segoe UI","Arial",sans-serif`;
+  }
+}
+
+function sampleRegionColor(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+) {
+  const sx = Math.max(0, Math.floor(x));
+  const sy = Math.max(0, Math.floor(y));
+  const sw = Math.max(1, Math.floor(width));
+  const sh = Math.max(1, Math.floor(height));
+
+  try {
+    const imageData = ctx.getImageData(sx, sy, sw, sh).data;
+    let r = 0;
+    let g = 0;
+    let b = 0;
+    let count = 0;
+
+    for (let i = 0; i < imageData.length; i += 4) {
+      const alpha = imageData[i + 3] / 255;
+      if (alpha < 0.1) continue;
+      r += imageData[i];
+      g += imageData[i + 1];
+      b += imageData[i + 2];
+      count += 1;
+    }
+
+    if (!count) return { r: 255, g: 255, b: 255, a: 0.96 };
+    return { r: r / count, g: g / count, b: b / count, a: 0.96 };
+  } catch {
+    return { r: 255, g: 255, b: 255, a: 0.96 };
+  }
+}
+
 async function renderTranslatedImageLocally(
   imageUrl: string,
   translations: TranslationItem[],
+  language: string,
 ) {
   const image = new Image();
   image.decoding = "async";
@@ -192,21 +276,35 @@ async function renderTranslatedImageLocally(
     const y = (clampPercent(item.y, 12) / 100) * canvas.height;
     const width = (clampPercent(item.width, 24) / 100) * canvas.width;
     const height = (clampPercent(item.height, 8) / 100) * canvas.height;
-    const padding = Math.max(6, Math.round(Math.min(width, height) * 0.08));
-    const boxX = Math.max(0, x);
-    const boxY = Math.max(0, y);
-    const boxW = Math.max(24, Math.min(canvas.width - boxX, width));
-    const boxH = Math.max(18, Math.min(canvas.height - boxY, height));
+    const expandX = Math.max(6, width * 0.06);
+    const expandY = Math.max(4, height * 0.18);
+    const padding = Math.max(8, Math.round(Math.min(width, height) * 0.1));
+    const boxX = Math.max(0, x - expandX / 2);
+    const boxY = Math.max(0, y - expandY / 2);
+    const boxW = Math.max(28, Math.min(canvas.width - boxX, width + expandX));
+    const boxH = Math.max(20, Math.min(canvas.height - boxY, height + expandY));
+    const sampledBackground = sampleRegionColor(ctx, boxX, boxY, boxW, boxH);
+    const explicitBackground = parseColor(item.backgroundColor);
+    const background = explicitBackground || sampledBackground;
+    const explicitText = parseColor(item.textColor);
+    const foreground =
+      explicitText ||
+      (luminance(background) < 150
+        ? { r: 255, g: 255, b: 255, a: 1 }
+        : { r: 18, g: 18, b: 18, a: 1 });
+    const radius = Math.max(8, Math.min(boxH / 2.4, 18));
 
     ctx.save();
-    ctx.fillStyle = item.backgroundColor || "rgba(255,255,255,0.9)";
-    ctx.fillRect(boxX, boxY, boxW, boxH);
+    ctx.fillStyle = rgbaString(background);
+    ctx.beginPath();
+    ctx.roundRect(boxX, boxY, boxW, boxH, radius);
+    ctx.fill();
 
     const maxFont = Math.max(14, Math.floor(boxH * 0.42));
     let fontSize = maxFont;
     const maxWidth = boxW - padding * 2;
     const lines = (size: number) => {
-      ctx.font = `600 ${size}px "Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif`;
+      ctx.font = `700 ${size}px ${pickFontStack(language)}`;
       const words = item.translated.split(/\s+/).filter(Boolean);
       if (words.length <= 1) {
         const chars = item.translated.split("");
@@ -246,8 +344,8 @@ async function renderTranslatedImageLocally(
       wrapped = lines(fontSize);
     }
 
-    ctx.font = `600 ${fontSize}px "Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif`;
-    ctx.fillStyle = item.textColor || "#111111";
+    ctx.font = `700 ${fontSize}px ${pickFontStack(language)}`;
+    ctx.fillStyle = rgbaString(foreground);
     ctx.textBaseline = "middle";
     ctx.textAlign = item.align || "center";
 
@@ -540,7 +638,11 @@ export default function TranslateImagePage() {
       updateJob(job.id, (current) => ({ ...current, status: "rendering", error: null, hint: null }));
 
       try {
-        const localImage = await renderTranslatedImageLocally(job.originalImage, job.translations);
+        const localImage = await renderTranslatedImageLocally(
+          job.originalImage,
+          job.translations,
+          targetLanguage,
+        );
         let permanentUrl = localImage;
         try {
           permanentUrl = await persistTranslatedImage(job, localImage);
