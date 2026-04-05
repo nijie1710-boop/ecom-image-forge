@@ -435,6 +435,8 @@ export default function TranslateImagePage() {
   const [targetLanguage, setTargetLanguage] = useState("en");
 
   const activeJob = jobs.find((job) => job.id === activeJobId) || jobs[0] || null;
+  const activeJobError = activeJob?.status === "error" ? activeJob.error : null;
+  const activeJobHint = activeJob?.status === "error" ? activeJob.hint : null;
   const doneJobs = jobs.filter((job) => job.status === "done");
   const pendingJobs = jobs.filter((job) => job.status !== "done");
   const targetLanguageLabel =
@@ -849,7 +851,9 @@ export default function TranslateImagePage() {
                           {job.translations.length ? `${job.translations.length} 处文字` : "待识别"}
                         </span>
                       </div>
-                      {job.error && <div className="mt-2 line-clamp-2 text-xs text-destructive">{job.error}</div>}
+                      {job.status === "error" && job.error && (
+                        <div className="mt-2 line-clamp-2 text-xs text-destructive">{job.error}</div>
+                      )}
                     </div>
                   </button>
                 </div>
@@ -886,14 +890,14 @@ export default function TranslateImagePage() {
                   </>
                 }
               >
-                {activeJob.error && (
+                {activeJobError && (
                   <div className="mb-5 rounded-2xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm">
                     <div className="flex items-start gap-2 text-destructive">
                       <XCircle className="mt-0.5 h-4 w-4" />
                       <div>
                         <div className="font-medium">当前任务失败</div>
-                        <div className="mt-1">{activeJob.error}</div>
-                        {activeJob.hint && <div className="mt-2 text-destructive/80">{activeJob.hint}</div>}
+                        <div className="mt-1">{activeJobError}</div>
+                        {activeJobHint && <div className="mt-2 text-destructive/80">{activeJobHint}</div>}
                       </div>
                     </div>
                   </div>
