@@ -30,6 +30,14 @@ const TASK_FILTERS = [
   { value: "manual_adjustment", label: "手动调整" },
 ] as const;
 
+const STATUS_FILTERS = [
+  { value: "all", label: "全部状态" },
+  { value: "completed", label: "已消耗" },
+  { value: "refunded", label: "已退款" },
+  { value: "credited", label: "已补充" },
+  { value: "recorded", label: "已记录" },
+] as const;
+
 const TASK_TYPE_LABELS: Record<string, string> = {
   generate_image: "AI 生图",
   generate_copy: "AI 详情页",
@@ -106,6 +114,7 @@ const AdminTasksPage = () => {
   const navigate = useNavigate();
   const [keyword, setKeyword] = useState("");
   const [filter, setFilter] = useState<(typeof TASK_FILTERS)[number]["value"]>("all");
+  const [statusFilter, setStatusFilter] = useState<(typeof STATUS_FILTERS)[number]["value"]>("all");
   const [selectedTask, setSelectedTask] = useState<AdminTask | null>(null);
 
   const { data, isLoading, error, refetch } = useQuery({
@@ -119,18 +128,22 @@ const AdminTasksPage = () => {
     const normalizedKeyword = keyword.trim().toLowerCase();
     return tasks.filter((task) => {
       const matchesFilter = filter === "all" ? true : task.operation_type === filter;
+      const matchesStatus = statusFilter === "all" ? true : normalizeTaskStatus(task) === statusFilter;
       const matchesKeyword =
         !normalizedKeyword ||
         task.email?.toLowerCase().includes(normalizedKeyword) ||
         task.user_id.toLowerCase().includes(normalizedKeyword) ||
         task.description?.toLowerCase().includes(normalizedKeyword);
 
-      return matchesFilter && matchesKeyword;
+      return matchesFilter && matchesStatus && matchesKeyword;
     });
-  }, [tasks, filter, keyword]);
+  }, [tasks, filter, statusFilter, keyword]);
 
   const totalCredits = filteredTasks.reduce((sum, task) => sum + Math.abs(Number(task.credits || 0)), 0);
   const latestTaskType = filteredTasks[0] ? normalizeTaskType(filteredTasks[0]) : "暂无记录";
+  const completedCount = filteredTasks.filter((task) => normalizeTaskStatus(task) === "completed").length;
+  const refundedCount = filteredTasks.filter((task) => normalizeTaskStatus(task) === "refunded").length;
+  const creditedCount = filteredTasks.filter((task) => normalizeTaskStatus(task) === "credited").length;
 
   const handleCopySummary = async (task: AdminTask) => {
     try {
@@ -186,33 +199,72 @@ const AdminTasksPage = () => {
         <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
           <div className="text-sm text-muted-foreground">当前任务数</div>
           <div className="mt-3 text-2xl font-semibold text-foreground">{filteredTasks.length}</div>
+          <div className="mt-1 text-xs text-muted-foreground">最近 200 条消费记录范围内</div>
         </div>
         <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
           <div className="text-sm text-muted-foreground">当前筛选消耗</div>
           <div className="mt-3 text-2xl font-semibold text-primary">{totalCredits}</div>
+          <div className="mt-1 text-xs text-muted-foreground">按当前筛选条件汇总积分变动</div>
         </div>
         <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
           <div className="text-sm text-muted-foreground">最近任务类型</div>
           <div className="mt-3 text-lg font-semibold text-foreground">{latestTaskType}</div>
+          <div className="mt-1 text-xs text-muted-foreground">有助于快速判断最近的用户动作</div>
         </div>
       </div>
 
-      <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
-        <div className="flex flex-wrap gap-2">
-          {TASK_FILTERS.map((item) => (
-            <button
-              key={item.value}
-              type="button"
-              onClick={() => setFilter(item.value)}
-              className={`rounded-full border px-3 py-1.5 text-sm transition ${
-                filter === item.value
-                  ? "border-primary/30 bg-primary/10 text-primary"
-                  : "border-border bg-background text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {item.label}
-            </button>
-          ))}
+      <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+        <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
+          <div className="text-sm font-semibold text-foreground">任务类型筛选</div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {TASK_FILTERS.map((item) => (
+              <button
+                key={item.value}
+                type="button"
+                onClick={() => setFilter(item.value)}
+                className={`rounded-full border px-3 py-1.5 text-sm transition ${
+                  filter === item.value
+                    ? "border-primary/30 bg-primary/10 text-primary"
+                    : "border-border bg-background text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+          <div className="mt-4 text-sm font-semibold text-foreground">记录状态筛选</div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {STATUS_FILTERS.map((item) => (
+              <button
+                key={item.value}
+                type="button"
+                onClick={() => setStatusFilter(item.value)}
+                className={`rounded-full border px-3 py-1.5 text-sm transition ${
+                  statusFilter === item.value
+                    ? "border-primary/30 bg-primary/10 text-primary"
+                    : "border-border bg-background text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
+          <div className="text-sm font-semibold text-foreground">状态汇总</div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
+            {[
+              { label: "已消耗", value: completedCount },
+              { label: "已退款", value: refundedCount },
+              { label: "已补充", value: creditedCount },
+            ].map((item) => (
+              <div key={item.label} className="rounded-2xl border border-border bg-background p-4">
+                <div className="text-xs text-muted-foreground">{item.label}</div>
+                <div className="mt-2 text-xl font-semibold text-foreground">{item.value}</div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 

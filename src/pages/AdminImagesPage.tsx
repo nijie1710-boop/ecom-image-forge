@@ -1,8 +1,9 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, FolderOpen, Search, Trash2, ZoomIn } from "lucide-react";
+import { Download, FolderOpen, Image, Search, Trash2, ZoomIn } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import {
   Dialog,
@@ -23,6 +24,7 @@ const AdminImagesPage = () => {
   const [keyword, setKeyword] = useState("");
   const [typeFilter, setTypeFilter] = useState<(typeof TYPE_FILTERS)[number]["value"]>("all");
   const [previewImage, setPreviewImage] = useState<AdminImage | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["admin-images"],
@@ -33,6 +35,18 @@ const AdminImagesPage = () => {
     mutationFn: (imageId: string) => callAdminApi({ action: "delete_image", userId: imageId }),
     onSuccess: () => {
       toast.success("图片记录已删除");
+      queryClient.invalidateQueries({ queryKey: ["admin-images"] });
+    },
+    onError: (err: Error) => {
+      toast.error(err.message);
+    },
+  });
+
+  const deleteImagesMutation = useMutation({
+    mutationFn: (imageIds: string[]) => callAdminApi({ action: "delete_images", imageIds }),
+    onSuccess: (_, ids) => {
+      toast.success(`已删除 ${ids.length} 张图片记录`);
+      setSelectedIds([]);
       queryClient.invalidateQueries({ queryKey: ["admin-images"] });
     },
     onError: (err: Error) => {
@@ -57,6 +71,15 @@ const AdminImagesPage = () => {
     });
   }, [images, keyword, typeFilter]);
 
+  const mainImageCount = filteredImages.filter((image) => image.image_type === "主图").length;
+  const detailImageCount = filteredImages.filter((image) => image.image_type === "详情图").length;
+  const recentImageCount = filteredImages.filter((image) => {
+    const createdAt = image.created_at ? new Date(image.created_at) : null;
+    return createdAt ? Date.now() - createdAt.getTime() <= 24 * 60 * 60 * 1000 : false;
+  }).length;
+
+  const allFilteredSelected = filteredImages.length > 0 && filteredImages.every((image) => selectedIds.includes(image.id));
+
   const downloadImage = (url: string, filename: string) => {
     const link = document.createElement("a");
     link.href = url;
@@ -65,6 +88,20 @@ const AdminImagesPage = () => {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const toggleImageSelection = (imageId: string, checked: boolean) => {
+    setSelectedIds((current) =>
+      checked ? [...new Set([...current, imageId])] : current.filter((id) => id !== imageId),
+    );
+  };
+
+  const toggleSelectAllFiltered = (checked: boolean) => {
+    if (checked) {
+      setSelectedIds((current) => [...new Set([...current, ...filteredImages.map((image) => image.id)])]);
+      return;
+    }
+    setSelectedIds((current) => current.filter((id) => !filteredImages.find((image) => image.id === id)));
   };
 
   return (
@@ -118,6 +155,63 @@ const AdminImagesPage = () => {
         </div>
       </div>
 
+      <div className="grid gap-4 md:grid-cols-4">
+        <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Image className="h-4 w-4" />
+            当前图片数
+          </div>
+          <div className="mt-3 text-2xl font-semibold text-foreground">{filteredImages.length}</div>
+        </div>
+        <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
+          <div className="text-sm text-muted-foreground">主图数量</div>
+          <div className="mt-3 text-2xl font-semibold text-foreground">{mainImageCount}</div>
+        </div>
+        <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
+          <div className="text-sm text-muted-foreground">详情图数量</div>
+          <div className="mt-3 text-2xl font-semibold text-foreground">{detailImageCount}</div>
+        </div>
+        <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
+          <div className="text-sm text-muted-foreground">24 小时新增</div>
+          <div className="mt-3 text-2xl font-semibold text-primary">{recentImageCount}</div>
+        </div>
+      </div>
+
+      <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-center gap-3">
+            <Checkbox
+              checked={allFilteredSelected}
+              onCheckedChange={(checked) => toggleSelectAllFiltered(Boolean(checked))}
+            />
+            <div className="text-sm text-muted-foreground">
+              已选 <span className="font-medium text-foreground">{selectedIds.length}</span> 张
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="rounded-xl"
+              onClick={() => setSelectedIds([])}
+              disabled={selectedIds.length === 0}
+            >
+              清空选择
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              className="rounded-xl"
+              onClick={() => deleteImagesMutation.mutate(selectedIds)}
+              disabled={selectedIds.length === 0 || deleteImagesMutation.isPending}
+            >
+              <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+              批量删除
+            </Button>
+          </div>
+        </div>
+      </div>
+
       {isLoading ? (
         <div className="rounded-3xl border border-border bg-card p-12 text-center text-sm text-muted-foreground">
           正在加载图片数据...
@@ -135,6 +229,13 @@ const AdminImagesPage = () => {
           {filteredImages.map((image) => (
             <div key={image.id} className="overflow-hidden rounded-3xl border border-border bg-card shadow-sm">
               <div className="relative">
+                <div className="absolute left-3 top-3 z-10 rounded-lg bg-background/90 p-1 shadow-sm">
+                  <Checkbox
+                    checked={selectedIds.includes(image.id)}
+                    onCheckedChange={(checked) => toggleImageSelection(image.id, Boolean(checked))}
+                    aria-label={`选择图片 ${image.id}`}
+                  />
+                </div>
                 <button type="button" className="block w-full text-left" onClick={() => setPreviewImage(image)}>
                   <img
                     src={image.image_url}
@@ -143,7 +244,7 @@ const AdminImagesPage = () => {
                   />
                 </button>
 
-                <div className="absolute left-3 top-3 flex gap-2">
+                <div className="absolute left-12 top-3 flex gap-2">
                   {image.image_type && (
                     <span className="rounded-full bg-black/60 px-2.5 py-1 text-[11px] text-white">
                       {image.image_type}

@@ -111,6 +111,9 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const action = typeof body.action === "string" ? body.action : "";
     const userId = typeof body.userId === "string" ? body.userId : "";
+    const imageIds = Array.isArray(body.imageIds)
+      ? body.imageIds.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+      : [];
     const amount = typeof body.amount === "number" ? body.amount : Number(body.amount || 0);
     const notes = typeof body.notes === "string" ? body.notes : "";
 
@@ -233,6 +236,17 @@ Deno.serve(async (req) => {
         if (deleteError) throw deleteError;
 
         return json({ success: true });
+      }
+
+      case "delete_images": {
+        if (!imageIds.length) {
+          return json({ error: "请选择至少一张图片。" }, 400);
+        }
+
+        const { error: deleteError } = await supabase.from("generated_images").delete().in("id", imageIds);
+        if (deleteError) throw deleteError;
+
+        return json({ success: true, deleted: imageIds.length });
       }
 
       case "add_credits": {
