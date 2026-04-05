@@ -936,6 +936,29 @@ export default function TranslateImagePage() {
     [activeJob, updateJob],
   );
 
+  const resetTranslationAdjustments = useCallback(
+    (index: number) => {
+      if (!activeJob) return;
+      updateJob(activeJob.id, (current) => ({
+        ...current,
+        translations: current.translations.map((item, itemIndex) =>
+          itemIndex === index
+            ? {
+                ...item,
+                align: "center",
+                offsetX: 0,
+                offsetY: 0,
+                scale: 1,
+                bgOpacity: 0.96,
+              }
+            : item,
+        ),
+      }));
+      toast.success(`已恢复文本 ${index + 1} 的默认微调`);
+    },
+    [activeJob, updateJob],
+  );
+
   const handleDownload = useCallback((job: TranslationJob) => {
     if (!job.translatedImage) return;
     const link = document.createElement("a");
@@ -1176,6 +1199,21 @@ export default function TranslateImagePage() {
                       }`}
                       onClick={() => setSelectedTranslationIndex(index)}
                     >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-sm font-medium text-foreground">文本 {index + 1}</div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 rounded-xl px-3 text-xs"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            resetTranslationAdjustments(index);
+                          }}
+                        >
+                          恢复默认微调
+                        </Button>
+                      </div>
                       <div className="grid gap-3 md:grid-cols-[1.2fr_1.6fr_160px]">
                       <div className="space-y-2">
                         <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">原文</div>

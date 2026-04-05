@@ -37,10 +37,10 @@ function mapTaskStatus(operationType: string | null, amount: number | null, desc
     return "已退款";
   }
   if ((amount || 0) < 0) {
-    return "已消费";
+    return "已消耗";
   }
   if ((amount || 0) > 0) {
-    return "已补分";
+    return "已补充";
   }
   return "已记录";
 }
