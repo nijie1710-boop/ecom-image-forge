@@ -9,28 +9,28 @@ const adminNav = [
     path: "/admin",
     end: true,
     label: "后台总览",
-    description: "查看核心指标、快捷入口和当前后台状态",
+    description: "查看核心指标、快捷入口和当前后台状态。",
     icon: LayoutDashboard,
   },
   {
     path: "/admin/users",
     label: "用户与积分",
-    description: "查看用户余额、充值情况并进行手动补充",
+    description: "查看用户余额、充值消耗并进行人工补充。",
     icon: Users,
   },
   {
     path: "/admin/tasks",
     label: "任务管理",
-    description: "查看最近任务、消耗记录和后台处理状态",
+    description: "查看最近任务、消耗记录和后台处理状态。",
     icon: ListChecks,
   },
   {
     path: "/admin/images",
     label: "图片管理",
-    description: "查看后台图片、用户来源和生成结果预览",
+    description: "查看后台图片、用户来源和生成结果预览。",
     icon: FolderOpen,
   },
-];
+] as const;
 
 const AdminLayout = () => {
   const location = useLocation();
@@ -98,7 +98,7 @@ const AdminLayout = () => {
             </div>
 
             <div className="mt-4 rounded-2xl bg-muted/60 p-3 text-xs leading-5 text-muted-foreground">
-              这里只对管理员开放。第一版后台优先承载用户、积分和日常运营入口，后面再逐步补任务管理、图片审核和系统配置。
+              这里仅对管理员开放。第一版后台优先承载用户、积分和日常运营入口，后面再逐步补任务详情、图片审核和系统配置。
             </div>
           </div>
         </aside>

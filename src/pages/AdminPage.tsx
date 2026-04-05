@@ -272,7 +272,7 @@ const AdminPage = () => {
               取消
             </Button>
             <Button onClick={handleRecharge} disabled={addCreditsMutation.isPending}>
-              {addCreditsMutation.isPending ? "充值中..." : "确认充值"}
+              {addCreditsMutation.isPending ? "处理中..." : "确认充值"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -5,11 +5,17 @@ function normalizeAdminErrorMessage(message?: string) {
   if (!text) return "管理员请求失败，请稍后重试。";
 
   if (text.includes("not admin") || text.includes("没有管理员权限")) {
-    return "当前账号没有管理员权限，请重新登录后再试。";
+    return "当前账号没有管理员权限，请确认管理员身份后重试。";
   }
+
   if (text.includes("JWT") || text.includes("session") || text.includes("登录")) {
     return "登录状态已失效，请重新登录后再进入后台。";
   }
+
+  if (text.includes("Failed to send a request to the Edge Function")) {
+    return "后台接口暂时不可用，请刷新页面后重试。";
+  }
+
   return text;
 }
 
@@ -36,6 +42,7 @@ export async function callAdminApi(body: Record<string, unknown>) {
         throw new Error(normalizeAdminErrorMessage(error.message));
       }
     }
+
     throw new Error(normalizeAdminErrorMessage(error.message));
   }
 

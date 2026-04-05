@@ -31,10 +31,7 @@ const AdminHome = () => {
         </p>
       </div>
 
-      <WorkspaceSection
-        title="核心指标"
-        description="先聚焦用户与积分，保证后台能承接最常用的日常操作。"
-      >
+      <WorkspaceSection title="核心指标" description="先聚焦用户与积分，保证后台能承接最常用的日常操作。">
         {isLoading ? (
           <div className="text-sm text-muted-foreground">正在加载后台数据...</div>
         ) : error ? (
@@ -97,15 +94,12 @@ const AdminHome = () => {
           </div>
           <h2 className="mt-4 text-lg font-semibold text-foreground">系统配置</h2>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            下一阶段可以继续补默认模型、分辨率、价格规则和功能开关，让后台更像完整运营面板。
+            下一阶段可以继续补默认模型、默认分辨率、价格规则和功能开关，让后台更像完整运营面板。
           </p>
         </div>
       </div>
 
-      <WorkspaceSection
-        title="下一步建议"
-        description="后台第一版已经能独立进入，接下来最值得补的是下面三块。"
-      >
+      <WorkspaceSection title="下一步建议" description="后台第一版已经能独立进入，接下来最值得补的是下面三块。">
         <div className="grid gap-3 md:grid-cols-3">
           {[
             {

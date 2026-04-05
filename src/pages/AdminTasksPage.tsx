@@ -43,7 +43,7 @@ const STATUS_META: Record<
   { label: string; className: string; summary: string }
 > = {
   completed: {
-    label: "已消费",
+    label: "已消耗",
     className: "bg-emerald-500/10 text-emerald-700",
     summary: "这条记录已经成功写入消费流水。",
   },
@@ -53,7 +53,7 @@ const STATUS_META: Record<
     summary: "这条任务已经完成退款或冲销处理。",
   },
   credited: {
-    label: "已补分",
+    label: "已补充",
     className: "bg-sky-500/10 text-sky-700",
     summary: "这条记录来自人工补积分或系统补偿。",
   },
