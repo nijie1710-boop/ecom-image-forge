@@ -47,6 +47,10 @@ interface TranslationItem {
   align?: "left" | "center" | "right";
   textColor?: string;
   backgroundColor?: string;
+  offsetX?: number;
+  offsetY?: number;
+  scale?: number;
+  bgOpacity?: number;
 }
 
 type JobStatus = "uploaded" | "ocring" | "editing" | "rendering" | "done" | "error";
@@ -131,6 +135,11 @@ const compressImageForTranslation = (file: File) =>
 function clampPercent(value?: number, fallback = 0) {
   if (typeof value !== "number" || Number.isNaN(value)) return fallback;
   return Math.min(100, Math.max(0, value));
+}
+
+function clampNumber(value: number, min: number, max: number) {
+  if (Number.isNaN(value)) return min;
+  return Math.min(max, Math.max(min, value));
 }
 
 function hasRenderableBox(item: TranslationItem) {
@@ -273,10 +282,15 @@ async function renderTranslatedImageLocally(
   }));
 
   for (const item of renderQueue) {
-    const x = (clampPercent(item.x, 12) / 100) * canvas.width;
-    const y = (clampPercent(item.y, 12) / 100) * canvas.height;
-    const width = (clampPercent(item.width, 24) / 100) * canvas.width;
-    const height = (clampPercent(item.height, 8) / 100) * canvas.height;
+    const offsetXPct = clampNumber(item.offsetX ?? 0, -20, 20);
+    const offsetYPct = clampNumber(item.offsetY ?? 0, -20, 20);
+    const scale = clampNumber(item.scale ?? 1, 0.7, 1.8);
+    const backgroundOpacity = clampNumber(item.bgOpacity ?? 0.96, 0.15, 1);
+
+    const x = (clampPercent((item.x ?? 12) + offsetXPct, 12) / 100) * canvas.width;
+    const y = (clampPercent((item.y ?? 12) + offsetYPct, 12) / 100) * canvas.height;
+    const width = ((clampPercent(item.width, 24) * scale) / 100) * canvas.width;
+    const height = ((clampPercent(item.height, 8) * scale) / 100) * canvas.height;
     const expandX = Math.max(6, width * 0.06);
     const expandY = Math.max(4, height * 0.18);
     const padding = Math.max(8, Math.round(Math.min(width, height) * 0.1));
@@ -286,7 +300,7 @@ async function renderTranslatedImageLocally(
     const boxH = Math.max(20, Math.min(canvas.height - boxY, height + expandY));
     const sampledBackground = sampleRegionColor(ctx, boxX, boxY, boxW, boxH);
     const explicitBackground = parseColor(item.backgroundColor);
-    const background = explicitBackground || sampledBackground;
+    const background = { ...(explicitBackground || sampledBackground), a: backgroundOpacity };
     const explicitText = parseColor(item.textColor);
     const foreground =
       explicitText ||
@@ -305,7 +319,7 @@ async function renderTranslatedImageLocally(
     let fontSize = maxFont;
     const maxWidth = boxW - padding * 2;
     const lines = (size: number) => {
-      ctx.font = `700 ${size}px ${pickFontStack(language)}`;
+      ctx.font = `600 ${size}px ${pickFontStack(language)}`;
       const words = item.translated.split(/\s+/).filter(Boolean);
       if (words.length <= 1) {
         const chars = item.translated.split("");
@@ -345,7 +359,7 @@ async function renderTranslatedImageLocally(
       wrapped = lines(fontSize);
     }
 
-    ctx.font = `700 ${fontSize}px ${pickFontStack(language)}`;
+    ctx.font = `600 ${fontSize}px ${pickFontStack(language)}`;
     ctx.fillStyle = rgbaString(foreground);
     ctx.textBaseline = "middle";
     ctx.textAlign = item.align || "center";
@@ -781,6 +795,19 @@ export default function TranslateImagePage() {
     [activeJob, updateJob],
   );
 
+  const updateTranslationItem = useCallback(
+    <K extends keyof TranslationItem>(index: number, key: K, value: TranslationItem[K]) => {
+      if (!activeJob) return;
+      updateJob(activeJob.id, (current) => ({
+        ...current,
+        translations: current.translations.map((item, itemIndex) =>
+          itemIndex === index ? { ...item, [key]: value } : item,
+        ),
+      }));
+    },
+    [activeJob, updateJob],
+  );
+
   const handleDownload = useCallback((job: TranslationJob) => {
     if (!job.translatedImage) return;
     const link = document.createElement("a");
@@ -1004,7 +1031,8 @@ export default function TranslateImagePage() {
                 </CardHeader>
                 <CardContent className="space-y-4 p-4 pt-0 sm:p-6 sm:pt-0">
                   {activeJob.translations.length ? activeJob.translations.map((item, index) => (
-                    <div key={`${activeJob.id}-${index}`} className="grid gap-3 rounded-2xl border border-border p-3 sm:p-4 md:grid-cols-[1.2fr_1.6fr_160px]">
+                    <div key={`${activeJob.id}-${index}`} className="space-y-3 rounded-2xl border border-border p-3 sm:p-4">
+                      <div className="grid gap-3 md:grid-cols-[1.2fr_1.6fr_160px]">
                       <div className="space-y-2">
                         <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">原文</div>
                         <div className="rounded-xl bg-muted/50 px-3 py-2 text-sm text-foreground">{item.original}</div>
@@ -1016,6 +1044,89 @@ export default function TranslateImagePage() {
                       <div className="space-y-2">
                         <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">位置</div>
                         <div className="rounded-xl bg-muted/50 px-3 py-2 text-sm text-muted-foreground">{item.position}</div>
+                      </div>
+                      </div>
+                      <div className="grid gap-3 rounded-2xl bg-muted/30 p-3 sm:grid-cols-2 xl:grid-cols-4">
+                        <div className="space-y-2">
+                          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">对齐</div>
+                          <Select
+                            value={item.align || "center"}
+                            onValueChange={(value: "left" | "center" | "right") =>
+                              updateTranslationItem(index, "align", value)
+                            }
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="对齐" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="left">左对齐</SelectItem>
+                              <SelectItem value="center">居中</SelectItem>
+                              <SelectItem value="right">右对齐</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-2">
+                            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">X 偏移</div>
+                            <Input
+                              type="number"
+                              min={-20}
+                              max={20}
+                              step={1}
+                              value={item.offsetX ?? 0}
+                              onChange={(event) =>
+                                updateTranslationItem(index, "offsetX", clampNumber(Number(event.target.value), -20, 20))
+                              }
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Y 偏移</div>
+                            <Input
+                              type="number"
+                              min={-20}
+                              max={20}
+                              step={1}
+                              value={item.offsetY ?? 0}
+                              onChange={(event) =>
+                                updateTranslationItem(index, "offsetY", clampNumber(Number(event.target.value), -20, 20))
+                              }
+                            />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-2">
+                            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">缩放</div>
+                            <Input
+                              type="number"
+                              min={0.7}
+                              max={1.8}
+                              step={0.1}
+                              value={item.scale ?? 1}
+                              onChange={(event) =>
+                                updateTranslationItem(index, "scale", clampNumber(Number(event.target.value), 0.7, 1.8))
+                              }
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">底色透明</div>
+                            <Input
+                              type="number"
+                              min={0.15}
+                              max={1}
+                              step={0.05}
+                              value={item.bgOpacity ?? 0.96}
+                              onChange={(event) =>
+                                updateTranslationItem(index, "bgOpacity", clampNumber(Number(event.target.value), 0.15, 1))
+                              }
+                            />
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">微调说明</div>
+                          <div className="rounded-xl bg-background px-3 py-2 text-xs leading-5 text-muted-foreground">
+                            先调 `缩放` 和 `底色透明`，再用 `X/Y 偏移` 贴近原版位。改完后重新点一次“一键生成翻译图”。
+                          </div>
+                        </div>
                       </div>
                     </div>
                   )) : (
