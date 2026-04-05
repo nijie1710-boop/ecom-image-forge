@@ -12,6 +12,7 @@ import {
   Upload,
   XCircle,
 } from "lucide-react";
+import { useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -171,6 +172,10 @@ function inferBoxFromPosition(item: TranslationItem, index: number, total: numbe
   };
 }
 
+function resolveTranslationBox(item: TranslationItem, index: number, total: number) {
+  return hasRenderableBox(item) ? item : { ...item, ...inferBoxFromPosition(item, index, total) };
+}
+
 function parseColor(color?: string) {
   if (!color) return null;
   const normalized = color.trim().toLowerCase();
@@ -276,10 +281,9 @@ async function renderTranslatedImageLocally(
 
   ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
 
-  const renderQueue = translations.map((item, index) => ({
-    ...item,
-    ...(hasRenderableBox(item) ? null : inferBoxFromPosition(item, index, translations.length)),
-  }));
+  const renderQueue = translations.map((item, index) =>
+    resolveTranslationBox(item, index, translations.length),
+  );
 
   for (const item of renderQueue) {
     const offsetXPct = clampNumber(item.offsetX ?? 0, -20, 20);
@@ -448,12 +452,78 @@ function ComparePreview({
   translated,
   ratio,
   onRatioChange,
+  translations,
+  activeIndex,
+  onSelect,
+  onAdjust,
 }: {
   original: string;
   translated: string;
   ratio: number;
   onRatioChange: (value: number) => void;
+  translations: TranslationItem[];
+  activeIndex: number | null;
+  onSelect: (index: number) => void;
+  onAdjust: (index: number, patch: Partial<TranslationItem>) => void;
 }) {
+  const frameRef = useRef<HTMLDivElement | null>(null);
+  const dragRef = useRef<{
+    index: number;
+    startX: number;
+    startY: number;
+    startOffsetX: number;
+    startOffsetY: number;
+    width: number;
+    height: number;
+  } | null>(null);
+
+  useEffect(() => {
+    const finishDrag = () => {
+      dragRef.current = null;
+    };
+
+    window.addEventListener("pointerup", finishDrag);
+    window.addEventListener("pointercancel", finishDrag);
+    return () => {
+      window.removeEventListener("pointerup", finishDrag);
+      window.removeEventListener("pointercancel", finishDrag);
+    };
+  }, []);
+
+  const handleStartDrag = useCallback(
+    (index: number, event: React.PointerEvent<HTMLButtonElement>) => {
+      const frame = frameRef.current;
+      if (!frame) return;
+      const rect = frame.getBoundingClientRect();
+      dragRef.current = {
+        index,
+        startX: event.clientX,
+        startY: event.clientY,
+        startOffsetX: translations[index]?.offsetX ?? 0,
+        startOffsetY: translations[index]?.offsetY ?? 0,
+        width: rect.width,
+        height: rect.height,
+      };
+      onSelect(index);
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+    },
+    [onSelect, translations],
+  );
+
+  const handleDrag = useCallback(
+    (event: React.PointerEvent<HTMLButtonElement>) => {
+      const drag = dragRef.current;
+      if (!drag) return;
+      const dx = ((event.clientX - drag.startX) / Math.max(drag.width, 1)) * 100;
+      const dy = ((event.clientY - drag.startY) / Math.max(drag.height, 1)) * 100;
+      onAdjust(drag.index, {
+        offsetX: clampNumber(drag.startOffsetX + dx, -20, 20),
+        offsetY: clampNumber(drag.startOffsetY + dy, -20, 20),
+      });
+    },
+    [onAdjust],
+  );
+
   return (
     <div className="space-y-3 rounded-2xl border border-border p-3 sm:p-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -464,7 +534,7 @@ function ComparePreview({
         <Badge variant="secondary" className="w-fit">稳定替换</Badge>
       </div>
       <div className="overflow-hidden rounded-2xl bg-muted/30">
-        <div className="relative mx-auto w-full max-w-[420px] sm:max-w-[520px]">
+        <div ref={frameRef} className="relative mx-auto w-full max-w-[420px] sm:max-w-[520px]">
           <img src={original} alt="原图对比" className="block w-full object-contain" />
           <div className="absolute inset-y-0 left-0 overflow-hidden" style={{ width: `${ratio}%` }}>
             <img src={translated} alt="翻译图对比" className="block w-full max-w-[420px] object-contain sm:max-w-[520px]" />
@@ -473,7 +543,54 @@ function ComparePreview({
             className="pointer-events-none absolute inset-y-0 w-0.5 bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.12)]"
             style={{ left: `${ratio}%` }}
           />
+          <div className="absolute inset-0">
+            {translations.map((item, index) => {
+              const base = resolveTranslationBox(item, index, translations.length);
+              const scale = clampNumber(item.scale ?? 1, 0.7, 1.8);
+              const width = clampNumber((base.width ?? 24) * scale, 8, 90);
+              const height = clampNumber((base.height ?? 8) * scale, 4, 40);
+              const left = clampNumber((base.x ?? 12) + (item.offsetX ?? 0), 0, 100 - width);
+              const top = clampNumber((base.y ?? 12) + (item.offsetY ?? 0), 0, 100 - height);
+              const isActive = activeIndex === index;
+
+              return (
+                <button
+                  key={`translation-box-${index}`}
+                  type="button"
+                  onClick={() => onSelect(index)}
+                  onPointerDown={(event) => handleStartDrag(index, event)}
+                  onPointerMove={handleDrag}
+                  onPointerUp={() => {
+                    dragRef.current = null;
+                  }}
+                  className={`absolute rounded-xl border transition ${
+                    isActive
+                      ? "border-primary bg-primary/10 shadow-[0_0_0_2px_rgba(249,115,22,0.15)]"
+                      : "border-white/70 bg-black/10 hover:border-primary/60"
+                  }`}
+                  style={{
+                    left: `${left}%`,
+                    top: `${top}%`,
+                    width: `${width}%`,
+                    height: `${height}%`,
+                    touchAction: "none",
+                  }}
+                >
+                  <span
+                    className={`absolute -top-2 left-2 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                      isActive ? "bg-primary text-primary-foreground" : "bg-background/95 text-foreground"
+                    }`}
+                  >
+                    文本 {index + 1}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
+      </div>
+      <div className="text-xs leading-5 text-muted-foreground">
+        先点选需要调整的文字块，再直接拖动框体微调位置。更细的大小、透明度和对齐可以在下方逐条设置。
       </div>
       <input
         type="range"
@@ -493,6 +610,7 @@ export default function TranslateImagePage() {
   const [isBatchRunning, setIsBatchRunning] = useState(false);
   const [targetLanguage, setTargetLanguage] = useState("en");
   const [compareRatio, setCompareRatio] = useState(50);
+  const [selectedTranslationIndex, setSelectedTranslationIndex] = useState<number | null>(null);
 
   const activeJob = jobs.find((job) => job.id === activeJobId) || jobs[0] || null;
   const activeJobError = activeJob?.status === "error" ? activeJob.error : null;
@@ -508,6 +626,16 @@ export default function TranslateImagePage() {
     },
     [],
   );
+
+  useEffect(() => {
+    if (!activeJob?.translations.length) {
+      setSelectedTranslationIndex(null);
+      return;
+    }
+    setSelectedTranslationIndex((current) =>
+      current === null || current >= activeJob.translations.length ? 0 : current,
+    );
+  }, [activeJob]);
 
   const persistTranslatedImage = useCallback(async (job: TranslationJob, imageUrl: string) => {
     let permanentUrl = imageUrl;
@@ -1009,6 +1137,14 @@ export default function TranslateImagePage() {
                         translated={activeJob.translatedImage}
                         ratio={compareRatio}
                         onRatioChange={setCompareRatio}
+                        translations={activeJob.translations}
+                        activeIndex={selectedTranslationIndex}
+                        onSelect={setSelectedTranslationIndex}
+                        onAdjust={(index, patch) => {
+                          Object.entries(patch).forEach(([key, value]) => {
+                            updateTranslationItem(index, key as keyof TranslationItem, value as any);
+                          });
+                        }}
                       />
                     </div>
                   )}
@@ -1031,7 +1167,15 @@ export default function TranslateImagePage() {
                 </CardHeader>
                 <CardContent className="space-y-4 p-4 pt-0 sm:p-6 sm:pt-0">
                   {activeJob.translations.length ? activeJob.translations.map((item, index) => (
-                    <div key={`${activeJob.id}-${index}`} className="space-y-3 rounded-2xl border border-border p-3 sm:p-4">
+                    <div
+                      key={`${activeJob.id}-${index}`}
+                      className={`space-y-3 rounded-2xl border p-3 transition sm:p-4 ${
+                        selectedTranslationIndex === index
+                          ? "border-primary bg-primary/5 shadow-sm"
+                          : "border-border"
+                      }`}
+                      onClick={() => setSelectedTranslationIndex(index)}
+                    >
                       <div className="grid gap-3 md:grid-cols-[1.2fr_1.6fr_160px]">
                       <div className="space-y-2">
                         <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">原文</div>

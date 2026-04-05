@@ -1,7 +1,15 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ExternalLink, ListChecks, RefreshCw, Search, Sparkles } from "lucide-react";
+import {
+  Clipboard,
+  ExternalLink,
+  ListChecks,
+  RefreshCw,
+  Search,
+  Sparkles,
+} from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -22,7 +30,7 @@ const TASK_FILTERS = [
   { value: "manual_adjustment", label: "手动调整" },
 ] as const;
 
-const taskTypeLabelMap: Record<string, string> = {
+const TASK_TYPE_LABELS: Record<string, string> = {
   generate_image: "AI 生图",
   generate_copy: "AI 详情页",
   translate_image: "图文翻译",
@@ -30,34 +38,42 @@ const taskTypeLabelMap: Record<string, string> = {
   unknown: "其他任务",
 };
 
-const statusLabelMap: Record<string, string> = {
-  completed: "已完成",
-  refunded: "已退款",
-  credited: "已补发",
-  recorded: "已记录",
-};
-
-const statusClassMap: Record<string, string> = {
-  completed: "bg-emerald-500/10 text-emerald-600",
-  refunded: "bg-amber-500/10 text-amber-600",
-  credited: "bg-sky-500/10 text-sky-600",
-  recorded: "bg-muted text-muted-foreground",
+const STATUS_META: Record<
+  string,
+  { label: string; className: string; summary: string }
+> = {
+  completed: {
+    label: "已消费",
+    className: "bg-emerald-500/10 text-emerald-700",
+    summary: "这条记录已经成功写入消费流水。",
+  },
+  refunded: {
+    label: "已退款",
+    className: "bg-amber-500/10 text-amber-700",
+    summary: "这条任务已经完成退款或冲销处理。",
+  },
+  credited: {
+    label: "已补分",
+    className: "bg-sky-500/10 text-sky-700",
+    summary: "这条记录来自人工补积分或系统补偿。",
+  },
+  recorded: {
+    label: "已记录",
+    className: "bg-muted text-muted-foreground",
+    summary: "这条任务已记录，但当前没有更细的执行状态。",
+  },
 };
 
 function normalizeTaskType(task: AdminTask) {
-  return taskTypeLabelMap[task.operation_type] || task.task_type || "其他任务";
+  return TASK_TYPE_LABELS[task.operation_type] || task.task_type || "其他任务";
 }
 
 function normalizeTaskStatus(task: AdminTask) {
   if (task.operation_type === "manual_adjustment" && (task.description || "").includes("退款")) {
     return "refunded";
   }
-  if ((task.amount || 0) < 0) {
-    return "completed";
-  }
-  if ((task.amount || 0) > 0) {
-    return "credited";
-  }
+  if ((task.amount || 0) < 0) return "completed";
+  if ((task.amount || 0) > 0) return "credited";
   return "recorded";
 }
 
@@ -72,6 +88,18 @@ function getRetryPath(task: AdminTask) {
     default:
       return null;
   }
+}
+
+function buildTaskSummary(task: AdminTask) {
+  return [
+    `任务类型：${normalizeTaskType(task)}`,
+    `状态：${STATUS_META[normalizeTaskStatus(task)]?.label || "已记录"}`,
+    `用户邮箱：${task.email}`,
+    `用户 ID：${task.user_id}`,
+    `积分变动：${task.amount > 0 ? `+${task.amount}` : task.amount}`,
+    `描述：${task.description || "无"}`,
+    `时间：${task.created_at ? new Date(task.created_at).toLocaleString() : "-"}`,
+  ].join("\n");
 }
 
 const AdminTasksPage = () => {
@@ -101,8 +129,25 @@ const AdminTasksPage = () => {
     });
   }, [tasks, filter, keyword]);
 
-  const totalCredits = filteredTasks.reduce((sum, task) => sum + Number(task.credits || 0), 0);
+  const totalCredits = filteredTasks.reduce((sum, task) => sum + Math.abs(Number(task.credits || 0)), 0);
   const latestTaskType = filteredTasks[0] ? normalizeTaskType(filteredTasks[0]) : "暂无记录";
+
+  const handleCopySummary = async (task: AdminTask) => {
+    try {
+      await navigator.clipboard.writeText(buildTaskSummary(task));
+      toast.success("任务摘要已复制，可以直接发给运营或技术排查。");
+    } catch {
+      toast.error("复制失败，请稍后再试。");
+    }
+  };
+
+  const handleOpenRetry = (task: AdminTask) => {
+    const retryPath = getRetryPath(task);
+    if (!retryPath) return;
+    void handleCopySummary(task);
+    navigate(retryPath);
+    toast.success("已复制任务摘要，并跳转到对应工具页。");
+  };
 
   return (
     <div className="space-y-6">
@@ -115,7 +160,7 @@ const AdminTasksPage = () => {
             </div>
             <h1 className="mt-3 text-2xl font-semibold text-foreground">后台任务列表</h1>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              第一版基于消费记录汇总最近任务，方便你排查用户最近做了什么、什么时候做的以及消耗了多少积分。
+              先用消费流水汇总最近任务，快速判断用户最近做了什么、什么时候做的、消耗了多少积分。需要时可以点开详情并快速回到对应工具重新发起。
             </p>
           </div>
 
@@ -174,7 +219,7 @@ const AdminTasksPage = () => {
       <div className="rounded-3xl border border-border bg-card shadow-sm">
         <div className="border-b border-border px-5 py-4">
           <div className="text-lg font-semibold text-foreground">最近任务</div>
-          <div className="mt-1 text-sm text-muted-foreground">优先显示最近 200 条消费记录。</div>
+          <div className="mt-1 text-sm text-muted-foreground">优先展示最近 200 条消费记录。</div>
         </div>
 
         <div className="overflow-x-auto">
@@ -212,6 +257,7 @@ const AdminTasksPage = () => {
               ) : (
                 filteredTasks.map((task) => {
                   const normalizedStatus = normalizeTaskStatus(task);
+                  const statusMeta = STATUS_META[normalizedStatus] || STATUS_META.recorded;
                   const retryPath = getRetryPath(task);
 
                   return (
@@ -222,12 +268,8 @@ const AdminTasksPage = () => {
                       </td>
                       <td className="px-5 py-4 text-sm text-foreground">{normalizeTaskType(task)}</td>
                       <td className="px-5 py-4">
-                        <span
-                          className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${
-                            statusClassMap[normalizedStatus] || "bg-muted text-muted-foreground"
-                          }`}
-                        >
-                          {statusLabelMap[normalizedStatus] || "已记录"}
+                        <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${statusMeta.className}`}>
+                          {statusMeta.label}
                         </span>
                       </td>
                       <td className="px-5 py-4 text-right text-sm font-medium text-primary">
@@ -243,11 +285,7 @@ const AdminTasksPage = () => {
                             查看详情
                           </Button>
                           {retryPath && (
-                            <Button
-                              size="sm"
-                              onClick={() => navigate(retryPath)}
-                              className="gap-1"
-                            >
+                            <Button size="sm" onClick={() => handleOpenRetry(task)} className="gap-1">
                               <ExternalLink className="h-3.5 w-3.5" />
                               前往工具
                             </Button>
@@ -271,8 +309,8 @@ const AdminTasksPage = () => {
           <div>
             <div className="text-sm font-semibold text-foreground">当前阶段说明</div>
             <div className="mt-1 text-sm leading-6 text-muted-foreground">
-              现在的任务管理还是基于消费记录汇总，所以已经支持查看详情和跳转到对应工具，但还不是“真正的后台重试队列”。
-              后面如果你愿意，我们可以继续补独立任务表、失败原因和一键重试。
+              这版后台任务仍然是基于消费流水来汇总，所以已经支持查看详情、复制任务摘要和快速回到对应工具重新发起，
+              但还不是“真正的任务调度队列”。后面如果你愿意，我们可以继续补独立任务表、失败原因和一键重试。
             </div>
           </div>
         </div>
@@ -285,7 +323,7 @@ const AdminTasksPage = () => {
               <DialogHeader>
                 <DialogTitle>任务详情</DialogTitle>
                 <DialogDescription>
-                  先查看这条任务的用户、时间、消耗和描述，再决定是否需要回到对应工具重做。
+                  先核对这条任务的用户、时间、积分和描述，再决定是否需要回到对应工具重新发起。
                 </DialogDescription>
               </DialogHeader>
 
@@ -296,14 +334,12 @@ const AdminTasksPage = () => {
                 </div>
                 <div className="rounded-2xl border border-border bg-muted/20 p-4">
                   <div className="text-xs text-muted-foreground">任务类型</div>
-                  <div className="mt-1 text-sm font-medium text-foreground">
-                    {normalizeTaskType(selectedTask)}
-                  </div>
+                  <div className="mt-1 text-sm font-medium text-foreground">{normalizeTaskType(selectedTask)}</div>
                 </div>
                 <div className="rounded-2xl border border-border bg-muted/20 p-4">
                   <div className="text-xs text-muted-foreground">状态</div>
                   <div className="mt-1 text-sm font-medium text-foreground">
-                    {statusLabelMap[normalizeTaskStatus(selectedTask)] || "已记录"}
+                    {STATUS_META[normalizeTaskStatus(selectedTask)]?.label || "已记录"}
                   </div>
                 </div>
                 <div className="rounded-2xl border border-border bg-muted/20 p-4">
@@ -318,7 +354,13 @@ const AdminTasksPage = () => {
                 </div>
                 <div className="rounded-2xl border border-border bg-muted/20 p-4 md:col-span-2">
                   <div className="text-xs text-muted-foreground">任务描述</div>
-                  <div className="mt-1 text-sm leading-6 text-foreground">{selectedTask.description || "-"}</div>
+                  <div className="mt-1 text-sm leading-6 text-foreground">{selectedTask.description || "无"}</div>
+                </div>
+                <div className="rounded-2xl border border-border bg-muted/20 p-4 md:col-span-2">
+                  <div className="text-xs text-muted-foreground">当前说明</div>
+                  <div className="mt-1 text-sm leading-6 text-foreground">
+                    {STATUS_META[normalizeTaskStatus(selectedTask)]?.summary || "这条任务当前只有基础记录。"}
+                  </div>
                 </div>
                 <div className="rounded-2xl border border-border bg-muted/20 p-4 md:col-span-2">
                   <div className="text-xs text-muted-foreground">创建时间</div>
@@ -330,14 +372,16 @@ const AdminTasksPage = () => {
 
               <DialogFooter className="gap-2 sm:justify-between">
                 <div className="text-xs text-muted-foreground">
-                  当前“重试”是回到对应工具重新发起，不会直接在后台重跑旧任务。
+                  当前“重试”会先复制任务摘要，再回到对应工具重新发起，不会直接在后台重跑旧任务。
                 </div>
                 <div className="flex gap-2">
-                  <Button variant="outline" onClick={() => setSelectedTask(null)}>
-                    关闭
+                  <Button variant="outline" onClick={() => void handleCopySummary(selectedTask)}>
+                    <Clipboard className="mr-2 h-4 w-4" />
+                    复制摘要
                   </Button>
                   {getRetryPath(selectedTask) && (
-                    <Button onClick={() => navigate(getRetryPath(selectedTask) || "/dashboard")}>
+                    <Button onClick={() => handleOpenRetry(selectedTask)}>
+                      <ExternalLink className="mr-2 h-4 w-4" />
                       前往工具重试
                     </Button>
                   )}

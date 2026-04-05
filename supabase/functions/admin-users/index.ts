@@ -37,10 +37,10 @@ function mapTaskStatus(operationType: string | null, amount: number | null, desc
     return "已退款";
   }
   if ((amount || 0) < 0) {
-    return "已完成";
+    return "已消费";
   }
   if ((amount || 0) > 0) {
-    return "已补发";
+    return "已补分";
   }
   return "已记录";
 }
@@ -121,18 +121,14 @@ Deno.serve(async (req) => {
           .select("*")
           .order("created_at", { ascending: false });
 
-        if (balancesError) {
-          throw balancesError;
-        }
+        if (balancesError) throw balancesError;
 
         const {
           data: { users: authUsers },
           error: authUsersError,
         } = await supabase.auth.admin.listUsers();
 
-        if (authUsersError) {
-          throw authUsersError;
-        }
+        if (authUsersError) throw authUsersError;
 
         const userMap = new Map(authUsers.map((item) => [item.id, item]));
         const results = (balances || []).map((balance: any) => {
@@ -170,18 +166,14 @@ Deno.serve(async (req) => {
           .order("created_at", { ascending: false })
           .limit(200);
 
-        if (recordsError) {
-          throw recordsError;
-        }
+        if (recordsError) throw recordsError;
 
         const {
           data: { users: authUsers },
           error: authUsersError,
         } = await supabase.auth.admin.listUsers();
 
-        if (authUsersError) {
-          throw authUsersError;
-        }
+        if (authUsersError) throw authUsersError;
 
         const userMap = new Map(authUsers.map((item) => [item.id, item]));
         const tasks = (records || []).map((record: any) => {
@@ -211,18 +203,14 @@ Deno.serve(async (req) => {
           .order("created_at", { ascending: false })
           .limit(200);
 
-        if (imagesError) {
-          throw imagesError;
-        }
+        if (imagesError) throw imagesError;
 
         const {
           data: { users: authUsers },
           error: authUsersError,
         } = await supabase.auth.admin.listUsers();
 
-        if (authUsersError) {
-          throw authUsersError;
-        }
+        if (authUsersError) throw authUsersError;
 
         const userMap = new Map(authUsers.map((item) => [item.id, item]));
         const results = (images || []).map((image: any) => {
@@ -242,9 +230,7 @@ Deno.serve(async (req) => {
         }
 
         const { error: deleteError } = await supabase.from("generated_images").delete().eq("id", userId);
-        if (deleteError) {
-          throw deleteError;
-        }
+        if (deleteError) throw deleteError;
 
         return json({ success: true });
       }
@@ -261,9 +247,7 @@ Deno.serve(async (req) => {
           p_notes: notes || "管理员手动补充积分",
         });
 
-        if (rpcError) {
-          throw rpcError;
-        }
+        if (rpcError) throw rpcError;
 
         return json({ result: Array.isArray(data) ? data[0] : data });
       }
