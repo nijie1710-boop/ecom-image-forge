@@ -23,7 +23,7 @@ export function WorkspaceSection({
             <p className="mt-1 text-sm leading-6 text-muted-foreground">{description}</p>
           ) : null}
         </div>
-        {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
+        {actions ? <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap">{actions}</div> : null}
       </div>
       <div className="mt-4 sm:mt-5">{children}</div>
     </section>

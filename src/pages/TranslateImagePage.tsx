@@ -411,17 +411,17 @@ function PreviewPanel({
   placeholder?: string;
 }) {
   return (
-    <div className="space-y-3 rounded-2xl border border-border p-4">
+    <div className="space-y-3 rounded-2xl border border-border p-3 sm:p-4">
       <div>
         <div className="font-medium text-foreground">{title}</div>
         <div className="mt-1 text-sm text-muted-foreground">{subtitle}</div>
       </div>
       {image ? (
         <div className="overflow-hidden rounded-2xl bg-muted/30">
-          <img src={image} alt={title} className="max-h-[460px] w-full object-contain" />
+          <img src={image} alt={title} className="max-h-[320px] w-full object-contain sm:max-h-[460px]" />
         </div>
       ) : (
-        <div className="flex min-h-[360px] items-center justify-center rounded-2xl border border-dashed border-border bg-muted/20 text-sm text-muted-foreground">
+        <div className="flex min-h-[220px] items-center justify-center rounded-2xl border border-dashed border-border bg-muted/20 px-4 text-center text-sm text-muted-foreground sm:min-h-[360px]">
           {placeholder}
         </div>
       )}
@@ -441,19 +441,19 @@ function ComparePreview({
   onRatioChange: (value: number) => void;
 }) {
   return (
-    <div className="space-y-3 rounded-2xl border border-border p-4">
-      <div className="flex items-center justify-between gap-3">
+    <div className="space-y-3 rounded-2xl border border-border p-3 sm:p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="font-medium text-foreground">原图 / 结果对比</div>
           <div className="mt-1 text-sm text-muted-foreground">拖动滑块，快速查看当前替换效果是否自然。</div>
         </div>
-        <Badge variant="secondary">稳定替换</Badge>
+        <Badge variant="secondary" className="w-fit">稳定替换</Badge>
       </div>
       <div className="overflow-hidden rounded-2xl bg-muted/30">
-        <div className="relative mx-auto w-full max-w-[520px]">
+        <div className="relative mx-auto w-full max-w-[420px] sm:max-w-[520px]">
           <img src={original} alt="原图对比" className="block w-full object-contain" />
           <div className="absolute inset-y-0 left-0 overflow-hidden" style={{ width: `${ratio}%` }}>
-            <img src={translated} alt="翻译图对比" className="block w-full max-w-[520px] object-contain" />
+            <img src={translated} alt="翻译图对比" className="block w-full max-w-[420px] object-contain sm:max-w-[520px]" />
           </div>
           <div
             className="pointer-events-none absolute inset-y-0 w-0.5 bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.12)]"
@@ -810,7 +810,7 @@ export default function TranslateImagePage() {
   );
 
   return (
-    <div className="mx-auto max-w-[1480px] space-y-6 px-4 py-6 md:px-6">
+    <div className="mx-auto max-w-[1480px] space-y-5 px-3 py-4 sm:px-4 sm:py-5 md:space-y-6 md:px-6 md:py-6">
       <WorkspaceHeader
         icon={Languages}
         badge="图文翻译"
@@ -826,8 +826,8 @@ export default function TranslateImagePage() {
 
       <WorkspaceShell
         sidebar={
-        <Card className="rounded-3xl border-border shadow-sm xl:max-h-[calc(100vh-7rem)] xl:overflow-y-auto" onDragOver={(e) => e.preventDefault()} onDrop={handleDrop}>
-          <CardHeader className="space-y-4">
+        <Card className="overflow-hidden rounded-3xl border-border shadow-sm xl:max-h-[calc(100vh-7rem)] xl:overflow-y-auto" onDragOver={(e) => e.preventDefault()} onDrop={handleDrop}>
+          <CardHeader className="space-y-4 p-4 sm:p-6">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <CardTitle className="text-base">批量任务</CardTitle>
@@ -852,7 +852,7 @@ export default function TranslateImagePage() {
               </Select>
             </div>
 
-            <label className="flex cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-primary/30 bg-primary/5 px-4 py-6 text-center transition hover:border-primary/50 hover:bg-primary/10">
+            <label className="flex cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-primary/30 bg-primary/5 px-4 py-5 text-center transition hover:border-primary/50 hover:bg-primary/10 sm:py-6">
               <div className="rounded-2xl bg-primary/10 p-3 text-primary">
                 <Upload className="h-5 w-5" />
               </div>
@@ -864,35 +864,35 @@ export default function TranslateImagePage() {
             </label>
 
             <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-              <Button className="flex-1" onClick={() => void handleGenerateAll()} disabled={!jobs.length || isBatchRunning}>
+              <Button className="w-full sm:flex-1" onClick={() => void handleGenerateAll()} disabled={!jobs.length || isBatchRunning}>
                 {isBatchRunning ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />批量处理中</> : <><Sparkles className="mr-2 h-4 w-4" />批量翻译全部</>}
               </Button>
-              <Button variant="outline" onClick={handleDownloadAll} disabled={!doneJobs.length}>
+              <Button className="w-full sm:w-auto" variant="outline" onClick={handleDownloadAll} disabled={!doneJobs.length}>
                 <Download className="mr-2 h-4 w-4" />
                 全部下载
               </Button>
             </div>
           </CardHeader>
 
-          <CardContent className="space-y-3">
+          <CardContent className="space-y-3 p-4 pt-0 sm:p-6 sm:pt-0">
             {jobs.length ? jobs.map((job) => {
               const meta = STATUS_META[job.status];
               const active = activeJob?.id === job.id;
               return (
-                <div key={job.id} className={`relative rounded-2xl border p-3 pr-12 transition ${active ? "border-primary bg-primary/5 shadow-sm" : "border-border hover:border-primary/30 hover:bg-muted/30"}`}>
+                <div key={job.id} className={`relative rounded-2xl border p-3 pr-11 transition sm:pr-12 ${active ? "border-primary bg-primary/5 shadow-sm" : "border-border hover:border-primary/30 hover:bg-muted/30"}`}>
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="absolute right-2 top-2 h-8 w-8"
+                    className="absolute right-2 top-2 h-8 w-8 rounded-xl"
                     onClick={() => removeJob(job.id)}
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>
-                  <button type="button" onClick={() => setActiveJobId(job.id)} className="flex w-full items-start gap-3 text-left">
-                    <img src={job.originalImage} alt={job.fileName} className="h-16 w-16 rounded-xl object-cover" />
+                  <button type="button" onClick={() => setActiveJobId(job.id)} className="flex w-full items-start gap-2.5 text-left sm:gap-3">
+                    <img src={job.originalImage} alt={job.fileName} className="h-14 w-14 rounded-xl object-cover sm:h-16 sm:w-16" />
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm font-medium text-foreground">{job.fileName}</div>
-                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5 sm:gap-2">
                         <span className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${meta.className}`}>{meta.label}</span>
                         <span className="text-xs text-muted-foreground">
                           {job.translations.length ? `${job.translations.length} 处文字` : "待识别"}
@@ -920,24 +920,24 @@ export default function TranslateImagePage() {
         <div className="space-y-6">
           {activeJob ? (
             <>
-              <WorkspaceSection
+          <WorkspaceSection
                 title={`当前任务：${activeJob.fileName}`}
                 description={`当前目标语言是 ${targetLanguageLabel}。你可以先识别校对，也可以直接一键生成翻译图。`}
                 actions={
-                  <>
-                    <Button variant="outline" onClick={() => void handleRecognize()} disabled={activeJob.status === "ocring" || activeJob.status === "rendering"}>
+                  <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap">
+                    <Button className="w-full sm:w-auto" variant="outline" onClick={() => void handleRecognize()} disabled={activeJob.status === "ocring" || activeJob.status === "rendering"}>
                       {activeJob.status === "ocring" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Languages className="mr-2 h-4 w-4" />}
                       识别文字
                     </Button>
-                    <Button onClick={() => void handleGenerateActive()} disabled={activeJob.status === "ocring" || activeJob.status === "rendering"}>
+                    <Button className="w-full sm:w-auto" onClick={() => void handleGenerateActive()} disabled={activeJob.status === "ocring" || activeJob.status === "rendering"}>
                       {activeJob.status === "rendering" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ArrowRight className="mr-2 h-4 w-4" />}
                       一键生成翻译图
                     </Button>
-                    <Button variant="outline" onClick={() => handleDownload(activeJob)} disabled={!activeJob.translatedImage}>
+                    <Button className="w-full sm:w-auto" variant="outline" onClick={() => handleDownload(activeJob)} disabled={!activeJob.translatedImage}>
                       <Download className="mr-2 h-4 w-4" />
                       下载
                     </Button>
-                  </>
+                  </div>
                 }
               >
                 {activeJobError && (
@@ -960,7 +960,7 @@ export default function TranslateImagePage() {
                     </div>
                   </div>
                 )}
-                  <div className="grid gap-4 lg:grid-cols-2">
+                  <div className="grid gap-4 xl:grid-cols-2">
                     <PreviewPanel title="原图" subtitle="用于 OCR 识别和替换生成" image={activeJob.originalImage} />
                     <PreviewPanel
                       title="结果图"
@@ -988,7 +988,7 @@ export default function TranslateImagePage() {
               </WorkspaceSection>
 
               <Card className="rounded-3xl border-border shadow-sm">
-                <CardHeader className="space-y-3">
+                <CardHeader className="space-y-3 p-4 sm:p-6">
                   <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
                     <div>
                       <CardTitle className="text-base">识别与校对</CardTitle>
@@ -1002,9 +1002,9 @@ export default function TranslateImagePage() {
                     )}
                   </div>
                 </CardHeader>
-                <CardContent className="space-y-4">
+                <CardContent className="space-y-4 p-4 pt-0 sm:p-6 sm:pt-0">
                   {activeJob.translations.length ? activeJob.translations.map((item, index) => (
-                    <div key={`${activeJob.id}-${index}`} className="grid gap-3 rounded-2xl border border-border p-4 md:grid-cols-[1.2fr_1.6fr_160px]">
+                    <div key={`${activeJob.id}-${index}`} className="grid gap-3 rounded-2xl border border-border p-3 sm:p-4 md:grid-cols-[1.2fr_1.6fr_160px]">
                       <div className="space-y-2">
                         <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">原文</div>
                         <div className="rounded-xl bg-muted/50 px-3 py-2 text-sm text-foreground">{item.original}</div>
@@ -1035,7 +1035,7 @@ export default function TranslateImagePage() {
               icon={ImagePlus}
               title="先上传要翻译的图片"
               description="支持拖拽批量上传，上传后可以逐张识别和生成，也能整批翻译后直接进入图片库。"
-              className="min-h-[540px]"
+              className="min-h-[320px] sm:min-h-[540px]"
             />
           )}
         </div>
@@ -1044,10 +1044,10 @@ export default function TranslateImagePage() {
 
       {!!doneJobs.length && (
         <Card className="rounded-3xl border-border shadow-sm">
-          <CardHeader>
+          <CardHeader className="p-4 sm:p-6">
             <CardTitle className="text-base">已完成结果</CardTitle>
           </CardHeader>
-          <CardContent className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <CardContent className="grid gap-4 p-4 pt-0 sm:grid-cols-2 sm:p-6 sm:pt-0 xl:grid-cols-4">
             {doneJobs.map((job) => (
               <div key={`done-${job.id}`} className="overflow-hidden rounded-2xl border border-border bg-card">
                 <img src={job.translatedImage} alt={job.fileName} className="aspect-[4/5] w-full object-cover" />
