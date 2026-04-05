@@ -60,6 +60,7 @@ interface TranslationJob {
   status: JobStatus;
   error: string | null;
   hint: string | null;
+  renderMode?: "stable";
 }
 
 const MAX_FILES = 8;
@@ -428,11 +429,56 @@ function PreviewPanel({
   );
 }
 
+function ComparePreview({
+  original,
+  translated,
+  ratio,
+  onRatioChange,
+}: {
+  original: string;
+  translated: string;
+  ratio: number;
+  onRatioChange: (value: number) => void;
+}) {
+  return (
+    <div className="space-y-3 rounded-2xl border border-border p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="font-medium text-foreground">原图 / 结果对比</div>
+          <div className="mt-1 text-sm text-muted-foreground">拖动滑块，快速查看当前替换效果是否自然。</div>
+        </div>
+        <Badge variant="secondary">稳定替换</Badge>
+      </div>
+      <div className="overflow-hidden rounded-2xl bg-muted/30">
+        <div className="relative mx-auto w-full max-w-[520px]">
+          <img src={original} alt="原图对比" className="block w-full object-contain" />
+          <div className="absolute inset-y-0 left-0 overflow-hidden" style={{ width: `${ratio}%` }}>
+            <img src={translated} alt="翻译图对比" className="block w-full max-w-[520px] object-contain" />
+          </div>
+          <div
+            className="pointer-events-none absolute inset-y-0 w-0.5 bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.12)]"
+            style={{ left: `${ratio}%` }}
+          />
+        </div>
+      </div>
+      <input
+        type="range"
+        min={0}
+        max={100}
+        value={ratio}
+        onChange={(event) => onRatioChange(Number(event.target.value))}
+        className="w-full"
+      />
+    </div>
+  );
+}
+
 export default function TranslateImagePage() {
   const [jobs, setJobs] = useState<TranslationJob[]>([]);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [isBatchRunning, setIsBatchRunning] = useState(false);
   const [targetLanguage, setTargetLanguage] = useState("en");
+  const [compareRatio, setCompareRatio] = useState(50);
 
   const activeJob = jobs.find((job) => job.id === activeJobId) || jobs[0] || null;
   const activeJobError = activeJob?.status === "error" ? activeJob.error : null;
@@ -657,6 +703,7 @@ export default function TranslateImagePage() {
           status: "done",
           error: null,
           hint: null,
+          renderMode: "stable",
         }));
       } catch (error) {
         const message = normalizeUserErrorMessage(error, "翻译图片生成失败");
@@ -850,6 +897,9 @@ export default function TranslateImagePage() {
                         <span className="text-xs text-muted-foreground">
                           {job.translations.length ? `${job.translations.length} 处文字` : "待识别"}
                         </span>
+                        {job.status === "done" && job.renderMode === "stable" && (
+                          <span className="text-xs text-emerald-700">稳定替换</span>
+                        )}
                       </div>
                       {job.status === "error" && job.error && (
                         <div className="mt-2 line-clamp-2 text-xs text-destructive">{job.error}</div>
@@ -902,15 +952,39 @@ export default function TranslateImagePage() {
                     </div>
                   </div>
                 )}
+                {activeJob.status === "done" && activeJob.renderMode === "stable" && (
+                  <div className="mb-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                    <div className="font-medium">当前任务已完成</div>
+                    <div className="mt-1">
+                      当前结果使用稳定替换模式生成，优先保证版位正确和整体可用性。你可以通过下方对比快速检查哪里还需要继续优化。
+                    </div>
+                  </div>
+                )}
                   <div className="grid gap-4 lg:grid-cols-2">
                     <PreviewPanel title="原图" subtitle="用于 OCR 识别和替换生成" image={activeJob.originalImage} />
                     <PreviewPanel
                       title="结果图"
-                      subtitle={activeJob.translatedImage ? "已自动加入图片库，来源为图文翻译" : "生成后会自动存入图片库"}
+                      subtitle={
+                        activeJob.translatedImage
+                          ? activeJob.renderMode === "stable"
+                            ? "已自动加入图片库，当前为稳定替换结果"
+                            : "已自动加入图片库，来源为图文翻译"
+                          : "生成后会自动存入图片库"
+                      }
                       image={activeJob.translatedImage}
                       placeholder={activeJob.status === "rendering" ? "正在生成翻译图..." : "这里会显示翻译后的最终图片"}
                     />
                   </div>
+                  {activeJob.translatedImage && (
+                    <div className="mt-4">
+                      <ComparePreview
+                        original={activeJob.originalImage}
+                        translated={activeJob.translatedImage}
+                        ratio={compareRatio}
+                        onRatioChange={setCompareRatio}
+                      />
+                    </div>
+                  )}
               </WorkspaceSection>
 
               <Card className="rounded-3xl border-border shadow-sm">
