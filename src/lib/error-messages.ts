@@ -9,7 +9,21 @@ const ERROR_TEXT = {
 
 function normalizeRawError(rawError: unknown) {
   if (typeof rawError === "string") return rawError.trim();
-  if (rawError instanceof Error) return rawError.message.trim();
+
+  if (rawError instanceof Error) {
+    return rawError.message.trim();
+  }
+
+  if (rawError && typeof rawError === "object") {
+    const maybeMessage = ["message", "error", "detail", "msg"]
+      .map((key) => (rawError as Record<string, unknown>)[key])
+      .find((value) => typeof value === "string" && value.trim());
+
+    if (typeof maybeMessage === "string") {
+      return maybeMessage.trim();
+    }
+  }
+
   return "";
 }
 
@@ -27,8 +41,9 @@ function matchKnownError(message: string) {
     lower.includes("forbidden") ||
     lower.includes("401") ||
     lower.includes("403") ||
-    lower.includes("未登录") ||
-    lower.includes("请先登录")
+    lower.includes("invalid login credentials") ||
+    lower.includes("email not confirmed") ||
+    lower.includes("login required")
   ) {
     return ERROR_TEXT.loginRequired;
   }
@@ -37,11 +52,11 @@ function matchKnownError(message: string) {
     lower.includes("mime") ||
     lower.includes("invalid image") ||
     lower.includes("image_required") ||
+    lower.includes("unsupported") ||
     lower.includes("format") ||
     lower.includes("jpg") ||
     lower.includes("png") ||
-    lower.includes("webp") ||
-    lower.includes("图片格式")
+    lower.includes("webp")
   ) {
     return ERROR_TEXT.unsupportedImage;
   }
@@ -49,10 +64,9 @@ function matchKnownError(message: string) {
   if (
     lower.includes("ocr_upstream_failed") ||
     lower.includes("translations_required") ||
-    lower.includes("解析失败") ||
-    lower.includes("识别失败") ||
-    lower.includes("base64") ||
+    lower.includes("parse failed") ||
     lower.includes("decode") ||
+    lower.includes("base64") ||
     lower.includes("canvas") ||
     lower.includes("tainted")
   ) {
@@ -65,8 +79,7 @@ function matchKnownError(message: string) {
     lower.includes("resource exhausted") ||
     lower.includes("quota") ||
     lower.includes("rate limit") ||
-    lower.includes("429") ||
-    lower.includes("额度不足")
+    lower.includes("429")
   ) {
     return ERROR_TEXT.quotaExceeded;
   }
@@ -75,7 +88,7 @@ function matchKnownError(message: string) {
     lower.includes("replace_upstream_failed") ||
     lower.includes("empty_image_result") ||
     lower.includes("no image returned") ||
-    lower.includes("生成失败")
+    lower.includes("generation failed")
   ) {
     return ERROR_TEXT.generationFailed;
   }
@@ -91,10 +104,9 @@ function matchKnownError(message: string) {
     lower.includes("521") ||
     lower.includes("cloudflare") ||
     lower.includes("web server is down") ||
-    lower.includes("安全连接") ||
     lower.includes("load failed") ||
     lower.includes("failed to fetch") ||
-    lower.includes("网络")
+    lower.includes("network")
   ) {
     return ERROR_TEXT.systemBusy;
   }
@@ -116,10 +128,10 @@ export function normalizeUserErrorMessage(
     if (typeof parsed?.message === "string" && parsed.message.trim()) {
       return matchKnownError(parsed.message) || stripHtmlTags(parsed.message);
     }
-    if (typeof parsed?.error === "string") {
+    if (typeof parsed?.error === "string" && parsed.error.trim()) {
       return matchKnownError(parsed.error) || stripHtmlTags(parsed.error);
     }
-    if (typeof parsed?.detail === "string") {
+    if (typeof parsed?.detail === "string" && parsed.detail.trim()) {
       return matchKnownError(parsed.detail) || stripHtmlTags(parsed.detail);
     }
   } catch {
@@ -132,17 +144,17 @@ export function normalizeUserErrorMessage(
 export function errorHintFromMessage(message: string): string | null {
   switch (message) {
     case ERROR_TEXT.loginRequired:
-      return "请刷新页面并重新登录后再试。";
+      return "请刷新页面后重新登录，再继续当前操作。";
     case ERROR_TEXT.unsupportedImage:
       return "请上传 JPG、PNG 或 WEBP 格式的清晰图片。";
     case ERROR_TEXT.parseFailed:
-      return "请换一张更清晰的商品图，避免上传截图或过度压缩图片。";
+      return "建议更换更清晰的原图，避免截图或过度压缩图片。";
     case ERROR_TEXT.quotaExceeded:
       return "请检查上游 AI 账户额度，或稍后再试。";
     case ERROR_TEXT.generationFailed:
       return "建议保留当前识别结果，稍后重新生成一次。";
     case ERROR_TEXT.systemBusy:
-      return "当前服务连接异常，请稍后重试；如果持续出现，请检查认证服务是否正常。";
+      return "当前服务连接异常，请稍后重试；如持续出现，请检查认证或上游服务状态。";
     default:
       return null;
   }
