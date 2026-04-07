@@ -1,53 +1,20 @@
-export function normalizeUserErrorMessage(
-  rawError: unknown,
-  fallback = "服务暂时不可用，请稍后重试。",
-): string {
-  const message =
-    typeof rawError === "string"
-      ? rawError
-      : rawError instanceof Error
-        ? rawError.message
-        : "";
+const ERROR_TEXT = {
+  loginRequired: "未登录，请先登录",
+  unsupportedImage: "图片格式不支持",
+  parseFailed: "商品图解析失败",
+  quotaExceeded: "AI 额度不足",
+  generationFailed: "当前生成失败，请重试",
+  systemBusy: "系统繁忙，请稍后再试",
+} as const;
 
-  const normalized = message.trim();
-  if (!normalized) return fallback;
+function normalizeRawError(rawError: unknown) {
+  if (typeof rawError === "string") return rawError.trim();
+  if (rawError instanceof Error) return rawError.message.trim();
+  return "";
+}
 
-  try {
-    const parsed = JSON.parse(normalized);
-
-    if (parsed?.message) return String(parsed.message);
-
-    switch (parsed?.error) {
-      case "INSUFFICIENT_BALANCE":
-        return "当前上游 AI 账户额度不足或触发限流，请稍后重试。";
-      case "UNAUTHORIZED":
-        return "当前登录状态已失效，请刷新页面后重新登录。";
-      case "OCR_UPSTREAM_FAILED":
-        return "文字识别服务暂时不可用，请稍后重试。";
-      case "REPLACE_UPSTREAM_FAILED":
-        return "自动替换图片失败，但识别结果通常仍可保留。建议稍后重试，或改用稳定替换模式。";
-      case "EMPTY_IMAGE_RESULT":
-        return "模型已响应，但没有返回可用图片结果。建议稍后重试。";
-      case "IMAGE_REQUIRED":
-        return "请先上传一张需要翻译的图片。";
-      case "TRANSLATIONS_REQUIRED":
-        return "请先识别文字并确认译文，再生成翻译图。";
-      default:
-        break;
-    }
-  } catch {
-    // ignore malformed JSON payloads
-  }
-
-  const lower = normalized.toLowerCase();
-
-  if (
-    lower.includes("failed to send a request") ||
-    lower.includes("edge function returned a non-2xx") ||
-    lower.includes("edge function")
-  ) {
-    return "边缘函数请求失败，请稍后重试；如果持续出现，请检查函数部署和网络连接。";
-  }
+function matchKnownError(message: string) {
+  const lower = message.toLowerCase();
 
   if (
     lower.includes("unauthorized") ||
@@ -55,100 +22,124 @@ export function normalizeUserErrorMessage(
     lower.includes("jwt") ||
     lower.includes("forbidden") ||
     lower.includes("401") ||
-    lower.includes("403")
+    lower.includes("403") ||
+    lower.includes("登录")
   ) {
-    return "当前登录状态已失效，请刷新页面后重新登录。";
+    return ERROR_TEXT.loginRequired;
   }
 
   if (
-    lower.includes("quotaexceedederror") ||
-    lower.includes("localstorage") ||
-    lower.includes("storage quota") ||
-    lower.includes("the quota has been exceeded")
+    lower.includes("mime") ||
+    lower.includes("invalid image") ||
+    lower.includes("image_required") ||
+    lower.includes("不支持") ||
+    lower.includes("format") ||
+    lower.includes("jpg") ||
+    lower.includes("png") ||
+    lower.includes("webp")
   ) {
-    return "图片已经生成成功，但保存到本地缓存时空间不足。你可以先清理部分图片记录后再试。";
+    return ERROR_TEXT.unsupportedImage;
   }
 
   if (
-    lower.includes("quota") ||
-    lower.includes("insufficient_balance") ||
-    lower.includes("billing") ||
-    lower.includes("resource exhausted") ||
-    lower.includes("429") ||
-    lower.includes("rate limit")
-  ) {
-    return "当前上游 AI 账户额度不足或触发限流，请稍后重试。";
-  }
-
-  if (
-    lower.includes("timeout") ||
-    lower.includes("deadline") ||
-    lower.includes("504") ||
-    lower.includes("502") ||
-    lower.includes("503")
-  ) {
-    return "上游模型响应超时，请稍后重试，或先换一张更小的图片再试。";
-  }
-
-  if (lower.includes("empty_image_result") || lower.includes("no image returned")) {
-    return "模型已响应，但没有返回可用图片结果。建议稍后重试。";
-  }
-
-  if (
+    lower.includes("ocr_upstream_failed") ||
+    lower.includes("translations_required") ||
+    lower.includes("未检测到可翻译的文字内容") ||
+    lower.includes("解析失败") ||
+    lower.includes("识别失败") ||
     lower.includes("base64") ||
     lower.includes("decode") ||
-    lower.includes("mime") ||
-    lower.includes("invalid image")
-  ) {
-    return "图片处理失败，请换一张更清晰的 JPG、PNG 或 WEBP 图片再试。";
-  }
-
-  if (
     lower.includes("canvas") ||
-    lower.includes("cors") ||
     lower.includes("tainted") ||
     lower.includes("load")
   ) {
-    return "图片本地渲染失败，请重新上传原图后再试。";
+    return ERROR_TEXT.parseFailed;
   }
 
-  if (lower.includes("json") || lower.includes("schema") || lower.includes("format")) {
-    return "返回结果格式异常，请重新尝试一次。";
+  if (
+    lower.includes("insufficient_balance") ||
+    lower.includes("billing") ||
+    lower.includes("resource exhausted") ||
+    lower.includes("quota") ||
+    lower.includes("rate limit") ||
+    lower.includes("429")
+  ) {
+    return ERROR_TEXT.quotaExceeded;
   }
 
-  return normalized;
+  if (
+    lower.includes("replace_upstream_failed") ||
+    lower.includes("empty_image_result") ||
+    lower.includes("no image returned") ||
+    lower.includes("生成失败")
+  ) {
+    return ERROR_TEXT.generationFailed;
+  }
+
+  if (
+    lower.includes("edge function") ||
+    lower.includes("failed to send a request") ||
+    lower.includes("timeout") ||
+    lower.includes("deadline") ||
+    lower.includes("502") ||
+    lower.includes("503") ||
+    lower.includes("504") ||
+    lower.includes("网络")
+  ) {
+    return ERROR_TEXT.systemBusy;
+  }
+
+  return "";
+}
+
+export function normalizeUserErrorMessage(
+  rawError: unknown,
+  fallback = ERROR_TEXT.systemBusy,
+): string {
+  const normalized = normalizeRawError(rawError);
+  if (!normalized) return fallback;
+
+  try {
+    const parsed = JSON.parse(normalized);
+
+    if (typeof parsed?.message === "string" && parsed.message.trim()) {
+      const matched = matchKnownError(parsed.message);
+      return matched || parsed.message.trim();
+    }
+
+    if (typeof parsed?.error === "string") {
+      const matched = matchKnownError(parsed.error);
+      if (matched) return matched;
+    }
+
+    if (typeof parsed?.detail === "string") {
+      const matched = matchKnownError(parsed.detail);
+      if (matched) return matched;
+    }
+  } catch {
+    // ignore JSON parse errors
+  }
+
+  return matchKnownError(normalized) || fallback;
 }
 
 export function errorHintFromMessage(message: string): string | null {
-  const lower = message.toLowerCase();
-
-  if (lower.includes("登录") || lower.includes("认证")) {
-    return "建议：刷新页面并重新登录后再试。";
+  switch (message) {
+    case ERROR_TEXT.loginRequired:
+      return "请刷新页面并重新登录后再试。";
+    case ERROR_TEXT.unsupportedImage:
+      return "请上传 JPG、PNG 或 WEBP 格式的清晰图片。";
+    case ERROR_TEXT.parseFailed:
+      return "请换一张更清晰的商品图，避免上传截图或过度压缩图片。";
+    case ERROR_TEXT.quotaExceeded:
+      return "请检查上游 AI 账户额度或稍后再试。";
+    case ERROR_TEXT.generationFailed:
+      return "建议保持当前识别结果，稍后重试一次。";
+    case ERROR_TEXT.systemBusy:
+      return "请稍后重试；如果持续出现，请检查函数部署和网络连接。";
+    default:
+      return null;
   }
-
-  if (lower.includes("额度") || lower.includes("限流") || lower.includes("余额")) {
-    return "建议：稍后重试，或检查上游 AI 账户是否还有额度。";
-  }
-
-  if (lower.includes("本地缓存") || lower.includes("空间不足")) {
-    return "建议：先清理部分图片库或浏览器站点缓存，再继续生成。";
-  }
-
-  if (lower.includes("图片处理") || lower.includes("本地渲染") || lower.includes("图片加载")) {
-    return "建议：换一张更清晰的原图，避免上传截图或过度压缩图片。";
-  }
-
-  if (lower.includes("超时")) {
-    return "建议：先减少批量数量，或换一张更小的图片再试。";
-  }
-
-  if (lower.includes("没有返回可用图片") || lower.includes("识别结果")) {
-    return "建议：识别结果通常仍会保留，你可以先校对译文后再重新生成。";
-  }
-
-  if (lower.includes("边缘函数请求失败") || lower.includes("部署")) {
-    return "建议：稍后重试；如果持续失败，请检查 Supabase 边缘函数是否正常部署。";
-  }
-
-  return null;
 }
+
+export const USER_VISIBLE_ERROR_TEXT = ERROR_TEXT;
