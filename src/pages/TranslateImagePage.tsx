@@ -224,6 +224,36 @@ function pickFontStack(language: string) {
   }
 }
 
+function drawRoundedBox(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number,
+) {
+  const safeRadius = Math.max(0, Math.min(radius, width / 2, height / 2));
+  if (typeof ctx.roundRect === "function") {
+    ctx.beginPath();
+    ctx.roundRect(x, y, width, height, safeRadius);
+    ctx.fill();
+    return;
+  }
+
+  ctx.beginPath();
+  ctx.moveTo(x + safeRadius, y);
+  ctx.lineTo(x + width - safeRadius, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + safeRadius);
+  ctx.lineTo(x + width, y + height - safeRadius);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - safeRadius, y + height);
+  ctx.lineTo(x + safeRadius, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - safeRadius);
+  ctx.lineTo(x, y + safeRadius);
+  ctx.quadraticCurveTo(x, y, x + safeRadius, y);
+  ctx.closePath();
+  ctx.fill();
+}
+
 function sampleRegionColor(
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -315,9 +345,7 @@ async function renderTranslatedImageLocally(
 
     ctx.save();
     ctx.fillStyle = rgbaString(background);
-    ctx.beginPath();
-    ctx.roundRect(boxX, boxY, boxW, boxH, radius);
-    ctx.fill();
+    drawRoundedBox(ctx, boxX, boxY, boxW, boxH, radius);
 
     const maxFont = Math.max(14, Math.floor(boxH * 0.42));
     let fontSize = maxFont;
@@ -384,6 +412,60 @@ async function renderTranslatedImageLocally(
     }
     ctx.restore();
   }
+
+  return canvas.toDataURL("image/png");
+}
+
+async function renderTranslatedImageSimple(
+  imageUrl: string,
+  translations: TranslationItem[],
+  language: string,
+) {
+  const image = new Image();
+  image.decoding = "async";
+
+  await new Promise<void>((resolve, reject) => {
+    image.onload = () => resolve();
+    image.onerror = () => reject(new Error("原图加载失败，无法生成翻译图"));
+    image.src = imageUrl;
+  });
+
+  const canvas = document.createElement("canvas");
+  canvas.width = image.naturalWidth || image.width;
+  canvas.height = image.naturalHeight || image.height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("浏览器画布初始化失败，无法生成翻译图");
+
+  ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+  translations
+    .map((item, index) => resolveTranslationBox(item, index, translations.length))
+    .forEach((item) => {
+      const x = (clampPercent(item.x, 12) / 100) * canvas.width;
+      const y = (clampPercent(item.y, 12) / 100) * canvas.height;
+      const width = (clampPercent(item.width, 48) / 100) * canvas.width;
+      const height = (clampPercent(item.height, 10) / 100) * canvas.height;
+      const padding = Math.max(8, Math.round(height * 0.18));
+      const foreground = parseColor(item.textColor) || { r: 18, g: 18, b: 18, a: 1 };
+      const background = parseColor(item.backgroundColor) || { r: 255, g: 255, b: 255, a: 0.88 };
+
+      ctx.save();
+      ctx.fillStyle = rgbaString(background);
+      ctx.fillRect(x, y, width, height);
+      const fontSize = Math.max(12, Math.floor(height * 0.42));
+      ctx.font = `600 ${fontSize}px ${pickFontStack(language)}`;
+      ctx.fillStyle = rgbaString(foreground);
+      ctx.textBaseline = "middle";
+      ctx.textAlign = item.align || "center";
+      const textX =
+        item.align === "left"
+          ? x + padding
+          : item.align === "right"
+            ? x + width - padding
+            : x + width / 2;
+      ctx.fillText(item.translated, textX, y + height / 2, width - padding * 2);
+      ctx.restore();
+    });
 
   return canvas.toDataURL("image/png");
 }
@@ -828,25 +910,45 @@ export default function TranslateImagePage() {
       updateJob(job.id, (current) => ({ ...current, status: "rendering", error: null, hint: null }));
 
       try {
-        const localImage = await renderTranslatedImageLocally(
-          job.originalImage,
-          job.translations,
-          targetLanguage,
-        );
-        let permanentUrl = localImage;
+        let localImage = "";
         try {
-          permanentUrl = await persistTranslatedImage(job, localImage);
-        } catch (persistError) {
-          console.warn("persist translated image failed, fallback to local preview:", persistError);
+          localImage = await renderTranslatedImageLocally(
+            job.originalImage,
+            job.translations,
+            targetLanguage,
+          );
+        } catch (advancedRenderError) {
+          console.warn("advanced translation render failed, fallback to simple renderer:", advancedRenderError);
+          localImage = await renderTranslatedImageSimple(
+            job.originalImage,
+            job.translations,
+            targetLanguage,
+          );
         }
+
         updateJob(job.id, (current) => ({
           ...current,
-          translatedImage: permanentUrl,
+          translatedImage: localImage,
           status: "done",
           error: null,
           hint: null,
           renderMode: "stable",
         }));
+
+        void persistTranslatedImage(job, localImage)
+          .then((permanentUrl) => {
+            updateJob(job.id, (current) =>
+              current.status !== "done"
+                ? current
+                : {
+                    ...current,
+                    translatedImage: permanentUrl,
+                  },
+            );
+          })
+          .catch((persistError) => {
+            console.warn("persist translated image failed, keep local preview:", persistError);
+          });
       } catch (error) {
         const message = normalizeUserErrorMessage(error, "翻译图片生成失败");
         updateJob(job.id, (current) => ({
