@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Loader2, Mail, ShieldCheck } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -16,6 +16,40 @@ type AuthMethod = "code" | "password";
 const FEATURE_TAGS = ["AI 智能识别", "多模板排版", "一键生成", "批量导出"];
 
 function normalizeAuthError(raw: unknown) {
+  const rawText =
+    typeof raw === "string"
+      ? raw
+      : raw instanceof Error
+        ? raw.message
+        : raw && typeof raw === "object"
+          ? [
+              (raw as Record<string, unknown>).message,
+              (raw as Record<string, unknown>).error,
+              (raw as Record<string, unknown>).msg,
+              (raw as Record<string, unknown>).error_code,
+            ]
+              .filter((value): value is string => typeof value === "string")
+              .join(" ")
+          : "";
+
+  const lower = rawText.toLowerCase();
+
+  if (lower.includes("over_email_send_rate_limit") || lower.includes("email rate limit exceeded")) {
+    return "验证码发送过于频繁，请 60 秒后再试";
+  }
+
+  if (lower.includes("otp_expired")) {
+    return "验证码已过期，请重新发送";
+  }
+
+  if (lower.includes("invalid otp") || lower.includes("token has expired")) {
+    return "验证码无效，请检查后重新输入";
+  }
+
+  if (lower.includes("invalid login credentials")) {
+    return "邮箱或密码不正确";
+  }
+
   return normalizeUserErrorMessage(raw, "系统繁忙，请稍后再试");
 }
 
@@ -30,32 +64,42 @@ export default function AuthPage() {
   const [displayName, setDisplayName] = useState("");
   const [otpCode, setOtpCode] = useState("");
   const [codeSent, setCodeSent] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
   const [sendingCode, setSendingCode] = useState(false);
   const [verifyingCode, setVerifyingCode] = useState(false);
   const [submittingPassword, setSubmittingPassword] = useState(false);
 
+  useEffect(() => {
+    if (cooldown <= 0) return undefined;
+
+    const timer = window.setTimeout(() => {
+      setCooldown((current) => Math.max(0, current - 1));
+    }, 1000);
+
+    return () => window.clearTimeout(timer);
+  }, [cooldown]);
+
   const pageTitle = useMemo(() => {
-    if (mode === "signup") {
-      return "注册你的 PicSpark AI 账号";
-    }
-    return "登录你的 PicSpark AI 账号";
+    return mode === "signup" ? "注册你的 PicSpark AI 账号" : "登录你的 PicSpark AI 账号";
   }, [mode]);
 
   const pageDescription = useMemo(() => {
     if (method === "code") {
       return mode === "signup"
-        ? "输入邮箱后发送验证码，填入验证码即可完成注册并登录。"
-        : "输入邮箱后发送验证码，填入验证码即可安全登录。";
+        ? "输入邮箱后发送验证码，填写验证码即可完成注册并登录。"
+        : "输入邮箱后发送验证码，填写验证码即可安全登录。";
     }
+
     return mode === "signup"
-      ? "使用邮箱和密码注册。若后续切换设备，也可改用验证码登录。"
-      : "使用邮箱和密码登录。若不想点邮件链接，也可以切换到验证码登录。";
+      ? "使用邮箱和密码注册。后续你也可以改用邮箱验证码登录。"
+      : "使用邮箱和密码登录。如果不想点邮件链接，也可以切换到验证码模式。";
   }, [method, mode]);
 
   const resetAuthFields = () => {
     setPassword("");
     setOtpCode("");
     setCodeSent(false);
+    setCooldown(0);
     setSendingCode(false);
     setVerifyingCode(false);
     setSubmittingPassword(false);
@@ -89,6 +133,7 @@ export default function AuthPage() {
       });
       return false;
     }
+
     return true;
   };
 
@@ -108,6 +153,7 @@ export default function AuthPage() {
       if (error) throw error;
 
       setCodeSent(true);
+      setCooldown(60);
       toast({
         title: "验证码已发送",
         description: "请检查你的邮箱，并输入收到的验证码完成登录。",
@@ -253,7 +299,6 @@ export default function AuthPage() {
                 <img src={logo} alt="PicSpark AI" className="h-9 w-9 rounded-xl" />
                 <span className="text-xl font-bold text-foreground">PicSpark AI</span>
               </div>
-
               <h2 className="text-center text-2xl font-bold text-foreground">{pageTitle}</h2>
               <p className="mt-2 text-center text-sm text-muted-foreground">{pageDescription}</p>
             </div>
@@ -346,10 +391,18 @@ export default function AuthPage() {
                   <Button
                     type="button"
                     className="h-11 w-full bg-gradient-to-r from-primary to-violet-600 font-semibold text-white hover:opacity-90"
-                    disabled={sendingCode}
+                    disabled={sendingCode || cooldown > 0}
                     onClick={handleSendCode}
                   >
-                    {sendingCode ? <Loader2 className="h-4 w-4 animate-spin" /> : codeSent ? "重新发送验证码" : "发送验证码"}
+                    {sendingCode ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : cooldown > 0 ? (
+                      `请等待 ${cooldown}s`
+                    ) : codeSent ? (
+                      "重新发送验证码"
+                    ) : (
+                      "发送验证码"
+                    )}
                   </Button>
 
                   <div className="space-y-1.5">
