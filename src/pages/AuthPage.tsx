@@ -8,6 +8,7 @@ import { Loader2, ArrowLeft } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
+import { normalizeUserErrorMessage } from "@/lib/error-messages";
 import logo from "@/assets/logo.png";
 
 type AuthMode = "login" | "signup" | "forgot";
@@ -25,6 +26,14 @@ function isMobileInAppBrowser() {
     "dingtalk",
     "feishu",
   ].some((keyword) => ua.includes(keyword));
+}
+
+function normalizeAuthProxyError(raw: unknown) {
+  const base = normalizeUserErrorMessage(raw);
+  if (base === "系统繁忙，请稍后再试") {
+    return "认证服务当前不可用，请稍后再试";
+  }
+  return base;
 }
 
 async function postAuthJson(path: string, payload: Record<string, unknown>) {
@@ -59,6 +68,14 @@ const AuthPage = () => {
   const [displayName, setDisplayName] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const showError = (raw: unknown) => {
+    toast({
+      title: t("auth.error", "错误"),
+      description: normalizeAuthProxyError(raw),
+      variant: "destructive",
+    });
+  };
+
   const handleGoogleLogin = async () => {
     if (isMobileInAppBrowser()) {
       toast({
@@ -69,19 +86,16 @@ const AuthPage = () => {
       return;
     }
 
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${window.location.origin}/dashboard`,
-      },
-    });
-
-    if (error) {
-      toast({
-        title: t("auth.error", "错误"),
-        description: error.message,
-        variant: "destructive",
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: `${window.location.origin}/dashboard`,
+        },
       });
+      if (error) throw error;
+    } catch (error) {
+      showError(error);
     }
   };
 
@@ -103,7 +117,7 @@ const AuthPage = () => {
       } else if (mode === "login") {
         const data = await postAuthJson("/api/auth/login", { email, password });
         if (!data?.access_token || !data?.refresh_token) {
-          throw new Error("登录响应无效，请稍后重试");
+          throw new Error("认证服务当前不可用，请稍后再试");
         }
         const { error } = await supabase.auth.setSession({
           access_token: data.access_token,
@@ -126,21 +140,15 @@ const AuthPage = () => {
           });
           if (error) throw error;
         } else {
-          const loginData = await postAuthJson("/api/auth/login", { email, password });
-          const { error } = await supabase.auth.setSession({
-            access_token: loginData.access_token,
-            refresh_token: loginData.refresh_token,
+          toast({
+            title: "注册成功",
+            description: "请回到登录页完成登录。",
           });
-          if (error) throw error;
+          setMode("login");
         }
-        navigate("/dashboard");
       }
-    } catch (error: any) {
-      toast({
-        title: t("auth.error", "错误"),
-        description: error.message || "当前登录失败，请稍后重试",
-        variant: "destructive",
-      });
+    } catch (error) {
+      showError(error);
     } finally {
       setLoading(false);
     }
@@ -199,7 +207,7 @@ const AuthPage = () => {
             className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
             <ArrowLeft className="h-4 w-4" />
-            {t("nav.features", "返回首页")}
+            返回首页
           </button>
           <div className="flex items-center gap-1">
             <ThemeSwitcher />
@@ -217,11 +225,11 @@ const AuthPage = () => {
               <h2 className="text-2xl font-bold text-foreground text-center">{title}</h2>
               {mode === "forgot" ? (
                 <p className="text-sm text-muted-foreground mt-2 text-center">
-                  {t("auth.forgotDesc", "输入您的注册邮箱，我们将发送密码重置链接。")}
+                  输入您的注册邮箱，我们将发送密码重置链接。
                 </p>
               ) : (
-                <p className="text-sm text-muted-foreground mt-1 lg:hidden text-center">
-                  AI 点燃商品图片创意
+                <p className="text-sm text-muted-foreground mt-2 text-center">
+                  当前认证服务连接异常，邮箱密码登录可能暂时不可用。
                 </p>
               )}
             </div>
@@ -230,12 +238,12 @@ const AuthPage = () => {
               {mode === "signup" && (
                 <div className="space-y-1.5">
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                    {t("auth.displayName", "昵称")}
+                    昵称
                   </label>
                   <Input
                     value={displayName}
                     onChange={(e) => setDisplayName(e.target.value)}
-                    placeholder={t("auth.displayNamePlaceholder", "请输入昵称")}
+                    placeholder="请输入昵称"
                     className="h-11"
                   />
                 </div>
@@ -243,7 +251,7 @@ const AuthPage = () => {
 
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                  {t("auth.email", "邮箱")}
+                  邮箱
                 </label>
                 <Input
                   type="email"
@@ -259,7 +267,7 @@ const AuthPage = () => {
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                      {t("auth.password", "密码")}
+                      密码
                     </label>
                     {mode === "login" && (
                       <button
@@ -267,7 +275,7 @@ const AuthPage = () => {
                         onClick={() => setMode("forgot")}
                         className="text-xs text-primary hover:underline"
                       >
-                        {t("auth.forgotPassword", "忘记密码？")}
+                        忘记密码？
                       </button>
                     )}
                   </div>
@@ -298,9 +306,7 @@ const AuthPage = () => {
                       <span className="w-full border-t border-border" />
                     </div>
                     <div className="relative flex justify-center text-xs uppercase">
-                      <span className="bg-background px-2 text-muted-foreground">
-                        {t("auth.orContinueWith", "或")}
-                      </span>
+                      <span className="bg-background px-2 text-muted-foreground">或</span>
                     </div>
                   </div>
                   <Button
@@ -327,20 +333,18 @@ const AuthPage = () => {
                     onClick={() => setMode("login")}
                     className="text-primary hover:underline font-medium"
                   >
-                    {t("auth.backToLogin", "返回登录")}
+                    返回登录
                   </button>
                 </p>
               ) : (
                 <p className="text-center text-sm text-muted-foreground pt-2">
-                  {mode === "login"
-                    ? t("auth.noAccount", "还没有账号？")
-                    : t("auth.hasAccount", "已经有账号？")}{" "}
+                  {mode === "login" ? "还没有账号？" : "已经有账号？"}{" "}
                   <button
                     type="button"
                     onClick={() => setMode(mode === "login" ? "signup" : "login")}
                     className="text-primary hover:underline font-medium"
                   >
-                    {mode === "login" ? t("auth.signup", "注册") : t("auth.login", "登录")}
+                    {mode === "login" ? "注册" : "登录"}
                   </button>
                 </p>
               )}

@@ -13,6 +13,10 @@ function normalizeRawError(rawError: unknown) {
   return "";
 }
 
+function stripHtmlTags(value: string) {
+  return value.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+}
+
 function matchKnownError(message: string) {
   const lower = message.toLowerCase();
 
@@ -23,7 +27,8 @@ function matchKnownError(message: string) {
     lower.includes("forbidden") ||
     lower.includes("401") ||
     lower.includes("403") ||
-    lower.includes("登录")
+    lower.includes("未登录") ||
+    lower.includes("请先登录")
   ) {
     return ERROR_TEXT.loginRequired;
   }
@@ -32,11 +37,11 @@ function matchKnownError(message: string) {
     lower.includes("mime") ||
     lower.includes("invalid image") ||
     lower.includes("image_required") ||
-    lower.includes("不支持") ||
     lower.includes("format") ||
     lower.includes("jpg") ||
     lower.includes("png") ||
-    lower.includes("webp")
+    lower.includes("webp") ||
+    lower.includes("图片格式")
   ) {
     return ERROR_TEXT.unsupportedImage;
   }
@@ -44,14 +49,12 @@ function matchKnownError(message: string) {
   if (
     lower.includes("ocr_upstream_failed") ||
     lower.includes("translations_required") ||
-    lower.includes("未检测到可翻译的文字内容") ||
     lower.includes("解析失败") ||
     lower.includes("识别失败") ||
     lower.includes("base64") ||
     lower.includes("decode") ||
     lower.includes("canvas") ||
-    lower.includes("tainted") ||
-    lower.includes("load")
+    lower.includes("tainted")
   ) {
     return ERROR_TEXT.parseFailed;
   }
@@ -62,7 +65,8 @@ function matchKnownError(message: string) {
     lower.includes("resource exhausted") ||
     lower.includes("quota") ||
     lower.includes("rate limit") ||
-    lower.includes("429")
+    lower.includes("429") ||
+    lower.includes("额度不足")
   ) {
     return ERROR_TEXT.quotaExceeded;
   }
@@ -84,6 +88,12 @@ function matchKnownError(message: string) {
     lower.includes("502") ||
     lower.includes("503") ||
     lower.includes("504") ||
+    lower.includes("521") ||
+    lower.includes("cloudflare") ||
+    lower.includes("web server is down") ||
+    lower.includes("安全连接") ||
+    lower.includes("load failed") ||
+    lower.includes("failed to fetch") ||
     lower.includes("网络")
   ) {
     return ERROR_TEXT.systemBusy;
@@ -99,28 +109,24 @@ export function normalizeUserErrorMessage(
   const normalized = normalizeRawError(rawError);
   if (!normalized) return fallback;
 
+  const cleaned = stripHtmlTags(normalized);
+
   try {
-    const parsed = JSON.parse(normalized);
-
+    const parsed = JSON.parse(cleaned);
     if (typeof parsed?.message === "string" && parsed.message.trim()) {
-      const matched = matchKnownError(parsed.message);
-      return matched || parsed.message.trim();
+      return matchKnownError(parsed.message) || stripHtmlTags(parsed.message);
     }
-
     if (typeof parsed?.error === "string") {
-      const matched = matchKnownError(parsed.error);
-      if (matched) return matched;
+      return matchKnownError(parsed.error) || stripHtmlTags(parsed.error);
     }
-
     if (typeof parsed?.detail === "string") {
-      const matched = matchKnownError(parsed.detail);
-      if (matched) return matched;
+      return matchKnownError(parsed.detail) || stripHtmlTags(parsed.detail);
     }
   } catch {
     // ignore JSON parse errors
   }
 
-  return matchKnownError(normalized) || fallback;
+  return matchKnownError(cleaned) || fallback;
 }
 
 export function errorHintFromMessage(message: string): string | null {
@@ -132,11 +138,11 @@ export function errorHintFromMessage(message: string): string | null {
     case ERROR_TEXT.parseFailed:
       return "请换一张更清晰的商品图，避免上传截图或过度压缩图片。";
     case ERROR_TEXT.quotaExceeded:
-      return "请检查上游 AI 账户额度或稍后再试。";
+      return "请检查上游 AI 账户额度，或稍后再试。";
     case ERROR_TEXT.generationFailed:
-      return "建议保持当前识别结果，稍后重试一次。";
+      return "建议保留当前识别结果，稍后重新生成一次。";
     case ERROR_TEXT.systemBusy:
-      return "请稍后重试；如果持续出现，请检查函数部署和网络连接。";
+      return "当前服务连接异常，请稍后重试；如果持续出现，请检查认证服务是否正常。";
     default:
       return null;
   }
