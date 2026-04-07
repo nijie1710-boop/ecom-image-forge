@@ -12,8 +12,19 @@ CREATE TABLE IF NOT EXISTS public.user_balances (
 
 ALTER TABLE public.user_balances ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Users can view their own balance" ON public.user_balances
-  FOR SELECT TO authenticated USING (auth.uid() = user_id);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'user_balances'
+      AND policyname = 'Users can view their own balance'
+  ) THEN
+    CREATE POLICY "Users can view their own balance" ON public.user_balances
+      FOR SELECT TO authenticated USING (auth.uid() = user_id);
+  END IF;
+END $$;
 
 -- Create recharge_records table
 CREATE TABLE IF NOT EXISTS public.recharge_records (
@@ -27,8 +38,19 @@ CREATE TABLE IF NOT EXISTS public.recharge_records (
 
 ALTER TABLE public.recharge_records ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Users can view their own recharge records" ON public.recharge_records
-  FOR SELECT TO authenticated USING (auth.uid() = user_id);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'recharge_records'
+      AND policyname = 'Users can view their own recharge records'
+  ) THEN
+    CREATE POLICY "Users can view their own recharge records" ON public.recharge_records
+      FOR SELECT TO authenticated USING (auth.uid() = user_id);
+  END IF;
+END $$;
 
 -- Create consumption_records table
 CREATE TABLE IF NOT EXISTS public.consumption_records (
@@ -42,10 +64,22 @@ CREATE TABLE IF NOT EXISTS public.consumption_records (
 
 ALTER TABLE public.consumption_records ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Users can view their own consumption records" ON public.consumption_records
-  FOR SELECT TO authenticated USING (auth.uid() = user_id);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'consumption_records'
+      AND policyname = 'Users can view their own consumption records'
+  ) THEN
+    CREATE POLICY "Users can view their own consumption records" ON public.consumption_records
+      FOR SELECT TO authenticated USING (auth.uid() = user_id);
+  END IF;
+END $$;
 
 -- Function: get_user_balance
+DROP FUNCTION IF EXISTS public.get_user_balance(uuid);
 CREATE OR REPLACE FUNCTION public.get_user_balance(p_user_id uuid)
 RETURNS TABLE(balance numeric, total_recharged numeric, total_consumed numeric)
 LANGUAGE plpgsql
@@ -66,6 +100,8 @@ END;
 $$;
 
 -- Function: add_balance (recharge)
+DROP FUNCTION IF EXISTS public.add_balance(uuid, integer, text, text);
+DROP FUNCTION IF EXISTS public.add_balance(uuid, numeric, text, text);
 CREATE OR REPLACE FUNCTION public.add_balance(p_user_id uuid, p_amount numeric, p_payment_method text DEFAULT NULL, p_notes text DEFAULT NULL)
 RETURNS TABLE(new_balance numeric)
 LANGUAGE plpgsql
@@ -95,6 +131,8 @@ END;
 $$;
 
 -- Function: deduct_balance
+DROP FUNCTION IF EXISTS public.deduct_balance(uuid, integer, text, text);
+DROP FUNCTION IF EXISTS public.deduct_balance(uuid, numeric, text, text);
 CREATE OR REPLACE FUNCTION public.deduct_balance(p_user_id uuid, p_amount numeric, p_operation_type text DEFAULT 'generate_image', p_description text DEFAULT NULL)
 RETURNS TABLE(new_balance numeric, success boolean)
 LANGUAGE plpgsql

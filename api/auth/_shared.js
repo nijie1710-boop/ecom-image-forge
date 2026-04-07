@@ -1,12 +1,9 @@
-const SUPABASE_URL =
-  process.env.VITE_SUPABASE_URL ||
-  process.env.SUPABASE_URL ||
-  "https://ciylvpeobxzqcavorhqq.supabase.co";
+const NEW_SUPABASE_URL = "https://rqgrovumfgjwuhkthqxe.supabase.co";
+const NEW_SUPABASE_PUBLISHABLE_KEY =
+  "sb_publishable_kR5Qt951QycXiDjppFSquQ_XODYlvpq";
 
-const SUPABASE_PUBLISHABLE_KEY =
-  process.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
-  process.env.SUPABASE_PUBLISHABLE_KEY ||
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNpeWx2cGVvYnh6cWNhdm9yaHFxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM0NjA0NDAsImV4cCI6MjA4OTAzNjQ0MH0.qH9A8EpYPfC7ObqnNhOYjeFc0jvq01ccFNBsDNRVAck";
+const SUPABASE_URL = NEW_SUPABASE_URL;
+const SUPABASE_PUBLISHABLE_KEY = NEW_SUPABASE_PUBLISHABLE_KEY;
 
 export function applyCors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -21,6 +18,30 @@ export function handleOptions(req, res) {
     return true;
   }
   return false;
+}
+
+export async function parseJsonBody(req) {
+  if (!req) return {};
+
+  if (req.body && typeof req.body === "object") {
+    return req.body;
+  }
+
+  if (typeof req.body === "string" && req.body.trim()) {
+    return JSON.parse(req.body);
+  }
+
+  const chunks = [];
+  for await (const chunk of req) {
+    chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+  }
+
+  if (chunks.length === 0) {
+    return {};
+  }
+
+  const raw = Buffer.concat(chunks).toString("utf8");
+  return raw ? JSON.parse(raw) : {};
 }
 
 export async function proxySupabaseAuth(res, path, body) {

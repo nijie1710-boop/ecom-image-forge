@@ -1,4 +1,4 @@
-import { handleOptions, proxySupabaseAuth } from "./_shared.js";
+import { handleOptions, parseJsonBody, proxySupabaseAuth } from "./_shared.js";
 
 export default async function handler(req, res) {
   if (handleOptions(req, res)) return;
@@ -6,7 +6,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { email, password } = req.body || {};
+  const { email, password } = await parseJsonBody(req);
   if (!email || !password) {
     return res.status(400).json({ error: "Missing email or password" });
   }
