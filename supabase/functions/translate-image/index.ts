@@ -162,11 +162,24 @@ async function callModel(
 }
 
 async function callReplaceModel(apiKey: string, mimeType: string, imageBase64: string, instruction: string) {
-  const models = [
-    "gemini-2.5-flash-image",
-    "gemini-3-pro-image-preview",
+  return callReplaceModelWithPreference(apiKey, mimeType, imageBase64, instruction);
+}
+
+async function callReplaceModelWithPreference(
+  apiKey: string,
+  mimeType: string,
+  imageBase64: string,
+  instruction: string,
+  preferredModel?: string,
+) {
+  const fallbackModels = [
     "gemini-3.1-flash-image-preview",
+    "gemini-3-pro-image-preview",
+    "gemini-2.5-flash-image",
   ];
+  const models = preferredModel
+    ? [preferredModel, ...fallbackModels.filter((item) => item !== preferredModel)]
+    : fallbackModels;
 
   let lastFailure = "";
 
@@ -245,11 +258,12 @@ serve(async (req: Request) => {
 
     if (authError || !user) return jsonResponse({ error: "UNAUTHORIZED" }, 401);
 
-    const { imageUrl, step, translations = [], targetLanguage = "en" } = body as {
+    const { imageUrl, step, translations = [], targetLanguage = "en", preferredModel } = body as {
       imageUrl?: string;
       step?: string;
       translations?: TranslationItem[];
       targetLanguage?: string;
+      preferredModel?: string;
     };
 
     if (!imageUrl) return jsonResponse({ error: "IMAGE_REQUIRED" }, 400);
@@ -298,18 +312,22 @@ serve(async (req: Request) => {
         .join("\n");
 
       const instruction = [
+        "You are a high-fidelity marketing poster editor.",
         "Edit this image by replacing text only.",
         `Target language: ${targetLanguageLabel}.`,
         replacementInstructions,
-        "Keep the original layout, background, product, spacing, font weight, and styling as close as possible.",
-        "Do not redesign the poster. Do not change the product. Only replace text.",
+        "Keep the original poster composition, product, shadows, lighting, spacing, icon placement, and typography hierarchy as close as possible.",
+        "Preserve the original background texture and color transitions. Preserve labels, badges, arrows, and callout boxes.",
+        "Do not redesign the poster. Do not move the product. Do not add new layout blocks.",
+        "The final result must look like the original image was directly rewritten in the target language, not pasted over.",
       ].join("\n");
 
-      const { response, parsed, rawText, model, imageResult } = await callReplaceModel(
+      const { response, parsed, rawText, model, imageResult } = await callReplaceModelWithPreference(
         geminiApiKey,
         mimeType,
         imageBase64,
         instruction,
+        preferredModel,
       );
 
       if (!response.ok) {
@@ -364,7 +382,7 @@ serve(async (req: Request) => {
         }
       }
 
-      return jsonResponse({ imageUrl: finalImageUrl });
+      return jsonResponse({ imageUrl: finalImageUrl, model });
     }
 
     return jsonResponse({ error: "UNKNOWN_STEP" }, 400);

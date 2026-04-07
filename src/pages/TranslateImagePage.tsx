@@ -65,7 +65,8 @@ interface TranslationJob {
   status: JobStatus;
   error: string | null;
   hint: string | null;
-  renderMode?: "stable";
+  renderMode?: "stable" | "ai";
+  renderModel?: string;
 }
 
 const MAX_FILES = 8;
@@ -86,6 +87,17 @@ const TARGET_LANGUAGES = [
   { value: "ar", label: "العربية" },
   { value: "th", label: "ไทย" },
   { value: "vi", label: "Tiếng Việt" },
+];
+
+const TRANSLATION_RENDER_MODES = [
+  { value: "ai", label: "AI 精修替换" },
+  { value: "stable", label: "稳定替换" },
+] as const;
+
+const AI_REPLACE_MODELS = [
+  { value: "gemini-3.1-flash-image-preview", label: "Nano Banana 2" },
+  { value: "gemini-3-pro-image-preview", label: "Nano Banana Pro" },
+  { value: "gemini-2.5-flash-image", label: "Nano Banana" },
 ];
 
 const STATUS_META: Record<JobStatus, { label: string; className: string }> = {
@@ -691,6 +703,8 @@ export default function TranslateImagePage() {
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [isBatchRunning, setIsBatchRunning] = useState(false);
   const [targetLanguage, setTargetLanguage] = useState("en");
+  const [renderStrategy, setRenderStrategy] = useState<"ai" | "stable">("ai");
+  const [replaceModel, setReplaceModel] = useState("gemini-3.1-flash-image-preview");
   const [compareRatio, setCompareRatio] = useState(50);
   const [selectedTranslationIndex, setSelectedTranslationIndex] = useState<number | null>(null);
 
@@ -910,32 +924,60 @@ export default function TranslateImagePage() {
       updateJob(job.id, (current) => ({ ...current, status: "rendering", error: null, hint: null }));
 
       try {
-        let localImage = "";
-        try {
-          localImage = await renderTranslatedImageLocally(
-            job.originalImage,
-            job.translations,
-            targetLanguage,
-          );
-        } catch (advancedRenderError) {
-          console.warn("advanced translation render failed, fallback to simple renderer:", advancedRenderError);
-          localImage = await renderTranslatedImageSimple(
-            job.originalImage,
-            job.translations,
-            targetLanguage,
-          );
+        let outputImage = "";
+        let outputMode: "stable" | "ai" = "stable";
+        let outputModel: string | undefined;
+
+        if (renderStrategy === "ai") {
+          try {
+            const { data, error } = await supabase.functions.invoke("translate-image", {
+              body: {
+                imageUrl: job.originalImage,
+                step: "replace",
+                translations: job.translations,
+                targetLanguage,
+                preferredModel: replaceModel,
+              },
+            });
+            if (error) throw new Error(await readInvokeError(error));
+            if (!data?.imageUrl) throw new Error("AI 精修替换没有返回可用图片");
+            outputImage = data.imageUrl;
+            outputMode = "ai";
+            outputModel = typeof data?.model === "string" ? data.model : replaceModel;
+          } catch (replaceError) {
+            console.warn("ai replace failed, fallback to stable renderer:", replaceError);
+          }
+        }
+
+        if (!outputImage) {
+          try {
+            outputImage = await renderTranslatedImageLocally(
+              job.originalImage,
+              job.translations,
+              targetLanguage,
+            );
+          } catch (advancedRenderError) {
+            console.warn("advanced translation render failed, fallback to simple renderer:", advancedRenderError);
+            outputImage = await renderTranslatedImageSimple(
+              job.originalImage,
+              job.translations,
+              targetLanguage,
+            );
+          }
+          outputMode = "stable";
         }
 
         updateJob(job.id, (current) => ({
           ...current,
-          translatedImage: localImage,
+          translatedImage: outputImage,
           status: "done",
           error: null,
           hint: null,
-          renderMode: "stable",
+          renderMode: outputMode,
+          renderModel: outputModel,
         }));
 
-        void persistTranslatedImage(job, localImage)
+        void persistTranslatedImage(job, outputImage)
           .then((permanentUrl) => {
             updateJob(job.id, (current) =>
               current.status !== "done"
@@ -960,7 +1002,7 @@ export default function TranslateImagePage() {
         throw error;
       }
     },
-    [persistTranslatedImage, updateJob],
+    [persistTranslatedImage, replaceModel, renderStrategy, targetLanguage, updateJob],
   );
 
   const handleRecognize = useCallback(async () => {
@@ -1132,6 +1174,39 @@ export default function TranslateImagePage() {
               </Select>
             </div>
 
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-2">
+                <div className="text-sm font-medium text-foreground">生成模式</div>
+                <Select value={renderStrategy} onValueChange={(value: "ai" | "stable") => setRenderStrategy(value)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="选择模式" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TRANSLATION_RENDER_MODES.map((item) => (
+                      <SelectItem key={item.value} value={item.value}>
+                        {item.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <div className="text-sm font-medium text-foreground">精修模型</div>
+                <Select value={replaceModel} onValueChange={setReplaceModel} disabled={renderStrategy !== "ai"}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="选择模型" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {AI_REPLACE_MODELS.map((item) => (
+                      <SelectItem key={item.value} value={item.value}>
+                        {item.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
             <label className="flex cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-primary/30 bg-primary/5 px-4 py-5 text-center transition hover:border-primary/50 hover:bg-primary/10 sm:py-6">
               <div className="rounded-2xl bg-primary/10 p-3 text-primary">
                 <Upload className="h-5 w-5" />
@@ -1177,8 +1252,10 @@ export default function TranslateImagePage() {
                         <span className="text-xs text-muted-foreground">
                           {job.translations.length ? `${job.translations.length} 处文字` : "待识别"}
                         </span>
-                        {job.status === "done" && job.renderMode === "stable" && (
-                          <span className="text-xs text-emerald-700">稳定替换</span>
+                        {job.status === "done" && (
+                          <span className="text-xs text-emerald-700">
+                            {job.renderMode === "ai" ? "AI 精修替换" : "稳定替换"}
+                          </span>
                         )}
                       </div>
                       {job.status === "error" && job.error && (
@@ -1232,11 +1309,13 @@ export default function TranslateImagePage() {
                     </div>
                   </div>
                 )}
-                {activeJob.status === "done" && activeJob.renderMode === "stable" && (
+                {activeJob.status === "done" && (
                   <div className="mb-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
                     <div className="font-medium">当前任务已完成</div>
                     <div className="mt-1">
-                      当前结果使用稳定替换模式生成，优先保证版位正确和整体可用性。你可以通过下方对比快速检查哪里还需要继续优化。
+                      {activeJob.renderMode === "ai"
+                        ? `当前结果使用 AI 精修替换生成${activeJob.renderModel ? `（${AI_REPLACE_MODELS.find((item) => item.value === activeJob.renderModel)?.label || activeJob.renderModel}）` : ""}，会优先保留原海报版式和视觉关系。`
+                        : "当前结果使用稳定替换模式生成，优先保证版位正确和整体可用性。你可以通过下方对比快速检查哪里还需要继续优化。"}
                     </div>
                   </div>
                 )}
@@ -1246,9 +1325,9 @@ export default function TranslateImagePage() {
                       title="结果图"
                       subtitle={
                         activeJob.translatedImage
-                          ? activeJob.renderMode === "stable"
-                            ? "已自动加入图片库，当前为稳定替换结果"
-                            : "已自动加入图片库，来源为图文翻译"
+                          ? activeJob.renderMode === "ai"
+                            ? "已自动加入图片库，当前为 AI 精修替换结果"
+                            : "已自动加入图片库，当前为稳定替换结果"
                           : "生成后会自动存入图片库"
                       }
                       image={activeJob.translatedImage}
