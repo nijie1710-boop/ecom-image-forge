@@ -5,18 +5,50 @@ function normalizeAdminErrorMessage(message?: string) {
   if (!text) return "管理员请求失败，请稍后重试。";
 
   if (text.includes("not admin") || text.includes("没有管理员权限")) {
-    return "当前账号没有管理员权限，请确认管理员身份后重试。";
+    return "当前账号没有管理员权限，请重新登录管理员账号后再试。";
   }
 
-  if (text.includes("JWT") || text.includes("session") || text.includes("登录")) {
+  if (
+    text.includes("JWT") ||
+    text.includes("session") ||
+    text.includes("登录") ||
+    text.includes("token")
+  ) {
     return "登录状态已失效，请重新登录后再进入后台。";
   }
 
-  if (text.includes("Failed to send a request to the Edge Function")) {
+  if (
+    text.includes("Failed to send a request to the Edge Function") ||
+    text.includes("Edge Function returned a non-2xx status code")
+  ) {
     return "后台接口暂时不可用，请刷新页面后重试。";
   }
 
   return text;
+}
+
+async function readInvokeError(error: Error & { context?: Response | string }) {
+  const context = error.context;
+
+  if (context instanceof Response) {
+    try {
+      const text = await context.text();
+      try {
+        const payload = JSON.parse(text);
+        return normalizeAdminErrorMessage(payload?.error || error.message);
+      } catch {
+        return normalizeAdminErrorMessage(text || error.message);
+      }
+    } catch {
+      return normalizeAdminErrorMessage(error.message);
+    }
+  }
+
+  if (typeof context === "string") {
+    return normalizeAdminErrorMessage(context || error.message);
+  }
+
+  return normalizeAdminErrorMessage(error.message);
 }
 
 export async function callAdminApi(body: Record<string, unknown>) {
@@ -24,26 +56,19 @@ export async function callAdminApi(body: Record<string, unknown>) {
     data: { session },
   } = await supabase.auth.getSession();
 
-  if (!session) {
+  if (!session?.user) {
     throw new Error("登录状态已失效，请重新登录后再进入后台。");
   }
 
   const { data, error } = await supabase.functions.invoke("admin-users", {
     body,
+    headers: {
+      "x-admin-email": session.user.email ?? "",
+    },
   });
 
   if (error) {
-    const response = (error as Error & { context?: Response }).context;
-    if (response) {
-      try {
-        const payload = await response.json();
-        throw new Error(normalizeAdminErrorMessage(payload?.error || error.message));
-      } catch {
-        throw new Error(normalizeAdminErrorMessage(error.message));
-      }
-    }
-
-    throw new Error(normalizeAdminErrorMessage(error.message));
+    throw new Error(await readInvokeError(error as Error & { context?: Response | string }));
   }
 
   if (data?.error) {

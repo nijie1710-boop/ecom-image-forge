@@ -100,6 +100,18 @@ export interface DetailGenParams {
   onComplete?: (screens: DetailScreenJobResult[]) => void;
 }
 
+type DetailScreenAttemptArgs = {
+  prompt: string;
+  aspectRatio: string;
+  textLanguage: string;
+  model?: GenerationModel;
+  resolution?: OutputResolution;
+  imageBase64: string;
+  referenceGallery?: string[];
+  styleReferenceImage?: string;
+  styleReferenceText?: string;
+};
+
 interface GenerationContextType {
   jobs: GenerationJob[];
   activeJob: GenerationJob | null;
@@ -147,6 +159,34 @@ async function blobFromDataUrlOrRemote(source: string): Promise<Blob> {
     throw new Error(`图片下载失败: ${response.status}`);
   }
   return await response.blob();
+}
+
+async function generateDetailScreenWithRetry(args: DetailScreenAttemptArgs) {
+  let lastError = "当前生成失败，请重试";
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const result = await generateImage({
+      prompt: args.prompt,
+      aspectRatio: args.aspectRatio,
+      n: 1,
+      imageBase64: args.imageBase64,
+      imageType: "详情图",
+      textLanguage: args.textLanguage,
+      model: args.model,
+      resolution: args.resolution,
+      referenceGallery: args.referenceGallery,
+      styleReferenceImage: args.styleReferenceImage,
+      styleReferenceText: args.styleReferenceText,
+    });
+
+    if (!result.error && result.images[0]) {
+      return result.images[0];
+    }
+
+    lastError = result.error || lastError;
+  }
+
+  throw new Error(lastError);
 }
 
 export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -613,6 +653,7 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             "detail-style",
           );
           const completedImages: string[] = [];
+          const failedScreens: Array<{ screen: number; error: string }> = [];
 
           for (let index = 0; index < params.screens.length; index += 1) {
             const screen = params.screens[index];
