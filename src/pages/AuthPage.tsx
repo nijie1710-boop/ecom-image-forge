@@ -2,7 +2,6 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { lovable } from "@/integrations/lovable/index";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Loader2, ArrowLeft } from "lucide-react";
@@ -13,6 +12,21 @@ import logo from "@/assets/logo.png";
 
 type AuthMode = "login" | "signup" | "forgot";
 
+function isMobileInAppBrowser() {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent.toLowerCase();
+  return [
+    "micromessenger",
+    "wechat",
+    "weibo",
+    "qq/",
+    "qqbrowser",
+    "alipayclient",
+    "dingtalk",
+    "feishu",
+  ].some((keyword) => ua.includes(keyword));
+}
+
 const AuthPage = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -22,6 +36,32 @@ const AuthPage = () => {
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [loading, setLoading] = useState(false);
+
+  const handleGoogleLogin = async () => {
+    if (isMobileInAppBrowser()) {
+      toast({
+        title: "当前环境不支持 Google 登录",
+        description: "请点击右上角在系统浏览器中打开，或直接使用邮箱密码登录。",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: `${window.location.origin}/dashboard`,
+      },
+    });
+
+    if (error) {
+      toast({
+        title: t("auth.error"),
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -226,18 +266,7 @@ const AuthPage = () => {
                     type="button"
                     variant="outline"
                     className="w-full h-11 font-medium"
-                    onClick={async () => {
-                      const { error } = await lovable.auth.signInWithOAuth("google", {
-                        redirect_uri: window.location.origin,
-                      });
-                      if (error) {
-                        toast({
-                          title: t("auth.error"),
-                          description: error.message,
-                          variant: "destructive",
-                        });
-                      }
-                    }}
+                    onClick={handleGoogleLogin}
                   >
                     <svg className="h-4 w-4 mr-2" viewBox="0 0 24 24">
                       <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/>
