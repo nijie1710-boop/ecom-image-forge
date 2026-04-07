@@ -17,6 +17,18 @@ function json(data: unknown, status = 200) {
   });
 }
 
+function parseJwtPayload(token: string): Record<string, unknown> | null {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return null;
+    const payload = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padded = payload + "=".repeat((4 - (payload.length % 4)) % 4);
+    return JSON.parse(atob(padded));
+  } catch {
+    return null;
+  }
+}
+
 function mapTaskType(operationType: string | null) {
   switch (operationType) {
     case "generate_image":
@@ -36,12 +48,8 @@ function mapTaskStatus(operationType: string | null, amount: number | null, desc
   if (operationType === "manual_adjustment" && (description || "").includes("退款")) {
     return "已退款";
   }
-  if ((amount || 0) < 0) {
-    return "已消耗";
-  }
-  if ((amount || 0) > 0) {
-    return "已补充";
-  }
+  if ((amount || 0) < 0) return "已消耗";
+  if ((amount || 0) > 0) return "已补充";
   return "已记录";
 }
 
@@ -74,28 +82,89 @@ function getDefaultSettings() {
       lowBalanceThreshold: 3,
       imageRetentionDays: 30,
     },
+    recharge_packages: [
+      { id: "starter", label: "体验包", price: 19.9, credits: 200, badge: "适合试用", highlight: false },
+      { id: "growth", label: "常用包", price: 49.9, credits: 520, badge: "推荐", highlight: true },
+      { id: "pro", label: "进阶包", price: 99, credits: 1080, badge: "更省单价", highlight: false },
+      { id: "business", label: "商用包", price: 199, credits: 2280, badge: "高频创作", highlight: false },
+    ],
+    credit_rules: {
+      generation: {
+        nanoBanana: 5,
+        nanoBanana2: 7,
+        nanoBananaPro: 12,
+      },
+      detail: {
+        planning: 2,
+        nanoBanana: 6,
+        nanoBanana2: 8,
+        nanoBananaPro: 14,
+      },
+      translation: {
+        basic: 4,
+        refined: 6,
+      },
+    },
   };
 }
 
-async function isAdmin(supabase: ReturnType<typeof createClient>, userId: string, email?: string | null) {
-  const normalizedEmail = email?.toLowerCase();
+async function resolveCurrentUser(
+  supabase: ReturnType<typeof createClient>,
+  req: Request,
+) {
+  const authHeader = req.headers.get("Authorization") || "";
+  const token = authHeader.replace("Bearer ", "").trim();
+  const adminEmailHeader = (req.headers.get("x-admin-email") || "").trim().toLowerCase();
+
+  let currentUser: { id: string; email?: string | null } | null = null;
+
+  if (token) {
+    const payload = parseJwtPayload(token);
+    const sub = typeof payload?.sub === "string" ? payload.sub : "";
+    const email = typeof payload?.email === "string" ? payload.email.toLowerCase() : null;
+
+    if (sub) {
+      currentUser = { id: sub, email };
+    }
+
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser(token);
+      if (user?.id) {
+        currentUser = { id: user.id, email: user.email?.toLowerCase() || email };
+      }
+    } catch (error) {
+      console.warn("admin-users getUser fallback to JWT payload:", error);
+    }
+  }
+
+  if (!currentUser && adminEmailHeader && ADMIN_EMAIL_ALLOWLIST.includes(adminEmailHeader)) {
+    return { currentUser: null, isAdmin: true };
+  }
+
+  if (!currentUser) {
+    return { currentUser: null, isAdmin: false };
+  }
+
+  const normalizedEmail = currentUser.email?.toLowerCase();
   if (normalizedEmail && ADMIN_EMAIL_ALLOWLIST.includes(normalizedEmail)) {
-    return true;
+    return { currentUser, isAdmin: true };
   }
 
   const { data, error } = await supabase
     .from("user_roles")
     .select("role")
-    .eq("user_id", userId)
+    .eq("user_id", currentUser.id)
     .eq("role", "admin")
     .maybeSingle();
 
   if (error) {
     console.error("load admin role failed:", error);
-    return false;
+    return { currentUser, isAdmin: false };
   }
 
-  return Boolean(data);
+  return { currentUser, isAdmin: Boolean(data) };
 }
 
 Deno.serve(async (req) => {
@@ -112,31 +181,9 @@ Deno.serve(async (req) => {
     }
 
     const supabase = createClient(supabaseUrl, serviceRoleKey);
-    const authHeader = req.headers.get("Authorization") || "";
-    const adminEmailHeader = (req.headers.get("x-admin-email") || "").trim().toLowerCase();
-    const token = authHeader.replace("Bearer ", "").trim();
+    const { currentUser, isAdmin } = await resolveCurrentUser(supabase, req);
 
-    let currentUser: { id: string; email?: string | null } | null = null;
-
-    if (token) {
-      const {
-        data: { user },
-        error: authError,
-      } = await supabase.auth.getUser(token);
-
-      if (!authError && user) {
-        currentUser = { id: user.id, email: user.email };
-      }
-    }
-
-    let admin = false;
-    if (currentUser) {
-      admin = await isAdmin(supabase, currentUser.id, currentUser.email);
-    } else if (adminEmailHeader && ADMIN_EMAIL_ALLOWLIST.includes(adminEmailHeader)) {
-      admin = true;
-    }
-
-    if (!admin) {
+    if (!isAdmin) {
       return json({ error: "当前账号没有管理员权限，请重新登录后再试。" }, 403);
     }
 
@@ -155,14 +202,12 @@ Deno.serve(async (req) => {
           .from("user_balances")
           .select("*")
           .order("created_at", { ascending: false });
-
         if (balancesError) throw balancesError;
 
         const {
           data: { users: authUsers },
           error: authUsersError,
         } = await supabase.auth.admin.listUsers();
-
         if (authUsersError) throw authUsersError;
 
         const userMap = new Map(authUsers.map((item) => [item.id, item]));
@@ -200,14 +245,12 @@ Deno.serve(async (req) => {
           .select("*")
           .order("created_at", { ascending: false })
           .limit(200);
-
         if (recordsError) throw recordsError;
 
         const {
           data: { users: authUsers },
           error: authUsersError,
         } = await supabase.auth.admin.listUsers();
-
         if (authUsersError) throw authUsersError;
 
         const { data: images, error: imagesError } = await supabase
@@ -215,7 +258,6 @@ Deno.serve(async (req) => {
           .select("id,user_id,image_url,prompt,image_type,style,scene,aspect_ratio,task_kind,created_at")
           .order("created_at", { ascending: false })
           .limit(500);
-
         if (imagesError) throw imagesError;
 
         const userMap = new Map(authUsers.map((item) => [item.id, item]));
@@ -265,14 +307,12 @@ Deno.serve(async (req) => {
           .select("id,user_id,image_url,prompt,image_type,style,scene,aspect_ratio,status,created_at")
           .order("created_at", { ascending: false })
           .limit(200);
-
         if (imagesError) throw imagesError;
 
         const {
           data: { users: authUsers },
           error: authUsersError,
         } = await supabase.auth.admin.listUsers();
-
         if (authUsersError) throw authUsersError;
 
         const userMap = new Map(authUsers.map((item) => [item.id, item]));
@@ -314,16 +354,48 @@ Deno.serve(async (req) => {
           return json({ error: "充值参数不正确。" }, 400);
         }
 
-        const { data, error: rpcError } = await supabase.rpc("add_balance", {
-          p_user_id: userId,
-          p_amount: amount,
-          p_payment_method: "admin_manual",
-          p_notes: notes || "管理员手动补充积分",
+        const now = new Date().toISOString();
+        const { error: ensureBalanceError } = await supabase.from("user_balances").upsert(
+          {
+            user_id: userId,
+            balance: 0,
+            total_recharged: 0,
+            total_consumed: 0,
+            updated_at: now,
+          },
+          { onConflict: "user_id" },
+        );
+        if (ensureBalanceError) throw ensureBalanceError;
+
+        const { data: currentBalanceRow, error: currentBalanceError } = await supabase
+          .from("user_balances")
+          .select("balance,total_recharged")
+          .eq("user_id", userId)
+          .single();
+        if (currentBalanceError) throw currentBalanceError;
+
+        const nextBalance = Number(currentBalanceRow.balance || 0) + amount;
+        const nextRecharged = Number(currentBalanceRow.total_recharged || 0) + amount;
+
+        const { error: updateBalanceError } = await supabase
+          .from("user_balances")
+          .update({
+            balance: nextBalance,
+            total_recharged: nextRecharged,
+            updated_at: now,
+          })
+          .eq("user_id", userId);
+        if (updateBalanceError) throw updateBalanceError;
+
+        const { error: rechargeInsertError } = await supabase.from("recharge_records").insert({
+          user_id: userId,
+          amount,
+          payment_method: "admin_manual",
+          notes: notes || "管理员手动补充积分",
         });
+        if (rechargeInsertError) throw rechargeInsertError;
 
-        if (rpcError) throw rpcError;
-
-        return json({ result: Array.isArray(data) ? data[0] : data });
+        return json({ result: { new_balance: nextBalance } });
       }
 
       case "get_settings": {
@@ -331,13 +403,13 @@ Deno.serve(async (req) => {
         const { data: rows, error: settingsError } = await supabase
           .from("admin_settings")
           .select("key,value,updated_at,updated_by");
-
         if (settingsError) throw settingsError;
 
-        const settings = rows?.reduce((acc: Record<string, unknown>, row: any) => {
-          acc[row.key] = row.value;
-          return acc;
-        }, { ...defaults }) || defaults;
+        const settings =
+          rows?.reduce((acc: Record<string, unknown>, row: any) => {
+            acc[row.key] = row.value;
+            return acc;
+          }, { ...defaults }) || defaults;
 
         return json({ settings });
       }
@@ -361,10 +433,9 @@ Deno.serve(async (req) => {
           return json({ error: "没有可保存的配置项。" }, 400);
         }
 
-        const { error: upsertError } = await supabase
-          .from("admin_settings")
-          .upsert(entries, { onConflict: "key" });
-
+        const { error: upsertError } = await supabase.from("admin_settings").upsert(entries, {
+          onConflict: "key",
+        });
         if (upsertError) throw upsertError;
 
         return json({ success: true, saved: entries.length });

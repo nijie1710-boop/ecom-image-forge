@@ -1,12 +1,3 @@
-// Supabase Edge Function: manage-balance
-// 积分余额管理 - 支持查询余额、充值扣费操作
-//
-// 权限规则：
-// - get / history：登录用户只能操作自己的数据
-// - deduct：登录用户只能扣自己的余额（生成图片时调用）
-// - recharge：仅管理员可操作（查询 user_roles 表，role=admin）
-//
-// 管理员判断：查 user_roles 表，user_id=当前用户.id AND role='admin'
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -14,14 +5,133 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+type BalanceAction =
+  | "get"
+  | "history"
+  | "deduct"
+  | "recharge"
+  | "get_pricing"
+  | "purchase_package";
+
 interface BalanceRequest {
-  userId?: string; // 已废弃，前端不应传此字段，否则会被忽略
-  action: "get" | "recharge" | "deduct" | "history";
+  action: BalanceAction;
+  userId?: string;
   amount?: number;
   operationType?: string;
   description?: string;
   paymentMethod?: string;
   notes?: string;
+  packageId?: string;
+}
+
+interface RechargePackage {
+  id: string;
+  label: string;
+  price: number;
+  credits: number;
+  badge?: string;
+  highlight?: boolean;
+}
+
+function json(data: unknown, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      ...corsHeaders,
+      "Content-Type": "application/json",
+    },
+  });
+}
+
+function getDefaultPricing() {
+  return {
+    recharge_packages: [
+      { id: "starter", label: "体验包", price: 19.9, credits: 200, badge: "适合试用", highlight: false },
+      { id: "growth", label: "常用包", price: 49.9, credits: 520, badge: "推荐", highlight: true },
+      { id: "pro", label: "进阶包", price: 99, credits: 1080, badge: "更省单价", highlight: false },
+      { id: "business", label: "商用包", price: 199, credits: 2280, badge: "高频创作", highlight: false },
+    ],
+    credit_rules: {
+      generation: {
+        nanoBanana: 5,
+        nanoBanana2: 7,
+        nanoBananaPro: 12,
+      },
+      detail: {
+        planning: 2,
+        nanoBanana: 6,
+        nanoBanana2: 8,
+        nanoBananaPro: 14,
+      },
+      translation: {
+        basic: 4,
+        refined: 6,
+      },
+    },
+  };
+}
+
+async function ensureBalanceRow(supabase: ReturnType<typeof createClient>, userId: string) {
+  const { error } = await supabase.from("user_balances").insert({
+    user_id: userId,
+    balance: 0,
+    total_recharged: 0,
+    total_consumed: 0,
+  });
+
+  if (error && !String(error.message || "").includes("duplicate key")) {
+    throw error;
+  }
+}
+
+async function applyRecharge(
+  supabase: ReturnType<typeof createClient>,
+  userId: string,
+  credits: number,
+  paymentMethod: string,
+  notes?: string,
+) {
+  if (!credits || credits <= 0) {
+    throw new Error("充值积分必须大于 0");
+  }
+
+  await ensureBalanceRow(supabase, userId);
+
+  const now = new Date().toISOString();
+  const { data: currentBalanceRow, error: currentBalanceError } = await supabase
+    .from("user_balances")
+    .select("balance,total_recharged")
+    .eq("user_id", userId)
+    .single();
+
+  if (currentBalanceError) throw currentBalanceError;
+
+  const nextBalance = Number(currentBalanceRow.balance || 0) + credits;
+  const nextRecharged = Number(currentBalanceRow.total_recharged || 0) + credits;
+
+  const { error: updateBalanceError } = await supabase
+    .from("user_balances")
+    .update({
+      balance: nextBalance,
+      total_recharged: nextRecharged,
+      updated_at: now,
+    })
+    .eq("user_id", userId);
+
+  if (updateBalanceError) throw updateBalanceError;
+
+  const { error: rechargeInsertError } = await supabase.from("recharge_records").insert({
+    user_id: userId,
+    amount: credits,
+    payment_method: paymentMethod,
+    status: "completed",
+    notes: notes || "站内自动充值",
+    completed_at: now,
+  });
+
+  if (rechargeInsertError) throw rechargeInsertError;
+
+  return nextBalance;
 }
 
 Deno.serve(async (req) => {
@@ -30,35 +140,43 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-    // 安全检查：拒绝空 Authorization
+    if (!supabaseUrl || !supabaseServiceKey) {
+      return json({ error: "系统配置缺失，请联系管理员。" }, 500);
+    }
+
     const authHeader = req.headers.get("Authorization");
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return new Response(JSON.stringify({ error: "未授权：缺少有效的 Authorization" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return json({ error: "未登录，请先登录" }, 401);
     }
+
     const token = authHeader.replace("Bearer ", "");
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // 验证用户 token
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser(token);
+
     if (authError || !user) {
-      return new Response(JSON.stringify({ error: "未授权：用户验证失败" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return json({ error: "未登录，请先登录" }, 401);
     }
 
-    const { action, amount, operationType, description, paymentMethod, notes } = await req.json() as BalanceRequest;
+    const body = (await req.json().catch(() => ({}))) as BalanceRequest;
+    const {
+      action,
+      amount,
+      operationType,
+      description,
+      paymentMethod,
+      notes,
+      packageId,
+    } = body;
 
-    // ⚠️ 安全核心：所有操作强制使用登录用户的真实 ID，前端传来的 userId 完全忽略
-    const targetUserId = user.id;
+    const targetUserId = body.userId || user.id;
 
-    // 管理员判断：查 user_roles 表，user_id=当前用户.id AND role='admin'
     const { data: roleData } = await supabase
       .from("user_roles")
       .select("role")
@@ -69,96 +187,159 @@ Deno.serve(async (req) => {
 
     switch (action) {
       case "get": {
-        // 权限：登录用户只能查自己的余额
-        const { data, error } = await supabase.rpc("get_user_balance", { p_user_id: targetUserId });
+        await ensureBalanceRow(supabase, user.id);
+        const { data, error } = await supabase
+          .from("user_balances")
+          .select("balance,total_recharged,total_consumed")
+          .eq("user_id", user.id)
+          .maybeSingle();
         if (error) throw error;
-        return new Response(JSON.stringify({ balance: data[0] }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+
+        const { count: rechargeCount, error: rechargeCountError } = await supabase
+          .from("recharge_records")
+          .select("*", { count: "exact", head: true })
+          .eq("user_id", user.id);
+        if (rechargeCountError) throw rechargeCountError;
+
+        const { count: consumptionCount, error: consumptionCountError } = await supabase
+          .from("consumption_records")
+          .select("*", { count: "exact", head: true })
+          .eq("user_id", user.id);
+        if (consumptionCountError) throw consumptionCountError;
+
+        return json({
+          balance: {
+            balance: Number(data?.balance || 0),
+            total_recharged: Number(data?.total_recharged || 0),
+            total_consumed: Number(data?.total_consumed || 0),
+            recharge_count: Number(rechargeCount || 0),
+            consumption_count: Number(consumptionCount || 0),
+          },
+        });
+      }
+
+      case "get_pricing": {
+        const defaults = getDefaultPricing();
+        const { data: rows, error } = await supabase
+          .from("admin_settings")
+          .select("key,value")
+          .in("key", ["recharge_packages", "credit_rules"]);
+
+        if (error) throw error;
+
+        const settings =
+          rows?.reduce((acc: Record<string, unknown>, row: { key: string; value: unknown }) => {
+            acc[row.key] = row.value;
+            return acc;
+          }, { ...defaults }) || defaults;
+
+        return json({
+          packages: settings.recharge_packages || defaults.recharge_packages,
+          creditRules: settings.credit_rules || defaults.credit_rules,
+        });
+      }
+
+      case "purchase_package": {
+        const defaults = getDefaultPricing();
+        const { data: rows } = await supabase
+          .from("admin_settings")
+          .select("key,value")
+          .eq("key", "recharge_packages");
+
+        const packages =
+          (rows?.[0]?.value as RechargePackage[] | undefined) || defaults.recharge_packages;
+
+        const selectedPackage = packages.find((item) => item.id === packageId);
+        if (!selectedPackage) {
+          return json({ error: "充值套餐不存在，请刷新后重试。" }, 400);
+        }
+
+        const newBalance = await applyRecharge(
+          supabase,
+          user.id,
+          Number(selectedPackage.credits || 0),
+          paymentMethod || "auto_credit",
+          notes || `购买${selectedPackage.label}`,
+        );
+
+        return json({
+          success: true,
+          package: selectedPackage,
+          result: { new_balance: newBalance },
         });
       }
 
       case "deduct": {
-        // 权限：登录用户只能扣自己的余额（图片生成时由系统自动调用）
         if (!amount || amount <= 0) {
-          return new Response(JSON.stringify({ error: "扣费金额必须大于0" }), {
-            status: 400,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
+          return json({ error: "扣费积分必须大于 0" }, 400);
         }
+
         const { data, error } = await supabase.rpc("deduct_balance", {
-          p_user_id: targetUserId,
+          p_user_id: user.id,
           p_amount: amount,
           p_operation_type: operationType || "generate_image",
           p_description: description,
         });
+
         if (error) throw error;
-        return new Response(JSON.stringify({ result: data[0] }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        return json({ result: data?.[0] });
       }
 
       case "history": {
-        // 权限：登录用户只能查自己的历史记录
         const [recharges, consumptions] = await Promise.all([
           supabase
             .from("recharge_records")
             .select("*")
-            .eq("user_id", targetUserId)
+            .eq("user_id", user.id)
             .order("created_at", { ascending: false })
             .limit(50),
           supabase
             .from("consumption_records")
             .select("*")
-            .eq("user_id", targetUserId)
+            .eq("user_id", user.id)
             .order("created_at", { ascending: false })
             .limit(50),
         ]);
-        return new Response(JSON.stringify({
+
+        if (recharges.error) throw recharges.error;
+        if (consumptions.error) throw consumptions.error;
+
+        return json({
           recharges: recharges.data || [],
           consumptions: consumptions.data || [],
-        }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
       case "recharge": {
-        // 权限：仅管理员可操作（查询 user_roles 表判断）
         if (!isAdmin) {
-          return new Response(JSON.stringify({ error: "权限不足：充值操作仅管理员可用" }), {
-            status: 403,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
+          return json({ error: "权限不足，当前账号不能手动充值。" }, 403);
         }
+
         if (!amount || amount <= 0) {
-          return new Response(JSON.stringify({ error: "充值金额必须大于0" }), {
-            status: 400,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
+          return json({ error: "充值积分必须大于 0" }, 400);
         }
-        // 管理员可为任意用户充值（此时 targetUserId 仍为自己，实际管理员应传 targetUserId 参数）
-        // TODO: 管理员充值时前端应传 userId 参数，这里暂时只能给自己充值
-        const { data, error } = await supabase.rpc("add_balance", {
-          p_user_id: targetUserId,
-          p_amount: amount,
-          p_payment_method: paymentMethod,
-          p_notes: notes,
-        });
-        if (error) throw error;
-        return new Response(JSON.stringify({ result: data[0] }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+
+        const newBalance = await applyRecharge(
+          supabase,
+          targetUserId,
+          Number(amount),
+          paymentMethod || "admin_manual",
+          notes || "管理员手动补充积分",
+        );
+
+        return json({ result: { new_balance: newBalance } });
       }
 
       default:
-        return new Response(JSON.stringify({ error: "未知操作" }), {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        return json({ error: "未知操作" }, 400);
     }
   } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    console.error("manage-balance failed:", error);
+    return json(
+      {
+        error: error instanceof Error ? error.message : "当前请求失败，请稍后再试",
+      },
+      500,
+    );
   }
 });

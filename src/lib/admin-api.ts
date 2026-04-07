@@ -151,4 +151,29 @@ export interface AdminSettingsPayload {
     lowBalanceThreshold: number;
     imageRetentionDays: number;
   };
+  recharge_packages: Array<{
+    id: string;
+    label: string;
+    price: number;
+    credits: number;
+    badge?: string;
+    highlight?: boolean;
+  }>;
+  credit_rules: {
+    generation: {
+      nanoBanana: number;
+      nanoBanana2: number;
+      nanoBananaPro: number;
+    };
+    detail: {
+      planning: number;
+      nanoBanana: number;
+      nanoBanana2: number;
+      nanoBananaPro: number;
+    };
+    translation: {
+      basic: number;
+      refined: number;
+    };
+  };
 }

@@ -1,17 +1,19 @@
-import React, { useState, useEffect } from "react";
-import { useTranslation } from "react-i18next";
-import { Coins, CreditCard, History, CheckCircle, Loader2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Coins, CreditCard, History, Loader2, ReceiptText, Sparkles } from "lucide-react";
+import { toast } from "sonner";
+
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { toast } from "sonner";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 
 interface BalanceInfo {
   balance: number;
   total_recharged: number;
   total_consumed: number;
-  recharge_count: number;
-  consumption_count: number;
+  recharge_count?: number;
+  consumption_count?: number;
 }
 
 interface RechargeRecord {
@@ -19,395 +21,413 @@ interface RechargeRecord {
   amount: number;
   payment_method: string;
   status: string;
-  notes: string;
+  notes?: string | null;
   created_at: string;
-  completed_at: string;
+  completed_at?: string | null;
 }
 
 interface ConsumptionRecord {
   id: string;
   amount: number;
   operation_type: string;
-  description: string;
+  description?: string | null;
   created_at: string;
 }
 
-const RECHARGE_PACKAGES = [
-  { amount: 50, coins: 50, label: "50积分", price: "¥50", popular: false },
-  { amount: 100, coins: 110, label: "110积分", price: "¥100", popular: true, bonus: "多送10积分" },
-  { amount: 200, coins: 230, label: "230积分", price: "¥200", popular: false, bonus: "多送30积分" },
-  { amount: 500, coins: 600, label: "600积分", price: "¥500", popular: false, bonus: "多送100积分" },
-];
+interface RechargePackage {
+  id: string;
+  label: string;
+  price: number;
+  credits: number;
+  badge?: string;
+  highlight?: boolean;
+}
 
-const COST_PER_IMAGE = 1; // 每张图消耗1积分
+interface CreditRules {
+  generation: {
+    nanoBanana: number;
+    nanoBanana2: number;
+    nanoBananaPro: number;
+  };
+  detail: {
+    planning: number;
+    nanoBanana: number;
+    nanoBanana2: number;
+    nanoBananaPro: number;
+  };
+  translation: {
+    basic: number;
+    refined: number;
+  };
+}
+
+function formatDate(dateStr?: string | null) {
+  if (!dateStr) return "-";
+  return new Date(dateStr).toLocaleString("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function getOperationLabel(type: string) {
+  const labels: Record<string, string> = {
+    generate_image: "AI 生图",
+    generate_copy: "AI 详情页",
+    translate_image: "图文翻译",
+    manual_adjustment: "手动调整",
+  };
+
+  return labels[type] || type || "其他";
+}
 
 export default function RechargePage() {
-  const { t } = useTranslation();
+  const [isLoading, setIsLoading] = useState(true);
+  const [isPurchasing, setIsPurchasing] = useState(false);
   const [balance, setBalance] = useState<BalanceInfo | null>(null);
+  const [packages, setPackages] = useState<RechargePackage[]>([]);
+  const [creditRules, setCreditRules] = useState<CreditRules | null>(null);
   const [rechargeHistory, setRechargeHistory] = useState<RechargeRecord[]>([]);
   const [consumptionHistory, setConsumptionHistory] = useState<ConsumptionRecord[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [selectedPackage, setSelectedPackage] = useState<typeof RECHARGE_PACKAGES[0] | null>(null);
-  const [showQR, setShowQR] = useState(false);
-  const [activeTab, setActiveTab] = useState<"recharge" | "history">("recharge");
+  const [selectedPackageId, setSelectedPackageId] = useState("");
+
+  const selectedPackage = useMemo(
+    () => packages.find((item) => item.id === selectedPackageId) || null,
+    [packages, selectedPackageId],
+  );
 
   useEffect(() => {
-    loadBalance();
-    loadHistory();
+    void loadAll();
   }, []);
 
-  const loadBalance = async () => {
+  async function invokeManageBalance(body: Record<string, unknown>) {
+    const { data, error } = await supabase.functions.invoke("manage-balance", { body });
+    if (error) throw error;
+    if (data?.error) throw new Error(String(data.error));
+    return data;
+  }
+
+  async function loadAll() {
+    setIsLoading(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        toast.error("请先登录");
-        return;
-      }
+      const [balanceResponse, pricingResponse, historyResponse] = await Promise.all([
+        invokeManageBalance({ action: "get" }),
+        invokeManageBalance({ action: "get_pricing" }),
+        invokeManageBalance({ action: "history" }),
+      ]);
 
-      const { data, error } = await supabase.functions.invoke("manage-balance", {
-        body: { action: "get" },
+      setBalance(balanceResponse.balance || null);
+      setPackages(pricingResponse.packages || []);
+      setCreditRules(pricingResponse.creditRules || null);
+      setRechargeHistory(historyResponse.recharges || []);
+      setConsumptionHistory(historyResponse.consumptions || []);
+      setSelectedPackageId((current) => {
+        if (current) return current;
+        const highlighted = pricingResponse.packages?.find((item: RechargePackage) => item.highlight);
+        return highlighted?.id || pricingResponse.packages?.[0]?.id || "";
       });
-
-      if (error) throw error;
-      setBalance(data.balance);
-    } catch (err: any) {
-      console.error("加载余额失败:", err);
-      toast.error("加载余额失败");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "加载充值中心失败，请稍后再试。");
     } finally {
       setIsLoading(false);
     }
-  };
+  }
 
-  const loadHistory = async () => {
+  async function handlePurchase() {
+    if (!selectedPackage) {
+      toast.error("请先选择一个充值套餐。");
+      return;
+    }
+
+    setIsPurchasing(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data, error } = await supabase.functions.invoke("manage-balance", {
-        body: { action: "history" },
+      const response = await invokeManageBalance({
+        action: "purchase_package",
+        packageId: selectedPackage.id,
+        paymentMethod: "auto_credit",
+        notes: `购买${selectedPackage.label}`,
       });
 
-      if (error) throw error;
-      setRechargeHistory(data.recharges || []);
-      setConsumptionHistory(data.consumptions || []);
-    } catch (err: any) {
-      console.error("加载历史记录失败:", err);
+      toast.success(`充值成功，已到账 ${selectedPackage.credits} 积分。`);
+      setBalance((current) =>
+        current
+          ? {
+              ...current,
+              balance: response.result?.new_balance ?? current.balance + selectedPackage.credits,
+              total_recharged: current.total_recharged + selectedPackage.credits,
+            }
+          : current,
+      );
+      await loadAll();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "充值失败，请稍后再试。");
+    } finally {
+      setIsPurchasing(false);
     }
-  };
-
-  const handleRecharge = async (pkg: typeof RECHARGE_PACKAGES[0]) => {
-    setSelectedPackage(pkg);
-    setShowQR(true);
-  };
-
-  const handleConfirmPayment = async () => {
-    if (!selectedPackage) return;
-
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        toast.error("请先登录");
-        return;
-      }
-
-      // 调用充值接口（这里需要管理员审核后才能到账）
-      const { error } = await supabase.functions.invoke("manage-balance", {
-        body: {
-          action: "recharge",
-          amount: selectedPackage.coins,
-          paymentMethod: "wechat",
-          notes: `申请充值${selectedPackage.coins}积分`,
-        },
-      });
-
-      if (error) throw error;
-
-      toast.success("充值申请已提交！请联系客服确认转账后加积分");
-      setShowQR(false);
-      setSelectedPackage(null);
-      loadBalance();
-      loadHistory();
-    } catch (err: any) {
-      toast.error(err.message || "提交失败");
-    }
-  };
-
-  const formatDate = (dateStr: string) => {
-    if (!dateStr) return "-";
-    return new Date(dateStr).toLocaleDateString("zh-CN", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
-
-  const getOperationLabel = (type: string) => {
-    const labels: Record<string, string> = {
-      generate_image: "生成图片",
-      generate_copy: "生成文案",
-      translate_image: "翻译图片",
-      manual_adjustment: "手动调整",
-    };
-    return labels[type] || type;
-  };
+  }
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <Loader2 className="w-8 h-8 animate-spin text-purple-600" />
+      <div className="flex min-h-[420px] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
   }
 
-  // ========== 诊断信息（部署排查用）==========
-  const BUILD_TAG = "diag-2026-03-28-01";
-  const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "未设置";
-  const PROJECT_REF = SUPABASE_URL.match(/https?:\/\/([^.]+)\.supabase\.co/)?.[1] || "解析失败";
-  const ORIGIN = typeof window !== "undefined" ? window.location.origin : "N/A";
-
   return (
-    <div className="space-y-6 p-4 max-w-4xl mx-auto">
-      {/* 诊断信息卡片（临时排查用） */}
-      <div style={{ background: "#1a1a2e", color: "#00ff88", padding: "12px 16px", borderRadius: "8px", fontFamily: "monospace", fontSize: "13px" }}>
-        <div style={{ fontWeight: "bold", marginBottom: "6px", color: "#ff6b6b" }}>🔍 部署诊断信息</div>
-        <div>Build Tag : {BUILD_TAG}</div>
-        <div>Supabase URL : {SUPABASE_URL}</div>
-        <div>Project Ref : {PROJECT_REF}</div>
-        <div>Origin : {ORIGIN}</div>
-      </div>
-
-      {/* 余额卡片 */}
-      <Card className="bg-gradient-to-r from-purple-600 to-blue-600 text-white">
+    <div className="mx-auto max-w-6xl space-y-6">
+      <Card className="overflow-hidden border-none bg-gradient-to-r from-orange-500 via-pink-500 to-purple-500 text-white shadow-lg">
         <CardContent className="p-6">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <p className="text-purple-100 text-sm">当前积分余额</p>
-              <p className="text-4xl font-bold">{balance?.balance || 0}</p>
-              <p className="text-purple-100 text-sm mt-2">
-                已累计充值 {balance?.total_recharged || 0} 积分 · 已消耗 {balance?.total_consumed || 0} 积分
+              <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-medium">
+                <Sparkles className="h-3.5 w-3.5" />
+                充值中心
+              </div>
+              <h1 className="mt-3 text-3xl font-semibold">给你的创作额度快速补给</h1>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-white/85">
+                充值套餐与扣费规则直接来自后台系统配置。当前版本支持站内自动到账，购买成功后会立即增加积分并写入充值历史。
               </p>
             </div>
-            <Coins className="w-16 h-16 text-purple-200" />
+            <div className="grid min-w-[260px] gap-3 rounded-3xl border border-white/15 bg-white/10 p-4 backdrop-blur">
+              <div className="flex items-center justify-between text-sm text-white/80">
+                <span>当前可用积分</span>
+                <Coins className="h-4 w-4" />
+              </div>
+              <div className="text-4xl font-bold">{balance?.balance ?? 0}</div>
+              <div className="grid grid-cols-2 gap-3 text-xs text-white/80">
+                <div className="rounded-2xl bg-black/10 p-3">
+                  <div>累计充值</div>
+                  <div className="mt-1 text-lg font-semibold text-white">
+                    {balance?.total_recharged ?? 0}
+                  </div>
+                </div>
+                <div className="rounded-2xl bg-black/10 p-3">
+                  <div>累计消耗</div>
+                  <div className="mt-1 text-lg font-semibold text-white">
+                    {balance?.total_consumed ?? 0}
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* 费用说明 */}
-      <Card>
-        <CardContent className="p-4">
-          <p className="text-sm text-gray-600">
-            <strong>积分规则：</strong>生成1张图片消耗{COST_PER_IMAGE}积分，余额不足时将无法生成新图片。
-          </p>
-        </CardContent>
-      </Card>
+      <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+        <Card className="rounded-3xl border border-border shadow-sm">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-xl">
+              <CreditCard className="h-5 w-5 text-primary" />
+              充值套餐
+            </CardTitle>
+            <CardDescription>选择套餐后点击购买，积分会立即自动入账。</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              {packages.map((pkg) => {
+                const active = selectedPackageId === pkg.id;
+                const unitPrice = pkg.credits > 0 ? (pkg.price / pkg.credits).toFixed(3) : "-";
 
-      {/* Tab 切换 */}
-      <div className="flex gap-2 border-b">
-        <button
-          onClick={() => setActiveTab("recharge")}
-          className={`px-4 py-2 font-medium transition-colors ${
-            activeTab === "recharge"
-              ? "text-purple-600 border-b-2 border-purple-600"
-              : "text-gray-500 hover:text-gray-700"
-          }`}
-        >
-          充值积分
-        </button>
-        <button
-          onClick={() => setActiveTab("history")}
-          className={`px-4 py-2 font-medium transition-colors ${
-            activeTab === "history"
-              ? "text-purple-600 border-b-2 border-purple-600"
-              : "text-gray-500 hover:text-gray-700"
-          }`}
-        >
-          充值记录
-        </button>
+                return (
+                  <button
+                    key={pkg.id}
+                    type="button"
+                    onClick={() => setSelectedPackageId(pkg.id)}
+                    className={`rounded-3xl border p-5 text-left transition-all ${
+                      active
+                        ? "border-primary bg-primary/5 shadow-sm ring-2 ring-primary/15"
+                        : "border-border bg-card hover:border-primary/30 hover:bg-muted/30"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-lg font-semibold text-foreground">{pkg.label}</div>
+                        <div className="mt-1 text-sm text-muted-foreground">到账 {pkg.credits} 积分</div>
+                      </div>
+                      {pkg.badge ? (
+                        <Badge variant={pkg.highlight ? "default" : "outline"}>{pkg.badge}</Badge>
+                      ) : null}
+                    </div>
+                    <div className="mt-5 flex items-end justify-between gap-3">
+                      <div>
+                        <div className="text-3xl font-bold text-foreground">¥ {pkg.price}</div>
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          约 ¥ {unitPrice} / 积分
+                        </div>
+                      </div>
+                      {active ? <Badge>已选中</Badge> : null}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="rounded-3xl border border-dashed border-primary/25 bg-primary/5 p-4">
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <div className="text-sm font-medium text-foreground">当前已选</div>
+                  <div className="mt-1 text-2xl font-semibold text-foreground">
+                    {selectedPackage ? `${selectedPackage.label} · ${selectedPackage.credits} 积分` : "请选择一个充值套餐"}
+                  </div>
+                  <div className="mt-2 text-sm text-muted-foreground">
+                    购买后系统会自动加积分并写入充值记录，后续接入真实支付回调时也可以继续复用这条入账链路。
+                  </div>
+                </div>
+                <Button
+                  size="lg"
+                  className="min-w-[200px] rounded-2xl"
+                  onClick={handlePurchase}
+                  disabled={!selectedPackage || isPurchasing}
+                >
+                  {isPurchasing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CreditCard className="mr-2 h-4 w-4" />}
+                  立即充值
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="rounded-3xl border border-border shadow-sm">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-xl">
+              <ReceiptText className="h-5 w-5 text-primary" />
+              扣费规则
+            </CardTitle>
+            <CardDescription>下面的积分规则来自后台系统配置，便于你后续按模型和功能统一调价。</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="rounded-3xl border border-border bg-muted/30 p-4">
+              <div className="text-sm font-medium text-foreground">AI 生图</div>
+              <div className="mt-3 grid gap-3 text-sm text-muted-foreground">
+                <div className="flex items-center justify-between">
+                  <span>Nano Banana</span>
+                  <Badge variant="outline">{creditRules?.generation.nanoBanana ?? 0} 积分 / 张</Badge>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Nano Banana 2</span>
+                  <Badge variant="outline">{creditRules?.generation.nanoBanana2 ?? 0} 积分 / 张</Badge>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Nano Banana Pro</span>
+                  <Badge variant="outline">{creditRules?.generation.nanoBananaPro ?? 0} 积分 / 张</Badge>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-border bg-muted/30 p-4">
+              <div className="text-sm font-medium text-foreground">AI 详情页</div>
+              <div className="mt-3 grid gap-3 text-sm text-muted-foreground">
+                <div className="flex items-center justify-between">
+                  <span>方案策划</span>
+                  <Badge variant="outline">{creditRules?.detail.planning ?? 0} 积分 / 次</Badge>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Nano Banana</span>
+                  <Badge variant="outline">{creditRules?.detail.nanoBanana ?? 0} 积分 / 屏</Badge>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Nano Banana 2</span>
+                  <Badge variant="outline">{creditRules?.detail.nanoBanana2 ?? 0} 积分 / 屏</Badge>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Nano Banana Pro</span>
+                  <Badge variant="outline">{creditRules?.detail.nanoBananaPro ?? 0} 积分 / 屏</Badge>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-border bg-muted/30 p-4">
+              <div className="text-sm font-medium text-foreground">图文翻译</div>
+              <div className="mt-3 grid gap-3 text-sm text-muted-foreground">
+                <div className="flex items-center justify-between">
+                  <span>基础翻译</span>
+                  <Badge variant="outline">{creditRules?.translation.basic ?? 0} 积分 / 张</Badge>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>精修翻译</span>
+                  <Badge variant="outline">{creditRules?.translation.refined ?? 0} 积分 / 张</Badge>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
-      {/* 充值选项 */}
-      {activeTab === "recharge" && (
-        <>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {RECHARGE_PACKAGES.map((pkg) => (
-              <Card
-                key={pkg.amount}
-                className={`cursor-pointer transition-all hover:shadow-lg ${
-                  pkg.popular ? "ring-2 ring-purple-500" : ""
-                }`}
-                onClick={() => handleRecharge(pkg)}
-              >
-                <CardContent className="p-4 text-center">
-                  {pkg.popular && (
-                    <span className="inline-block px-2 py-1 text-xs bg-purple-100 text-purple-700 rounded-full mb-2">
-                      最受欢迎
-                    </span>
-                  )}
-                  <p className="text-2xl font-bold text-purple-600">{pkg.coins}</p>
-                  <p className="text-sm text-gray-500">积分</p>
-                  <p className="text-lg font-semibold mt-2">{pkg.price}</p>
-                  {pkg.bonus && (
-                    <p className="text-xs text-green-600 mt-1">{pkg.bonus}</p>
-                  )}
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+      <Card className="rounded-3xl border border-border shadow-sm">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-xl">
+            <History className="h-5 w-5 text-primary" />
+            积分流水
+          </CardTitle>
+          <CardDescription>包含最近充值与消费记录，方便你核对自动入账是否正常。</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Tabs defaultValue="recharge" className="space-y-4">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="recharge">充值记录</TabsTrigger>
+              <TabsTrigger value="consumption">消费记录</TabsTrigger>
+            </TabsList>
 
-          {/* 支付说明 */}
-          <Card className="bg-gray-50">
-            <CardContent className="p-4">
-              <h3 className="font-semibold mb-2">充值方式</h3>
-              <p className="text-sm text-gray-600 mb-2">1. 选择您要充值的积分套餐</p>
-              <p className="text-sm text-gray-600 mb-2">2. 点击"联系客服转账"获取收款二维码</p>
-              <p className="text-sm text-gray-600 mb-3">3. 转账成功后联系客服，积分会在1小时内到账</p>
-              <p className="text-xs text-gray-500">
-                <strong>客服微信：</strong>扫码页面底部二维码或搜索微信号
-              </p>
-            </CardContent>
-          </Card>
-
-          {/* 二维码弹窗 */}
-          {showQR && selectedPackage && (
-            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-              <Card className="max-w-md w-full">
-                <CardHeader>
-                  <CardTitle>扫码支付</CardTitle>
-                  <CardDescription>
-                    充值 <strong className="text-purple-600">{selectedPackage.coins}</strong> 积分
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {/* 微信收款码 */}
-                  <div className="bg-gray-100 rounded-lg p-8 text-center">
-                    <p className="text-gray-500 text-sm mb-4">请扫描下方微信收款码付款</p>
-                    <div className="w-48 h-48 mx-auto bg-white rounded-lg flex items-center justify-center border">
-                      <img src="/wechat-pay-qr.jpg" alt="微信收款码" className="w-full h-full object-contain rounded-lg" />
-                    </div>
-                    <p className="text-xs text-gray-500 mt-2">微信支付</p>
-                  </div>
-
-                  <div className="text-center text-sm text-gray-600">
-                    <p>支付 <strong className="text-purple-600">{selectedPackage.price}</strong> = {selectedPackage.coins} 积分</p>
-                    {selectedPackage.bonus && (
-                      <p className="text-green-600 mt-1">{selectedPackage.bonus}</p>
-                    )}
-                  </div>
-
-                  <div className="bg-yellow-50 p-3 rounded-lg text-sm text-yellow-800">
-                    <p>⚠️ 转账后请截图保留凭证</p>
-                    <p>然后点击"已转账，联系客服"确认</p>
-                  </div>
-
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      className="flex-1"
-                      onClick={() => {
-                        setShowQR(false);
-                        setSelectedPackage(null);
-                      }}
-                    >
-                      取消
-                    </Button>
-                    <Button
-                      className="flex-1 bg-purple-600 hover:bg-purple-700"
-                      onClick={handleConfirmPayment}
-                    >
-                      已转账，联系客服
-                    </Button>
-                  </div>
-
-                  <p className="text-center text-sm text-gray-500">
-                    客服确认后积分会自动到账
-                  </p>
-                </CardContent>
-              </Card>
-            </div>
-          )}
-        </>
-      )}
-
-      {/* 充值记录 */}
-      {activeTab === "history" && (
-        <div className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">充值记录</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {rechargeHistory.length === 0 ? (
-                <p className="text-gray-500 text-center py-8">暂无充值记录</p>
-              ) : (
-                <div className="space-y-3">
-                  {rechargeHistory.map((record) => (
-                    <div
-                      key={record.id}
-                      className="flex items-center justify-between py-3 border-b last:border-0"
-                    >
-                      <div>
-                        <p className="font-medium">+{record.amount} 积分</p>
-                        <p className="text-sm text-gray-500">{formatDate(record.created_at)}</p>
-                        {record.notes && (
-                          <p className="text-xs text-gray-400">{record.notes}</p>
-                        )}
+            <TabsContent value="recharge" className="space-y-3">
+              {rechargeHistory.length ? (
+                rechargeHistory.map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 md:flex-row md:items-center md:justify-between"
+                  >
+                    <div>
+                      <div className="text-sm font-medium text-foreground">
+                        +{item.amount} 积分 · {item.payment_method || "自动充值"}
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={`px-2 py-1 text-xs rounded-full ${
-                            record.status === "completed"
-                              ? "bg-green-100 text-green-700"
-                              : record.status === "pending"
-                              ? "bg-yellow-100 text-yellow-700"
-                              : "bg-gray-100 text-gray-700"
-                          }`}
-                        >
-                          {record.status === "completed" ? "已完成" : "处理中"}
-                        </span>
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        {item.notes || "已完成充值入账"}
                       </div>
                     </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">消费记录</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {consumptionHistory.filter(r => r.operation_type !== 'manual_adjustment').length === 0 ? (
-                <p className="text-gray-500 text-center py-8">暂无消费记录</p>
+                    <div className="text-right text-xs text-muted-foreground">
+                      <div>{item.status === "completed" ? "已完成" : item.status}</div>
+                      <div className="mt-1">{formatDate(item.completed_at || item.created_at)}</div>
+                    </div>
+                  </div>
+                ))
               ) : (
-                <div className="space-y-3">
-                  {consumptionHistory
-                    .filter(r => r.operation_type !== 'manual_adjustment')
-                    .map((record) => (
-                      <div
-                        key={record.id}
-                        className="flex items-center justify-between py-3 border-b last:border-0"
-                      >
-                        <div>
-                          <p className="font-medium">{getOperationLabel(record.operation_type)}</p>
-                          <p className="text-sm text-gray-500">{formatDate(record.created_at)}</p>
-                          {record.description && (
-                            <p className="text-xs text-gray-400">{record.description}</p>
-                          )}
-                        </div>
-                        <span className="text-red-600 font-medium">
-                          -{Math.abs(record.amount)} 积分
-                        </span>
-                      </div>
-                    ))}
+                <div className="rounded-2xl border border-dashed border-border p-10 text-center text-sm text-muted-foreground">
+                  暂无充值记录，购买任意套餐后会自动出现在这里。
                 </div>
               )}
-            </CardContent>
-          </Card>
-        </div>
-      )}
+            </TabsContent>
+
+            <TabsContent value="consumption" className="space-y-3">
+              {consumptionHistory.length ? (
+                consumptionHistory.map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 md:flex-row md:items-center md:justify-between"
+                  >
+                    <div>
+                      <div className="text-sm font-medium text-foreground">
+                        -{Math.abs(item.amount)} 积分 · {getOperationLabel(item.operation_type)}
+                      </div>
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        {item.description || "系统自动扣费"}
+                      </div>
+                    </div>
+                    <div className="text-right text-xs text-muted-foreground">
+                      <div>{formatDate(item.created_at)}</div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-2xl border border-dashed border-border p-10 text-center text-sm text-muted-foreground">
+                  暂无消费记录，开始创作后系统会自动记账。
+                </div>
+              )}
+            </TabsContent>
+          </Tabs>
+        </CardContent>
+      </Card>
     </div>
   );
 }
