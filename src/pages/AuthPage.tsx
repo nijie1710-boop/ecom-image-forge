@@ -27,6 +27,28 @@ function isMobileInAppBrowser() {
   ].some((keyword) => ua.includes(keyword));
 }
 
+async function postAuthJson(path: string, payload: Record<string, unknown>) {
+  const response = await fetch(path, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(
+      data?.msg ||
+      data?.message ||
+      data?.error_description ||
+      data?.error ||
+      "认证请求失败",
+    );
+  }
+  return data;
+}
+
 const AuthPage = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -56,7 +78,7 @@ const AuthPage = () => {
 
     if (error) {
       toast({
-        title: t("auth.error"),
+        title: t("auth.error", "错误"),
         description: error.message,
         variant: "destructive",
       });
@@ -69,37 +91,54 @@ const AuthPage = () => {
 
     try {
       if (mode === "forgot") {
-        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        await postAuthJson("/api/auth/reset-password", {
+          email,
           redirectTo: `${window.location.origin}/reset-password`,
         });
-        if (error) throw error;
         toast({
           title: t("auth.resetSent", "重置邮件已发送"),
           description: t("auth.resetSentDesc", "请检查您的邮箱，点击链接重置密码。"),
         });
         setMode("login");
       } else if (mode === "login") {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        const data = await postAuthJson("/api/auth/login", { email, password });
+        if (!data?.access_token || !data?.refresh_token) {
+          throw new Error("登录响应无效，请稍后重试");
+        }
+        const { error } = await supabase.auth.setSession({
+          access_token: data.access_token,
+          refresh_token: data.refresh_token,
+        });
         if (error) throw error;
         navigate("/dashboard");
       } else {
-        const { error } = await supabase.auth.signUp({
+        const data = await postAuthJson("/api/auth/signup", {
           email,
           password,
-          options: {
-            data: { display_name: displayName },
-            emailRedirectTo: window.location.origin,
-          },
+          displayName,
+          emailRedirectTo: window.location.origin,
         });
-        if (error) throw error;
-        const { error: loginError } = await supabase.auth.signInWithPassword({ email, password });
-        if (loginError) throw loginError;
+
+        if (data?.access_token && data?.refresh_token) {
+          const { error } = await supabase.auth.setSession({
+            access_token: data.access_token,
+            refresh_token: data.refresh_token,
+          });
+          if (error) throw error;
+        } else {
+          const loginData = await postAuthJson("/api/auth/login", { email, password });
+          const { error } = await supabase.auth.setSession({
+            access_token: loginData.access_token,
+            refresh_token: loginData.refresh_token,
+          });
+          if (error) throw error;
+        }
         navigate("/dashboard");
       }
     } catch (error: any) {
       toast({
-        title: t("auth.error"),
-        description: error.message,
+        title: t("auth.error", "错误"),
+        description: error.message || "当前登录失败，请稍后重试",
         variant: "destructive",
       });
     } finally {
@@ -107,17 +146,19 @@ const AuthPage = () => {
     }
   };
 
-  const getTitle = () => {
-    if (mode === "forgot") return t("auth.forgotTitle", "重置密码");
-    if (mode === "signup") return t("auth.signupSubtitle");
-    return t("auth.loginSubtitle");
-  };
+  const title =
+    mode === "forgot"
+      ? t("auth.forgotTitle", "重置密码")
+      : mode === "signup"
+        ? t("auth.signupSubtitle", "注册你的 PicSpark AI 账号")
+        : t("auth.loginSubtitle", "登录你的 PicSpark AI 账号");
 
-  const getButtonLabel = () => {
-    if (mode === "forgot") return t("auth.sendResetLink", "发送重置链接");
-    if (mode === "signup") return t("auth.signup");
-    return t("auth.login");
-  };
+  const buttonLabel =
+    mode === "forgot"
+      ? t("auth.sendResetLink", "发送重置链接")
+      : mode === "signup"
+        ? t("auth.signup", "注册")
+        : t("auth.login", "登录");
 
   return (
     <div className="min-h-screen flex flex-col lg:flex-row">
@@ -133,16 +174,15 @@ const AuthPage = () => {
             AI 点燃商品图片创意
           </h1>
           <p className="text-white/70 text-base leading-relaxed mb-8">
-            上传一张商品图，即刻生成电商主图、买家秀、场景图等多种风格。
-            让 AI 成为你的专属摄影师与设计师。
+            上传一张商品图，即刻生成电商主图、买家秀、场景图等多种风格。让 AI 成为你的专属摄影师与设计师。
           </p>
           <div className="flex flex-wrap gap-2">
-            {["AI 智能识别", "多模板排版", "一键生成", "批量导出"].map((f) => (
+            {["AI 智能识别", "多模板排版", "一键生成", "批量导出"].map((feature) => (
               <span
-                key={f}
+                key={feature}
                 className="px-3 py-1 rounded-full text-xs font-medium bg-white/10 border border-white/10 backdrop-blur-sm"
               >
-                {f}
+                {feature}
               </span>
             ))}
           </div>
@@ -174,13 +214,12 @@ const AuthPage = () => {
                 <img src={logo} alt="PicSpark AI" className="h-9 w-9 rounded-xl" />
                 <span className="text-xl font-bold text-foreground">PicSpark AI</span>
               </div>
-              <h2 className="text-2xl font-bold text-foreground text-center">{getTitle()}</h2>
-              {mode === "forgot" && (
+              <h2 className="text-2xl font-bold text-foreground text-center">{title}</h2>
+              {mode === "forgot" ? (
                 <p className="text-sm text-muted-foreground mt-2 text-center">
                   {t("auth.forgotDesc", "输入您的注册邮箱，我们将发送密码重置链接。")}
                 </p>
-              )}
-              {mode !== "forgot" && (
+              ) : (
                 <p className="text-sm text-muted-foreground mt-1 lg:hidden text-center">
                   AI 点燃商品图片创意
                 </p>
@@ -191,19 +230,20 @@ const AuthPage = () => {
               {mode === "signup" && (
                 <div className="space-y-1.5">
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                    {t("auth.displayName")}
+                    {t("auth.displayName", "昵称")}
                   </label>
                   <Input
                     value={displayName}
                     onChange={(e) => setDisplayName(e.target.value)}
-                    placeholder={t("auth.displayNamePlaceholder")}
+                    placeholder={t("auth.displayNamePlaceholder", "请输入昵称")}
                     className="h-11"
                   />
                 </div>
               )}
+
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                  {t("auth.email")}
+                  {t("auth.email", "邮箱")}
                 </label>
                 <Input
                   type="email"
@@ -214,11 +254,12 @@ const AuthPage = () => {
                   className="h-11"
                 />
               </div>
+
               {mode !== "forgot" && (
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                      {t("auth.password")}
+                      {t("auth.password", "密码")}
                     </label>
                     {mode === "login" && (
                       <button
@@ -234,7 +275,7 @@ const AuthPage = () => {
                     type="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••••••"
+                    placeholder="请输入密码"
                     required
                     minLength={6}
                     className="h-11"
@@ -247,7 +288,7 @@ const AuthPage = () => {
                 className="w-full h-11 bg-gradient-to-r from-primary to-violet-600 hover:opacity-90 text-white font-semibold"
                 disabled={loading}
               >
-                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : getButtonLabel()}
+                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : buttonLabel}
               </Button>
 
               {mode !== "forgot" && (
@@ -291,13 +332,15 @@ const AuthPage = () => {
                 </p>
               ) : (
                 <p className="text-center text-sm text-muted-foreground pt-2">
-                  {mode === "login" ? t("auth.noAccount") : t("auth.hasAccount")}{" "}
+                  {mode === "login"
+                    ? t("auth.noAccount", "还没有账号？")
+                    : t("auth.hasAccount", "已经有账号？")}{" "}
                   <button
                     type="button"
                     onClick={() => setMode(mode === "login" ? "signup" : "login")}
                     className="text-primary hover:underline font-medium"
                   >
-                    {mode === "login" ? t("auth.signup") : t("auth.login")}
+                    {mode === "login" ? t("auth.signup", "注册") : t("auth.login", "登录")}
                   </button>
                 </p>
               )}
