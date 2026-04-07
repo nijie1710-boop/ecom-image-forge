@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Loader2, Mail, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Loader2, Mail } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,47 +10,62 @@ import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { normalizeUserErrorMessage } from "@/lib/error-messages";
 import logo from "@/assets/logo.png";
 
-type AuthMode = "login" | "signup";
-type AuthMethod = "code" | "password";
+type AuthMode = "login" | "signup" | "reset";
 
 const FEATURE_TAGS = ["AI 智能识别", "多模板排版", "一键生成", "批量导出"];
+const OTP_LENGTH = 8;
+const OTP_COOLDOWN_SECONDS = 90;
 
 function normalizeAuthError(raw: unknown) {
+  const fallback = "系统繁忙，请稍后再试";
+  const base = normalizeUserErrorMessage(raw, fallback);
   const rawText =
     typeof raw === "string"
       ? raw
       : raw instanceof Error
         ? raw.message
         : raw && typeof raw === "object"
-          ? [
-              (raw as Record<string, unknown>).message,
-              (raw as Record<string, unknown>).error,
-              (raw as Record<string, unknown>).msg,
-              (raw as Record<string, unknown>).error_code,
-            ]
+          ? [raw.message, raw.error, raw.msg, raw.error_code]
               .filter((value): value is string => typeof value === "string")
               .join(" ")
           : "";
-
   const lower = rawText.toLowerCase();
 
   if (lower.includes("over_email_send_rate_limit") || lower.includes("email rate limit exceeded")) {
     return "验证码发送过于频繁，请 60 秒后再试";
   }
 
-  if (lower.includes("otp_expired")) {
-    return "验证码已过期，请重新发送";
-  }
-
-  if (lower.includes("invalid otp") || lower.includes("token has expired")) {
-    return "验证码无效，请检查后重新输入";
+  if (lower.includes("invalid otp") || lower.includes("otp_expired") || lower.includes("token has expired")) {
+    return "验证码有误或已过期，请重新发送最新验证码";
   }
 
   if (lower.includes("invalid login credentials")) {
     return "邮箱或密码不正确";
   }
 
-  return normalizeUserErrorMessage(raw, "系统繁忙，请稍后再试");
+  if (lower.includes("email not confirmed")) {
+    return "账号尚未完成验证，请先完成注册或使用验证码注册";
+  }
+
+  return base || fallback;
+}
+
+async function verifyOtpByEmail(email: string, token: string) {
+  const attempts: Array<"email" | "signup"> = ["email", "signup"];
+  let lastError: unknown = null;
+
+  for (const type of attempts) {
+    const { error } = await supabase.auth.verifyOtp({
+      email,
+      token,
+      type,
+    });
+
+    if (!error) return;
+    lastError = error;
+  }
+
+  throw lastError ?? new Error("验证码有误或已过期，请重新发送最新验证码");
 }
 
 export default function AuthPage() {
@@ -58,62 +73,56 @@ export default function AuthPage() {
   const { toast } = useToast();
 
   const [mode, setMode] = useState<AuthMode>("login");
-  const [method, setMethod] = useState<AuthMethod>("code");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [otpCode, setOtpCode] = useState("");
-  const [codeSent, setCodeSent] = useState(false);
   const [cooldown, setCooldown] = useState(0);
+  const [codeSent, setCodeSent] = useState(false);
   const [sendingCode, setSendingCode] = useState(false);
-  const [verifyingCode, setVerifyingCode] = useState(false);
-  const [submittingPassword, setSubmittingPassword] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  const normalizedEmail = email.trim().toLowerCase();
 
   useEffect(() => {
     if (cooldown <= 0) return undefined;
-
-    const timer = window.setTimeout(() => {
-      setCooldown((current) => Math.max(0, current - 1));
-    }, 1000);
-
+    const timer = window.setTimeout(() => setCooldown((current) => Math.max(0, current - 1)), 1000);
     return () => window.clearTimeout(timer);
   }, [cooldown]);
 
+  useEffect(() => {
+    setOtpCode("");
+    setPassword("");
+    setConfirmPassword("");
+    setCodeSent(false);
+    setCooldown(0);
+    if (mode !== "signup") {
+      setDisplayName("");
+    }
+  }, [mode, normalizedEmail]);
+
   const pageTitle = useMemo(() => {
-    return mode === "signup" ? "注册你的 PicSpark AI 账号" : "登录你的 PicSpark AI 账号";
+    if (mode === "signup") return "注册你的 PicSpark AI 账号";
+    if (mode === "reset") return "找回你的 PicSpark AI 密码";
+    return "登录你的 PicSpark AI 账号";
   }, [mode]);
 
   const pageDescription = useMemo(() => {
-    if (method === "code") {
-      return mode === "signup"
-        ? "输入邮箱后发送验证码，填写验证码即可完成注册并登录。"
-        : "输入邮箱后发送验证码，填写验证码即可安全登录。";
-    }
+    if (mode === "signup") return "邮箱验证码仅用于完成注册验证，验证通过后立即设置密码。";
+    if (mode === "reset") return "使用邮箱验证码验证身份找回密码，通过后直接设置新密码。";
+    return "默认使用邮箱密码登录，验证码登录不再作为主入口。";
+  }, [mode]);
 
-    return mode === "signup"
-      ? "使用邮箱和密码注册。后续你也可以改用邮箱验证码登录。"
-      : "使用邮箱和密码登录。如果不想点邮件链接，也可以切换到验证码模式。";
-  }, [method, mode]);
-
-  const resetAuthFields = () => {
-    setPassword("");
+  const resetOtpState = () => {
     setOtpCode("");
     setCodeSent(false);
     setCooldown(0);
-    setSendingCode(false);
-    setVerifyingCode(false);
-    setSubmittingPassword(false);
   };
 
   const switchMode = (nextMode: AuthMode) => {
     setMode(nextMode);
-    setDisplayName("");
-    resetAuthFields();
-  };
-
-  const switchMethod = (nextMethod: AuthMethod) => {
-    setMethod(nextMethod);
-    resetAuthFields();
+    resetOtpState();
   };
 
   const showError = (raw: unknown) => {
@@ -124,11 +133,41 @@ export default function AuthPage() {
     });
   };
 
-  const validateEmail = () => {
-    if (!email.trim()) {
+  const ensureEmail = () => {
+    if (!normalizedEmail) {
       toast({
         title: "请输入邮箱",
-        description: "发送验证码或登录前，请先填写邮箱地址。",
+        description: "请先填写邮箱地址。",
+        variant: "destructive",
+      });
+      return false;
+    }
+    return true;
+  };
+
+  const ensurePassword = (requireConfirm = false) => {
+    if (!password.trim()) {
+      toast({
+        title: "请输入密码",
+        description: "请先填写密码。",
+        variant: "destructive",
+      });
+      return false;
+    }
+
+    if (password.trim().length < 6) {
+      toast({
+        title: "密码过短",
+        description: "密码至少需要 6 位。",
+        variant: "destructive",
+      });
+      return false;
+    }
+
+    if (requireConfirm && password !== confirmPassword) {
+      toast({
+        title: "两次密码不一致",
+        description: "请重新确认密码。",
         variant: "destructive",
       });
       return false;
@@ -138,12 +177,12 @@ export default function AuthPage() {
   };
 
   const handleSendCode = async () => {
-    if (!validateEmail()) return;
+    if (!ensureEmail()) return;
 
     setSendingCode(true);
     try {
       const { error } = await supabase.auth.signInWithOtp({
-        email: email.trim(),
+        email: normalizedEmail,
         options: {
           shouldCreateUser: mode === "signup",
           data: mode === "signup" && displayName.trim() ? { display_name: displayName.trim() } : undefined,
@@ -153,10 +192,13 @@ export default function AuthPage() {
       if (error) throw error;
 
       setCodeSent(true);
-      setCooldown(60);
+      setCooldown(OTP_COOLDOWN_SECONDS);
       toast({
         title: "验证码已发送",
-        description: "请检查你的邮箱，并输入收到的验证码完成登录。",
+        description:
+          mode === "signup"
+            ? `请使用邮箱中的最新 ${OTP_LENGTH} 位验证码完成注册。`
+            : `请使用邮箱中的最新 ${OTP_LENGTH} 位验证码重置密码。`,
       });
     } catch (error) {
       showError(error);
@@ -165,80 +207,101 @@ export default function AuthPage() {
     }
   };
 
-  const handleVerifyCode = async () => {
-    if (!validateEmail()) return;
+  const handlePasswordLogin = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!ensureEmail() || !ensurePassword(false)) return;
 
-    if (!otpCode.trim()) {
-      toast({
-        title: "请输入验证码",
-        description: "请填写邮箱里收到的验证码。",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setVerifyingCode(true);
+    setSubmitting(true);
     try {
-      const { error } = await supabase.auth.verifyOtp({
-        email: email.trim(),
-        token: otpCode.trim(),
-        type: "email",
+      const { error } = await supabase.auth.signInWithPassword({
+        email: normalizedEmail,
+        password,
       });
 
       if (error) throw error;
 
       toast({
-        title: mode === "signup" ? "注册成功" : "登录成功",
+        title: "登录成功",
         description: "正在进入工作台。",
       });
       navigate("/dashboard");
     } catch (error) {
       showError(error);
     } finally {
-      setVerifyingCode(false);
+      setSubmitting(false);
     }
   };
 
-  const handlePasswordSubmit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!validateEmail()) return;
+  const handleSignup = async () => {
+    if (!ensureEmail()) return;
+    if (!otpCode.trim()) {
+      toast({
+        title: "请输入验证码",
+        description: `请填写邮箱中收到的最新 ${OTP_LENGTH} 位验证码。`,
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!ensurePassword(true)) return;
 
-    setSubmittingPassword(true);
+    setSubmitting(true);
     try {
-      if (mode === "login") {
-        const { error } = await supabase.auth.signInWithPassword({
-          email: email.trim(),
-          password,
-        });
-        if (error) throw error;
-      } else {
-        const { data, error } = await supabase.auth.signUp({
-          email: email.trim(),
-          password,
-          options: {
-            data: displayName.trim() ? { display_name: displayName.trim() } : undefined,
-          },
-        });
+      await verifyOtpByEmail(normalizedEmail, otpCode.trim());
 
-        if (error) throw error;
+      const { error } = await supabase.auth.updateUser({
+        password,
+        data: displayName.trim() ? { display_name: displayName.trim() } : undefined,
+      });
 
-        if (!data.session) {
-          toast({
-            title: "注册成功",
-            description: "账号已创建成功，你现在可以直接使用邮箱密码登录。",
-          });
-        }
-      }
+      if (error) throw error;
 
       toast({
-        title: mode === "signup" ? "注册成功" : "登录成功",
+        title: "注册成功",
         description: "正在进入工作台。",
       });
       navigate("/dashboard");
     } catch (error) {
       showError(error);
     } finally {
-      setSubmittingPassword(false);
+      setSubmitting(false);
+    }
+  };
+
+  const handleResetPassword = async () => {
+    if (!ensureEmail()) return;
+    if (!otpCode.trim()) {
+      toast({
+        title: "请输入验证码",
+        description: `请填写邮箱中收到的最新 ${OTP_LENGTH} 位验证码。`,
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!ensurePassword(true)) return;
+
+    setSubmitting(true);
+    try {
+      await verifyOtpByEmail(normalizedEmail, otpCode.trim());
+
+      const { error } = await supabase.auth.updateUser({ password });
+      if (error) throw error;
+
+      await supabase.auth.signOut({ scope: "local" });
+      toast({
+        title: "密码已重置",
+        description: "请使用新密码重新登录。",
+      });
+
+      setPassword("");
+      setConfirmPassword("");
+      setOtpCode("");
+      setCodeSent(false);
+      setCooldown(0);
+      setMode("login");
+    } catch (error) {
+      showError(error);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -254,11 +317,9 @@ export default function AuthPage() {
         </div>
 
         <div className="relative z-10 flex-1 max-w-md flex flex-col justify-center">
-          <h1 className="text-4xl font-extrabold leading-tight mb-4 tracking-tight">
-            AI 点燃商品图片创意
-          </h1>
+          <h1 className="text-4xl font-extrabold leading-tight mb-4 tracking-tight">AI 点燃商品图片创意</h1>
           <p className="text-base leading-relaxed text-white/75 mb-8">
-            上传一张商品图，即刻生成电商主图、买家秀、场景图等多种素材，让 AI 成为你的专属摄影师与设计师。
+            上传一张商品图，即刻生成电商主图、买家秀、场景图等多种风格，让 AI 成为你的专属摄影师与设计师。
           </p>
           <div className="flex flex-wrap gap-2">
             {FEATURE_TAGS.map((feature) => (
@@ -272,9 +333,7 @@ export default function AuthPage() {
           </div>
         </div>
 
-        <p className="relative z-10 text-xs text-white/40">
-          © 2026 PicSpark AI · AI-powered e-commerce visual generation platform
-        </p>
+        <p className="relative z-10 text-xs text-white/40">© 2026 PicSpark AI · AI-powered e-commerce visual generation platform</p>
       </div>
 
       <div className="flex-1 flex flex-col">
@@ -303,7 +362,7 @@ export default function AuthPage() {
               <p className="mt-2 text-center text-sm text-muted-foreground">{pageDescription}</p>
             </div>
 
-            <div className="mb-4 grid grid-cols-2 gap-2 rounded-2xl border border-border/70 bg-muted/30 p-1">
+            <div className="mb-6 grid grid-cols-3 gap-2 rounded-2xl border border-border/70 bg-muted/30 p-1">
               <button
                 type="button"
                 onClick={() => switchMode("login")}
@@ -322,40 +381,24 @@ export default function AuthPage() {
               >
                 注册
               </button>
-            </div>
-
-            <div className="mb-6 grid grid-cols-2 gap-2 rounded-2xl border border-border/70 bg-muted/20 p-1">
               <button
                 type="button"
-                onClick={() => switchMethod("code")}
+                onClick={() => switchMode("reset")}
                 className={`rounded-xl px-4 py-2 text-sm font-medium transition ${
-                  method === "code"
-                    ? "bg-gradient-to-r from-primary to-violet-600 text-white shadow-sm"
-                    : "text-muted-foreground"
+                  mode === "reset" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"
                 }`}
               >
-                邮箱验证码
-              </button>
-              <button
-                type="button"
-                onClick={() => switchMethod("password")}
-                className={`rounded-xl px-4 py-2 text-sm font-medium transition ${
-                  method === "password" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"
-                }`}
-              >
-                邮箱密码
+                找回密码
               </button>
             </div>
 
             <div className="space-y-4">
               {mode === "signup" && (
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    昵称
-                  </label>
+                  <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">昵称</label>
                   <Input
                     value={displayName}
-                    onChange={(e) => setDisplayName(e.target.value)}
+                    onChange={(event) => setDisplayName(event.target.value)}
                     placeholder="请输入昵称（可选）"
                     className="h-11"
                   />
@@ -363,28 +406,58 @@ export default function AuthPage() {
               )}
 
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  邮箱
-                </label>
+                <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">邮箱</label>
                 <Input
                   type="email"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(event) => setEmail(event.target.value)}
                   placeholder="you@example.com"
                   required
                   className="h-11"
                 />
               </div>
 
-              {method === "code" ? (
+              {mode === "login" ? (
+                <form onSubmit={handlePasswordLogin} className="space-y-4">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">密码</label>
+                      <button
+                        type="button"
+                        onClick={() => switchMode("reset")}
+                        className="text-xs text-primary hover:underline"
+                      >
+                        忘记密码？
+                      </button>
+                    </div>
+                    <Input
+                      type="password"
+                      value={password}
+                      onChange={(event) => setPassword(event.target.value)}
+                      placeholder="请输入密码"
+                      required
+                      minLength={6}
+                      className="h-11"
+                    />
+                  </div>
+
+                  <Button
+                    type="submit"
+                    className="h-11 w-full bg-gradient-to-r from-primary to-violet-600 font-semibold text-white hover:opacity-90"
+                    disabled={submitting}
+                  >
+                    {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "邮箱登录"}
+                  </Button>
+                </form>
+              ) : (
                 <>
                   <div className="rounded-2xl border border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">
                     <div className="flex items-center gap-2 font-medium text-foreground">
                       <Mail className="h-4 w-4 text-primary" />
-                      邮箱验证码登录 / 注册
+                      {mode === "signup" ? "邮箱验证码注册" : "邮箱验证码重置密码"}
                     </div>
                     <p className="mt-2 leading-relaxed">
-                      发送验证码后，直接输入验证码即可完成登录或注册，不再依赖点击邮件里的跳转链接。
+                      当前邮件验证码一般为 {OTP_LENGTH} 位数字。发送后请使用本次邮件中的最新验证码，旧验证码会失效。
                     </p>
                   </div>
 
@@ -398,75 +471,58 @@ export default function AuthPage() {
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : cooldown > 0 ? (
                       `请等待 ${cooldown}s`
-                    ) : codeSent ? (
-                      "重新发送验证码"
                     ) : (
                       "发送验证码"
                     )}
                   </Button>
 
                   <div className="space-y-1.5">
-                    <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      邮箱验证码
-                    </label>
+                    <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">邮箱验证码</label>
                     <Input
                       value={otpCode}
-                      onChange={(e) => setOtpCode(e.target.value)}
-                      placeholder="请输入 6 位验证码"
+                      onChange={(event) => setOtpCode(event.target.value.replace(/\s+/g, ""))}
+                      placeholder={`请输入 ${OTP_LENGTH} 位验证码`}
+                      inputMode="numeric"
+                      className="h-11"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      {mode === "signup" ? "设置密码" : "新密码"}
+                    </label>
+                    <Input
+                      type="password"
+                      value={password}
+                      onChange={(event) => setPassword(event.target.value)}
+                      placeholder="至少 6 位字符"
+                      minLength={6}
+                      className="h-11"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">确认密码</label>
+                    <Input
+                      type="password"
+                      value={confirmPassword}
+                      onChange={(event) => setConfirmPassword(event.target.value)}
+                      placeholder="再次输入密码"
+                      minLength={6}
                       className="h-11"
                     />
                   </div>
 
                   <Button
                     type="button"
-                    variant="outline"
-                    className="h-11 w-full font-medium"
-                    disabled={verifyingCode || !codeSent}
-                    onClick={handleVerifyCode}
+                    className="h-11 w-full bg-gradient-to-r from-primary to-violet-600 font-semibold text-white hover:opacity-90"
+                    disabled={submitting || !codeSent}
+                    onClick={mode === "signup" ? handleSignup : handleResetPassword}
                   >
-                    {verifyingCode ? <Loader2 className="h-4 w-4 animate-spin" /> : mode === "signup" ? "验证并注册" : "验证并登录"}
+                    {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : mode === "signup" ? "验证并注册" : "验证并重置密码"}
                   </Button>
                 </>
-              ) : (
-                <form onSubmit={handlePasswordSubmit} className="space-y-4">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      密码
-                    </label>
-                    <Input
-                      type="password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder={mode === "signup" ? "至少 6 位密码" : "请输入密码"}
-                      required
-                      minLength={6}
-                      className="h-11"
-                    />
-                  </div>
-
-                  <div className="rounded-2xl border border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">
-                    <div className="flex items-center gap-2 font-medium text-foreground">
-                      <ShieldCheck className="h-4 w-4 text-primary" />
-                      邮箱密码登录
-                    </div>
-                    <p className="mt-2 leading-relaxed">
-                      如果你更习惯传统方式，也可以继续使用邮箱密码登录。后续仍可切换回验证码模式。
-                    </p>
-                  </div>
-
-                  <Button
-                    type="submit"
-                    className="h-11 w-full bg-gradient-to-r from-primary to-violet-600 font-semibold text-white hover:opacity-90"
-                    disabled={submittingPassword}
-                  >
-                    {submittingPassword ? <Loader2 className="h-4 w-4 animate-spin" /> : mode === "signup" ? "注册并登录" : "登录"}
-                  </Button>
-                </form>
               )}
-
-              <div className="rounded-2xl border border-dashed border-border/70 bg-background/60 p-4 text-xs leading-relaxed text-muted-foreground">
-                Google 登录当前未启用。若你在手机或微信内打开页面，建议优先使用邮箱验证码登录。
-              </div>
             </div>
           </div>
         </div>

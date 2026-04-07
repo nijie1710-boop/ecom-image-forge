@@ -114,10 +114,7 @@ function matchKnownError(message: string) {
   return "";
 }
 
-export function normalizeUserErrorMessage(
-  rawError: unknown,
-  fallback = ERROR_TEXT.systemBusy,
-): string {
+export function normalizeUserErrorMessage(rawError: unknown, fallback = ERROR_TEXT.systemBusy): string {
   const normalized = normalizeRawError(rawError);
   if (!normalized) return fallback;
 
@@ -150,7 +147,7 @@ export function errorHintFromMessage(message: string): string | null {
     case ERROR_TEXT.parseFailed:
       return "建议更换更清晰的原图，避免截图或过度压缩图片。";
     case ERROR_TEXT.quotaExceeded:
-      return "请检查上游 AI 账户额度，或稍后再试。";
+      return "请检查上游 AI 账号额度，或稍后再试。";
     case ERROR_TEXT.generationFailed:
       return "建议保留当前识别结果，稍后重新生成一次。";
     case ERROR_TEXT.systemBusy:
