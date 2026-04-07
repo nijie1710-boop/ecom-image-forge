@@ -46,6 +46,7 @@ import {
   WorkspaceStatGrid,
 } from "@/components/workspace/WorkspaceBlocks";
 
+const ADMIN_GENERATE_RETRY_DRAFT_KEY = "admin-generate-retry-draft";
 const imageTypes = ["主图", "详情图"];
 
 const ratioOptions = [
@@ -194,6 +195,43 @@ const GeneratePage = () => {
       }
     }
   }, [appliedTemplate, templateId, templatePrompt]);
+
+  useEffect(() => {
+    const rawDraft = sessionStorage.getItem(ADMIN_GENERATE_RETRY_DRAFT_KEY);
+    if (!rawDraft) return;
+
+    try {
+      const draft = JSON.parse(rawDraft) as Partial<{
+        uploadedImages: string[];
+        productBrief: string;
+        textPrompt: string;
+        styleReferenceText: string;
+        styleReferenceImage: string;
+        imageType: string;
+        selectedRatio: string;
+        textLanguage: string;
+      }>;
+
+      if (Array.isArray(draft.uploadedImages) && draft.uploadedImages.length) {
+        setUploadedImages(draft.uploadedImages);
+      }
+      if (draft.productBrief) setProductBrief(draft.productBrief);
+      if (draft.textPrompt) setTextPrompt(draft.textPrompt);
+      if (draft.styleReferenceText) setStyleReferenceText(draft.styleReferenceText);
+      if (draft.styleReferenceImage) setStyleReferenceImage(draft.styleReferenceImage);
+      if (draft.imageType && imageTypes.includes(draft.imageType)) setImageType(draft.imageType);
+      if (draft.selectedRatio) setSelectedRatio(draft.selectedRatio);
+      if (draft.textLanguage) setTextLanguage(draft.textLanguage);
+
+      setErrorMessage(null);
+      setResults([]);
+      setCurrentBatchId(null);
+    } catch (error) {
+      console.warn("restore admin generate retry draft failed:", error);
+    } finally {
+      sessionStorage.removeItem(ADMIN_GENERATE_RETRY_DRAFT_KEY);
+    }
+  }, []);
 
   useEffect(() => {
     if (!activeJob || activeJob.kind !== "image") {

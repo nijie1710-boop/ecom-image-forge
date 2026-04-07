@@ -176,15 +176,17 @@ const AdminHome = () => {
           </div>
         </Link>
 
-        <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-            <ImagePlus className="h-5 w-5" />
+        <Link to="/admin/config" className="block">
+          <div className="rounded-3xl border border-border bg-card p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-md">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+              <ImagePlus className="h-5 w-5" />
+            </div>
+            <h2 className="mt-4 text-lg font-semibold text-foreground">系统配置</h2>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              统一管理默认模型、默认分辨率、低余额阈值和功能开关，方便后台统一收口。
+            </p>
           </div>
-          <h2 className="mt-4 text-lg font-semibold text-foreground">系统配置</h2>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            下一阶段可以继续补默认模型、默认分辨率、价格规则和功能开关，让后台更像完整运营面板。
-          </p>
-        </div>
+        </Link>
       </div>
 
       <WorkspaceSection title="下一步建议" description="后台第一版已经能独立进入，接下来最值得补的是下面三块。">

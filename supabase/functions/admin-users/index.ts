@@ -45,6 +45,38 @@ function mapTaskStatus(operationType: string | null, amount: number | null, desc
   return "已记录";
 }
 
+function getDefaultSettings() {
+  return {
+    generation_defaults: {
+      model: "gemini-2.5-flash-image",
+      aspectRatio: "3:4",
+      resolution: "1k",
+      imageCount: 1,
+    },
+    detail_defaults: {
+      model: "gemini-3.1-flash-image-preview",
+      aspectRatio: "3:4",
+      resolution: "2k",
+      screenCount: 4,
+    },
+    translation_defaults: {
+      targetLanguage: "en",
+      batchLimit: 8,
+      renderMode: "stable",
+    },
+    feature_flags: {
+      enableAdminRetry: true,
+      enableDetailDesign: true,
+      enableImageTranslation: true,
+      enableNanoBananaPro: true,
+    },
+    operations: {
+      lowBalanceThreshold: 3,
+      imageRetentionDays: 30,
+    },
+  };
+}
+
 async function isAdmin(supabase: ReturnType<typeof createClient>, userId: string, email?: string | null) {
   const normalizedEmail = email?.toLowerCase();
   if (normalizedEmail && ADMIN_EMAIL_ALLOWLIST.includes(normalizedEmail)) {
@@ -178,9 +210,30 @@ Deno.serve(async (req) => {
 
         if (authUsersError) throw authUsersError;
 
+        const { data: images, error: imagesError } = await supabase
+          .from("generated_images")
+          .select("id,user_id,image_url,prompt,image_type,style,scene,aspect_ratio,task_kind,created_at")
+          .order("created_at", { ascending: false })
+          .limit(500);
+
+        if (imagesError) throw imagesError;
+
         const userMap = new Map(authUsers.map((item) => [item.id, item]));
         const tasks = (records || []).map((record: any) => {
           const authUser = userMap.get(record.user_id);
+          const taskCreatedAt = record.created_at ? new Date(record.created_at).getTime() : 0;
+          const retryImage =
+            record.operation_type === "generate_image"
+              ? (images || [])
+                  .filter((image: any) => image.user_id === record.user_id)
+                  .map((image: any) => ({
+                    ...image,
+                    distance: Math.abs(new Date(image.created_at).getTime() - taskCreatedAt),
+                  }))
+                  .filter((image: any) => image.distance <= 2 * 60 * 60 * 1000)
+                  .sort((a: any, b: any) => a.distance - b.distance)[0]
+              : null;
+
           return {
             id: record.id,
             user_id: record.user_id,
@@ -193,6 +246,13 @@ Deno.serve(async (req) => {
             description: record.description || "",
             created_at: record.created_at,
             related_record_id: record.related_record_id || null,
+            retry_supported: Boolean(retryImage?.image_url),
+            retry_image_url: retryImage?.image_url || null,
+            retry_prompt: retryImage?.prompt || null,
+            retry_image_type: retryImage?.image_type || null,
+            retry_aspect_ratio: retryImage?.aspect_ratio || null,
+            retry_style: retryImage?.style || null,
+            retry_scene: retryImage?.scene || null,
           };
         });
 
@@ -264,6 +324,50 @@ Deno.serve(async (req) => {
         if (rpcError) throw rpcError;
 
         return json({ result: Array.isArray(data) ? data[0] : data });
+      }
+
+      case "get_settings": {
+        const defaults = getDefaultSettings();
+        const { data: rows, error: settingsError } = await supabase
+          .from("admin_settings")
+          .select("key,value,updated_at,updated_by");
+
+        if (settingsError) throw settingsError;
+
+        const settings = rows?.reduce((acc: Record<string, unknown>, row: any) => {
+          acc[row.key] = row.value;
+          return acc;
+        }, { ...defaults }) || defaults;
+
+        return json({ settings });
+      }
+
+      case "save_settings": {
+        const settings = body.settings as Record<string, unknown> | undefined;
+        if (!settings || typeof settings !== "object") {
+          return json({ error: "缺少系统配置内容。" }, 400);
+        }
+
+        const entries = Object.entries(settings)
+          .filter(([key, value]) => typeof key === "string" && value && typeof value === "object")
+          .map(([key, value]) => ({
+            key,
+            value,
+            updated_by: currentUser?.id || null,
+            updated_at: new Date().toISOString(),
+          }));
+
+        if (!entries.length) {
+          return json({ error: "没有可保存的配置项。" }, 400);
+        }
+
+        const { error: upsertError } = await supabase
+          .from("admin_settings")
+          .upsert(entries, { onConflict: "key" });
+
+        if (upsertError) throw upsertError;
+
+        return json({ success: true, saved: entries.length });
       }
 
       default:

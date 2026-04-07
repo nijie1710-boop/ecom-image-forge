@@ -1,5 +1,5 @@
 import { Link, Outlet, useLocation } from "react-router-dom";
-import { FolderOpen, LayoutDashboard, ListChecks, Shield, Users } from "lucide-react";
+import { FolderOpen, LayoutDashboard, ListChecks, Settings2, Shield, Users } from "lucide-react";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { cn } from "@/lib/utils";
@@ -29,6 +29,12 @@ const adminNav = [
     label: "图片管理",
     description: "查看后台图片、用户来源和生成结果预览。",
     icon: FolderOpen,
+  },
+  {
+    path: "/admin/config",
+    label: "系统配置",
+    description: "统一管理默认模型、阈值和功能开关。",
+    icon: Settings2,
   },
 ] as const;
 

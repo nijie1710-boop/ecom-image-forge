@@ -5,6 +5,7 @@ import {
   ExternalLink,
   ListChecks,
   RefreshCw,
+  RotateCcw,
   Search,
   Sparkles,
 } from "lucide-react";
@@ -72,6 +73,8 @@ const STATUS_META: Record<
   },
 };
 
+const ADMIN_GENERATE_RETRY_DRAFT_KEY = "admin-generate-retry-draft";
+
 function normalizeTaskType(task: AdminTask) {
   return TASK_TYPE_LABELS[task.operation_type] || task.task_type || "其他任务";
 }
@@ -110,12 +113,27 @@ function buildTaskSummary(task: AdminTask) {
   ].join("\n");
 }
 
+async function toDataUrlFromRemoteImage(url: string) {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error("重试草稿准备失败，无法读取参考图片。");
+  }
+  const blob = await response.blob();
+  return await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("重试草稿准备失败，图片转换异常。"));
+    reader.readAsDataURL(blob);
+  });
+}
+
 const AdminTasksPage = () => {
   const navigate = useNavigate();
   const [keyword, setKeyword] = useState("");
   const [filter, setFilter] = useState<(typeof TASK_FILTERS)[number]["value"]>("all");
   const [statusFilter, setStatusFilter] = useState<(typeof STATUS_FILTERS)[number]["value"]>("all");
   const [selectedTask, setSelectedTask] = useState<AdminTask | null>(null);
+  const [retryingTaskId, setRetryingTaskId] = useState<string | null>(null);
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["admin-tasks"],
@@ -160,6 +178,36 @@ const AdminTasksPage = () => {
     void handleCopySummary(task);
     navigate(retryPath);
     toast.success("已复制任务摘要，并跳转到对应工具页。");
+  };
+
+  const handleCreateRetryDraft = async (task: AdminTask) => {
+    if (!task.retry_supported || !task.retry_image_url) {
+      toast.error("当前这条任务还没有可直接重建的重试素材。");
+      return;
+    }
+
+    setRetryingTaskId(task.id);
+    try {
+      const uploadedImage = await toDataUrlFromRemoteImage(task.retry_image_url);
+      sessionStorage.setItem(
+        ADMIN_GENERATE_RETRY_DRAFT_KEY,
+        JSON.stringify({
+          uploadedImages: [uploadedImage],
+          productBrief: task.description || "",
+          textPrompt: task.retry_scene || task.retry_prompt || "",
+          styleReferenceText: task.retry_style || "",
+          imageType: task.retry_image_type || "主图",
+          selectedRatio: task.retry_aspect_ratio || "3:4",
+          textLanguage: "zh",
+        }),
+      );
+      navigate("/dashboard/generate");
+      toast.success("已创建后台重试草稿，并带你回到 AI 生图页。");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "创建重试草稿失败");
+    } finally {
+      setRetryingTaskId(null);
+    }
   };
 
   return (
@@ -336,6 +384,18 @@ const AdminTasksPage = () => {
                           <Button variant="outline" size="sm" onClick={() => setSelectedTask(task)}>
                             查看详情
                           </Button>
+                          {task.retry_supported && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => void handleCreateRetryDraft(task)}
+                              disabled={retryingTaskId === task.id}
+                              className="gap-1"
+                            >
+                              <RotateCcw className="h-3.5 w-3.5" />
+                              {retryingTaskId === task.id ? "准备中..." : "后台重试"}
+                            </Button>
+                          )}
                           {retryPath && (
                             <Button size="sm" onClick={() => handleOpenRetry(task)} className="gap-1">
                               <ExternalLink className="h-3.5 w-3.5" />
@@ -415,6 +475,14 @@ const AdminTasksPage = () => {
                   </div>
                 </div>
                 <div className="rounded-2xl border border-border bg-muted/20 p-4 md:col-span-2">
+                  <div className="text-xs text-muted-foreground">重试能力</div>
+                  <div className="mt-1 text-sm leading-6 text-foreground">
+                    {selectedTask.retry_supported
+                      ? "当前支持后台重试：会基于这条任务关联的结果图自动创建 AI 生图草稿，并直接带回工具页。"
+                      : "当前没有足够的原始素材可在后台直接重建，因此仍建议先复制摘要，再回到对应工具重新发起。"}
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-border bg-muted/20 p-4 md:col-span-2">
                   <div className="text-xs text-muted-foreground">创建时间</div>
                   <div className="mt-1 text-sm text-foreground">
                     {selectedTask.created_at ? new Date(selectedTask.created_at).toLocaleString() : "-"}
@@ -431,6 +499,16 @@ const AdminTasksPage = () => {
                     <Clipboard className="mr-2 h-4 w-4" />
                     复制摘要
                   </Button>
+                  {selectedTask.retry_supported && (
+                    <Button
+                      variant="outline"
+                      onClick={() => void handleCreateRetryDraft(selectedTask)}
+                      disabled={retryingTaskId === selectedTask.id}
+                    >
+                      <RotateCcw className="mr-2 h-4 w-4" />
+                      {retryingTaskId === selectedTask.id ? "准备重试..." : "后台重试"}
+                    </Button>
+                  )}
                   {getRetryPath(selectedTask) && (
                     <Button onClick={() => handleOpenRetry(selectedTask)}>
                       <ExternalLink className="mr-2 h-4 w-4" />

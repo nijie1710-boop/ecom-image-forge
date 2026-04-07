@@ -75,6 +75,13 @@ export interface AdminTask {
   description: string;
   created_at: string;
   related_record_id?: string | null;
+  retry_supported?: boolean;
+  retry_image_url?: string | null;
+  retry_prompt?: string | null;
+  retry_image_type?: string | null;
+  retry_aspect_ratio?: string | null;
+  retry_style?: string | null;
+  retry_scene?: string | null;
 }
 
 export interface AdminImage {
@@ -89,4 +96,34 @@ export interface AdminImage {
   aspect_ratio?: string | null;
   status?: string | null;
   created_at: string;
+}
+
+export interface AdminSettingsPayload {
+  generation_defaults: {
+    model: string;
+    aspectRatio: string;
+    resolution: string;
+    imageCount: number;
+  };
+  detail_defaults: {
+    model: string;
+    aspectRatio: string;
+    resolution: string;
+    screenCount: number;
+  };
+  translation_defaults: {
+    targetLanguage: string;
+    batchLimit: number;
+    renderMode: string;
+  };
+  feature_flags: {
+    enableAdminRetry: boolean;
+    enableDetailDesign: boolean;
+    enableImageTranslation: boolean;
+    enableNanoBananaPro: boolean;
+  };
+  operations: {
+    lowBalanceThreshold: number;
+    imageRetentionDays: number;
+  };
 }

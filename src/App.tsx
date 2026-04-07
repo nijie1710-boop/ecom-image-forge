@@ -25,6 +25,7 @@ import AdminHome from "./pages/AdminHome";
 import AdminLayout from "./pages/AdminLayout";
 import AdminTasksPage from "./pages/AdminTasksPage";
 import AdminImagesPage from "./pages/AdminImagesPage";
+import AdminConfigPage from "./pages/AdminConfigPage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
 import NotFound from "./pages/NotFound";
 
@@ -73,6 +74,7 @@ const App = () => (
                 <Route path="users" element={<AdminPage />} />
                 <Route path="tasks" element={<AdminTasksPage />} />
                 <Route path="images" element={<AdminImagesPage />} />
+                <Route path="config" element={<AdminConfigPage />} />
               </Route>
               <Route path="*" element={<NotFound />} />
             </Routes>
