@@ -15,7 +15,7 @@ function normalizeRawError(rawError: unknown) {
   }
 
   if (rawError && typeof rawError === "object") {
-    const maybeMessage = ["message", "error", "detail", "msg"]
+    const maybeMessage = ["message", "error", "detail", "msg", "error_description", "error_code"]
       .map((key) => (rawError as Record<string, unknown>)[key])
       .find((value) => typeof value === "string" && value.trim());
 
@@ -54,9 +54,9 @@ function matchKnownError(message: string) {
     lower.includes("image_required") ||
     lower.includes("unsupported") ||
     lower.includes("format") ||
-    lower.includes("jpg") ||
-    lower.includes("png") ||
-    lower.includes("webp")
+    lower.includes(".jpg") ||
+    lower.includes(".png") ||
+    lower.includes(".webp")
   ) {
     return ERROR_TEXT.unsupportedImage;
   }
@@ -114,7 +114,10 @@ function matchKnownError(message: string) {
   return "";
 }
 
-export function normalizeUserErrorMessage(rawError: unknown, fallback = ERROR_TEXT.systemBusy): string {
+export function normalizeUserErrorMessage(
+  rawError: unknown,
+  fallback = ERROR_TEXT.systemBusy,
+): string {
   const normalized = normalizeRawError(rawError);
   if (!normalized) return fallback;
 
@@ -132,7 +135,7 @@ export function normalizeUserErrorMessage(rawError: unknown, fallback = ERROR_TE
       return matchKnownError(parsed.detail) || stripHtmlTags(parsed.detail);
     }
   } catch {
-    // ignore JSON parse errors
+    // ignore parse failure
   }
 
   return matchKnownError(cleaned) || fallback;
@@ -147,11 +150,11 @@ export function errorHintFromMessage(message: string): string | null {
     case ERROR_TEXT.parseFailed:
       return "建议更换更清晰的原图，避免截图或过度压缩图片。";
     case ERROR_TEXT.quotaExceeded:
-      return "请检查上游 AI 账号额度，或稍后再试。";
+      return "请检查上游 AI 账户额度，或稍后再试。";
     case ERROR_TEXT.generationFailed:
       return "建议保留当前识别结果，稍后重新生成一次。";
     case ERROR_TEXT.systemBusy:
-      return "当前服务连接异常，请稍后重试；如持续出现，请检查认证或上游服务状态。";
+      return "当前服务连接异常，请稍后重试。";
     default:
       return null;
   }
