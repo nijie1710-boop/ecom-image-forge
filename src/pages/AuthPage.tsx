@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Loader2, Mail } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+
+import logo from "@/assets/logo.png";
+import { LanguageSwitcher } from "@/components/LanguageSwitcher";
+import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { LanguageSwitcher } from "@/components/LanguageSwitcher";
-import { ThemeSwitcher } from "@/components/ThemeSwitcher";
+import { supabase } from "@/integrations/supabase/client";
+import { getAuthCallbackUrl } from "@/lib/app-config";
 import { normalizeUserErrorMessage } from "@/lib/error-messages";
-import logo from "@/assets/logo.png";
 
 type AuthMode = "login" | "signup" | "reset";
 
@@ -29,13 +31,25 @@ function normalizeAuthError(raw: unknown) {
               .filter((value): value is string => typeof value === "string")
               .join(" ")
           : "";
+
   const lower = rawText.toLowerCase();
 
   if (lower.includes("over_email_send_rate_limit") || lower.includes("email rate limit exceeded")) {
     return "验证码发送过于频繁，请 60 秒后再试";
   }
 
-  if (lower.includes("invalid otp") || lower.includes("otp_expired") || lower.includes("token has expired")) {
+  if (lower.includes("for security purposes, you can only request this after")) {
+    const match = rawText.match(/after\s+(\d+)\s+seconds?/i);
+    return match ? `验证码发送过于频繁，请 ${match[1]} 秒后再试` : "验证码发送过于频繁，请稍后再试";
+  }
+
+  if (
+    lower.includes("invalid otp") ||
+    lower.includes("otp expired") ||
+    lower.includes("otp_expired") ||
+    lower.includes("token has expired") ||
+    lower.includes("expired")
+  ) {
     return "验证码有误或已过期，请重新发送最新验证码";
   }
 
@@ -43,29 +57,36 @@ function normalizeAuthError(raw: unknown) {
     return "邮箱或密码不正确";
   }
 
+  if (lower.includes("user already registered")) {
+    return "该邮箱已注册，请直接登录";
+  }
+
   if (lower.includes("email not confirmed")) {
-    return "账号尚未完成验证，请先完成注册或使用验证码注册";
+    return "账号尚未完成验证，请先使用邮箱验证码完成注册";
   }
 
   return base || fallback;
 }
 
 async function verifyOtpByEmail(email: string, token: string) {
-  const attempts: Array<"email" | "signup"> = ["email", "signup"];
-  let lastError: unknown = null;
+  const { data, error } = await supabase.auth.verifyOtp({
+    email,
+    token,
+    type: "email",
+  });
 
-  for (const type of attempts) {
-    const { error } = await supabase.auth.verifyOtp({
-      email,
-      token,
-      type,
+  if (error) throw error;
+
+  if (data.session) {
+    const { error: setSessionError } = await supabase.auth.setSession({
+      access_token: data.session.access_token,
+      refresh_token: data.session.refresh_token,
     });
 
-    if (!error) return;
-    lastError = error;
+    if (setSessionError) throw setSessionError;
   }
 
-  throw lastError ?? new Error("验证码有误或已过期，请重新发送最新验证码");
+  return data;
 }
 
 export default function AuthPage() {
@@ -87,18 +108,29 @@ export default function AuthPage() {
 
   useEffect(() => {
     if (cooldown <= 0) return undefined;
-    const timer = window.setTimeout(() => setCooldown((current) => Math.max(0, current - 1)), 1000);
+
+    const timer = window.setTimeout(() => {
+      setCooldown((current) => Math.max(0, current - 1));
+    }, 1000);
+
     return () => window.clearTimeout(timer);
   }, [cooldown]);
 
-  useEffect(() => {
+  const resetTransientState = () => {
     setOtpCode("");
-    setPassword("");
-    setConfirmPassword("");
     setCodeSent(false);
     setCooldown(0);
+    setSubmitting(false);
+    setSendingCode(false);
+  };
+
+  useEffect(() => {
+    resetTransientState();
     if (mode !== "signup") {
       setDisplayName("");
+    }
+    if (mode === "login") {
+      setConfirmPassword("");
     }
   }, [mode, normalizedEmail]);
 
@@ -109,21 +141,10 @@ export default function AuthPage() {
   }, [mode]);
 
   const pageDescription = useMemo(() => {
-    if (mode === "signup") return "邮箱验证码仅用于完成注册验证，验证通过后立即设置密码。";
-    if (mode === "reset") return "使用邮箱验证码验证身份找回密码，通过后直接设置新密码。";
-    return "默认使用邮箱密码登录，验证码登录不再作为主入口。";
+    if (mode === "signup") return "使用邮箱验证码完成注册，验证通过后设置密码即可登录。";
+    if (mode === "reset") return "使用邮箱验证码验证身份后直接设置新密码。";
+    return "使用邮箱密码登录，注册和找回密码使用邮箱验证码。";
   }, [mode]);
-
-  const resetOtpState = () => {
-    setOtpCode("");
-    setCodeSent(false);
-    setCooldown(0);
-  };
-
-  const switchMode = (nextMode: AuthMode) => {
-    setMode(nextMode);
-    resetOtpState();
-  };
 
   const showError = (raw: unknown) => {
     toast({
@@ -131,6 +152,13 @@ export default function AuthPage() {
       description: normalizeAuthError(raw),
       variant: "destructive",
     });
+  };
+
+  const switchMode = (nextMode: AuthMode) => {
+    setMode(nextMode);
+    resetTransientState();
+    setPassword("");
+    setConfirmPassword("");
   };
 
   const ensureEmail = () => {
@@ -142,6 +170,7 @@ export default function AuthPage() {
       });
       return false;
     }
+
     return true;
   };
 
@@ -149,7 +178,7 @@ export default function AuthPage() {
     if (!password.trim()) {
       toast({
         title: "请输入密码",
-        description: "请先填写密码。",
+        description: mode === "reset" ? "请填写新的登录密码。" : "请先填写密码。",
         variant: "destructive",
       });
       return false;
@@ -178,13 +207,23 @@ export default function AuthPage() {
 
   const handleSendCode = async () => {
     if (!ensureEmail()) return;
+    if (mode === "signup" && !displayName.trim()) {
+      toast({
+        title: "请输入昵称",
+        description: "注册账号前请先填写昵称。",
+        variant: "destructive",
+      });
+      return;
+    }
 
     setSendingCode(true);
+
     try {
       const { error } = await supabase.auth.signInWithOtp({
         email: normalizedEmail,
         options: {
           shouldCreateUser: mode === "signup",
+          emailRedirectTo: getAuthCallbackUrl(),
           data: mode === "signup" && displayName.trim() ? { display_name: displayName.trim() } : undefined,
         },
       });
@@ -197,11 +236,13 @@ export default function AuthPage() {
         title: "验证码已发送",
         description:
           mode === "signup"
-            ? `请使用邮箱中的最新 ${OTP_LENGTH} 位验证码完成注册。`
-            : `请使用邮箱中的最新 ${OTP_LENGTH} 位验证码重置密码。`,
+            ? `请使用本次邮件中的 ${OTP_LENGTH} 位验证码完成注册。`
+            : `请使用本次邮件中的 ${OTP_LENGTH} 位验证码完成密码重置。`,
       });
     } catch (error) {
       showError(error);
+      setCodeSent(false);
+      setCooldown(0);
     } finally {
       setSendingCode(false);
     }
@@ -212,6 +253,7 @@ export default function AuthPage() {
     if (!ensureEmail() || !ensurePassword(false)) return;
 
     setSubmitting(true);
+
     try {
       const { error } = await supabase.auth.signInWithPassword({
         email: normalizedEmail,
@@ -232,12 +274,34 @@ export default function AuthPage() {
     }
   };
 
-  const handleSignup = async () => {
-    if (!ensureEmail()) return;
+  const ensureOtpReady = () => {
+    if (!codeSent) {
+      toast({
+        title: "请先发送验证码",
+        description: "请先发送本次验证码，再完成验证。",
+        variant: "destructive",
+      });
+      return false;
+    }
+
     if (!otpCode.trim()) {
       toast({
         title: "请输入验证码",
         description: `请填写邮箱中收到的最新 ${OTP_LENGTH} 位验证码。`,
+        variant: "destructive",
+      });
+      return false;
+    }
+
+    return true;
+  };
+
+  const handleSignup = async () => {
+    if (!ensureEmail() || !ensureOtpReady()) return;
+    if (!displayName.trim()) {
+      toast({
+        title: "请输入昵称",
+        description: "注册账号前请先填写昵称。",
         variant: "destructive",
       });
       return;
@@ -245,12 +309,13 @@ export default function AuthPage() {
     if (!ensurePassword(true)) return;
 
     setSubmitting(true);
+
     try {
       await verifyOtpByEmail(normalizedEmail, otpCode.trim());
 
       const { error } = await supabase.auth.updateUser({
         password,
-        data: displayName.trim() ? { display_name: displayName.trim() } : undefined,
+        data: { display_name: displayName.trim() },
       });
 
       if (error) throw error;
@@ -268,18 +333,11 @@ export default function AuthPage() {
   };
 
   const handleResetPassword = async () => {
-    if (!ensureEmail()) return;
-    if (!otpCode.trim()) {
-      toast({
-        title: "请输入验证码",
-        description: `请填写邮箱中收到的最新 ${OTP_LENGTH} 位验证码。`,
-        variant: "destructive",
-      });
-      return;
-    }
+    if (!ensureEmail() || !ensureOtpReady()) return;
     if (!ensurePassword(true)) return;
 
     setSubmitting(true);
+
     try {
       await verifyOtpByEmail(normalizedEmail, otpCode.trim());
 
@@ -287,6 +345,7 @@ export default function AuthPage() {
       if (error) throw error;
 
       await supabase.auth.signOut({ scope: "local" });
+
       toast({
         title: "密码已重置",
         description: "请使用新密码重新登录。",
@@ -294,9 +353,7 @@ export default function AuthPage() {
 
       setPassword("");
       setConfirmPassword("");
-      setOtpCode("");
-      setCodeSent(false);
-      setCooldown(0);
+      resetTransientState();
       setMode("login");
     } catch (error) {
       showError(error);
@@ -306,9 +363,9 @@ export default function AuthPage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col lg:flex-row bg-background">
-      <div className="relative hidden lg:flex lg:w-[52%] flex-col justify-between overflow-hidden bg-gradient-to-br from-[hsl(248,56%,28%)] via-[hsl(242,52%,23%)] to-[hsl(256,58%,18%)] p-10 text-white">
-        <div className="absolute -top-28 -left-20 h-80 w-80 rounded-full bg-primary/20 blur-[120px]" />
+    <div className="flex min-h-screen flex-col bg-background lg:flex-row">
+      <div className="relative hidden overflow-hidden bg-gradient-to-br from-[hsl(248,56%,28%)] via-[hsl(242,52%,23%)] to-[hsl(256,58%,18%)] p-10 text-white lg:flex lg:w-[52%] lg:flex-col lg:justify-between">
+        <div className="absolute -left-20 -top-28 h-80 w-80 rounded-full bg-primary/20 blur-[120px]" />
         <div className="absolute bottom-0 right-0 h-72 w-72 rounded-full bg-violet-500/15 blur-[100px]" />
 
         <div className="relative z-10 flex items-center gap-3">
@@ -316,10 +373,10 @@ export default function AuthPage() {
           <span className="text-xl font-bold tracking-tight">PicSpark AI</span>
         </div>
 
-        <div className="relative z-10 flex-1 max-w-md flex flex-col justify-center">
-          <h1 className="text-4xl font-extrabold leading-tight mb-4 tracking-tight">AI 点燃商品图片创意</h1>
-          <p className="text-base leading-relaxed text-white/75 mb-8">
-            上传一张商品图，即刻生成电商主图、买家秀、场景图等多种风格，让 AI 成为你的专属摄影师与设计师。
+        <div className="relative z-10 flex max-w-md flex-1 flex-col justify-center">
+          <h1 className="mb-4 text-4xl font-extrabold leading-tight tracking-tight">AI 点燃商品图片创意</h1>
+          <p className="mb-8 text-base leading-relaxed text-white/75">
+            上传一张商品图，即刻生成电商主图、买家秀、场景图等多种风格。让 AI 成为你的专属摄影师与设计师。
           </p>
           <div className="flex flex-wrap gap-2">
             {FEATURE_TAGS.map((feature) => (
@@ -336,7 +393,7 @@ export default function AuthPage() {
         <p className="relative z-10 text-xs text-white/40">© 2026 PicSpark AI · AI-powered e-commerce visual generation platform</p>
       </div>
 
-      <div className="flex-1 flex flex-col">
+      <div className="flex flex-1 flex-col">
         <div className="flex items-center justify-between p-4">
           <button
             onClick={() => navigate("/")}
@@ -399,7 +456,7 @@ export default function AuthPage() {
                   <Input
                     value={displayName}
                     onChange={(event) => setDisplayName(event.target.value)}
-                    placeholder="请输入昵称（可选）"
+                    placeholder="请输入昵称"
                     className="h-11"
                   />
                 </div>
@@ -457,7 +514,7 @@ export default function AuthPage() {
                       {mode === "signup" ? "邮箱验证码注册" : "邮箱验证码重置密码"}
                     </div>
                     <p className="mt-2 leading-relaxed">
-                      当前邮件验证码一般为 {OTP_LENGTH} 位数字。发送后请使用本次邮件中的最新验证码，旧验证码会失效。
+                      当前邮箱验证码一般为 {OTP_LENGTH} 位数字。发送后请使用本次邮件中的最新验证码，旧验证码会失效。
                     </p>
                   </div>
 
@@ -470,7 +527,7 @@ export default function AuthPage() {
                     {sendingCode ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : cooldown > 0 ? (
-                      `请等待 ${cooldown}s`
+                      `请等待 ${cooldown} 秒`
                     ) : (
                       "发送验证码"
                     )}
@@ -519,7 +576,13 @@ export default function AuthPage() {
                     disabled={submitting || !codeSent}
                     onClick={mode === "signup" ? handleSignup : handleResetPassword}
                   >
-                    {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : mode === "signup" ? "验证并注册" : "验证并重置密码"}
+                    {submitting ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : mode === "signup" ? (
+                      "验证并注册"
+                    ) : (
+                      "验证并重置密码"
+                    )}
                   </Button>
                 </>
               )}

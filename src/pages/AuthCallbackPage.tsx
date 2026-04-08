@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Loader2 } from "lucide-react";
+
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { normalizeUserErrorMessage } from "@/lib/error-messages";
@@ -31,7 +32,9 @@ export default function AuthCallbackPage() {
             token_hash: tokenHash,
             type: typeParam as "signup" | "magiclink" | "recovery" | "invite" | "email_change" | "email",
           });
+
           if (error) throw error;
+
           navigate(typeParam === "recovery" ? "/auth" : "/dashboard", { replace: true });
           return;
         }
@@ -54,8 +57,8 @@ export default function AuthCallbackPage() {
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="flex flex-col items-center gap-3 rounded-2xl border border-border/70 bg-card px-8 py-10 text-center shadow-sm">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <div className="text-lg font-semibold text-foreground">正在处理登录验证</div>
-        <p className="max-w-sm text-sm text-muted-foreground">请稍候，系统会自动完成认证并跳转。</p>
+        <div className="text-lg font-semibold text-foreground">正在处理认证</div>
+        <p className="max-w-sm text-sm text-muted-foreground">请稍候，系统会自动完成登录并跳转。</p>
       </div>
     </div>
   );
