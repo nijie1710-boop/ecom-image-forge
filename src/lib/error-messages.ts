@@ -30,15 +30,14 @@ export function normalizeUserErrorMessage(input: unknown, fallback = GENERATION_
   if (
     includesAny(normalized, [
       "not authenticated",
-      "jwt",
       "auth session missing",
+      "jwt",
       "token",
-      "401",
       "unauthorized",
-      "invalid claim",
+      "401",
       "login required",
-      "请先登录",
       "未登录",
+      "请先登录",
     ])
   ) {
     return LOGIN_REQUIRED_MESSAGE;
@@ -50,11 +49,11 @@ export function normalizeUserErrorMessage(input: unknown, fallback = GENERATION_
       "invalid image",
       "mime",
       "format",
-      "jpg",
-      "png",
-      "webp",
+      ".jpg",
+      ".jpeg",
+      ".png",
+      ".webp",
       "图片格式",
-      "图像格式",
     ])
   ) {
     return UNSUPPORTED_IMAGE_MESSAGE;
@@ -65,10 +64,12 @@ export function normalizeUserErrorMessage(input: unknown, fallback = GENERATION_
       "parse",
       "decode",
       "base64",
-      "empty_image_result",
-      "图片解析",
-      "商品图解析",
       "ocr",
+      "product_image_required",
+      "image_required",
+      "empty_image_result",
+      "商品图解析",
+      "解析失败",
       "no valid image",
       "no image returned",
     ])
@@ -82,12 +83,12 @@ export function normalizeUserErrorMessage(input: unknown, fallback = GENERATION_
       "quota",
       "billing",
       "credit",
-      "rate limit exceeded",
+      "payment required",
+      "402",
       "resource exhausted",
       "额度不足",
       "积分不足",
-      "限流",
-      "frequency limit",
+      "余额不足",
     ])
   ) {
     return AI_QUOTA_MESSAGE;
@@ -100,33 +101,39 @@ export function normalizeUserErrorMessage(input: unknown, fallback = GENERATION_
       "busy",
       "temporarily unavailable",
       "upstream",
+      "network",
       "502",
       "503",
       "504",
+      "429",
+      "too many requests",
+      "email rate limit exceeded",
+      "over_email_send_rate_limit",
+      "failed to send a request to the edge function",
+      "fetch failed",
+      "load failed",
+      "cloudflare",
       "系统繁忙",
       "稍后再试",
-      "服务不可用",
-      "network",
-      "failed to send a request to the edge function",
     ])
   ) {
     return SYSTEM_BUSY_MESSAGE;
   }
 
-  if (
-    includesAny(normalized, [
-      "generate",
-      "detail plan",
-      "scene",
-      "translate",
-      "保存失败",
-      "生成失败",
-      "翻译失败",
-      "策划失败",
-      "场景识别失败",
-    ])
-  ) {
-    return fallback;
+  if (includesAny(normalized, ["invalid login credentials", "invalid_credentials", "邮箱或密码不正确"])) {
+    return "邮箱或密码不正确";
+  }
+
+  if (includesAny(normalized, ["invalid otp", "otp expired", "otp_expired", "token has expired", "验证码"])) {
+    return "验证码有误或已过期，请重新发送";
+  }
+
+  if (includesAny(normalized, ["user already registered"])) {
+    return "该邮箱已注册，请直接登录";
+  }
+
+  if (includesAny(normalized, ["email not confirmed"])) {
+    return "账号尚未完成验证，请先完成注册或验证";
   }
 
   return fallback;
@@ -134,12 +141,14 @@ export function normalizeUserErrorMessage(input: unknown, fallback = GENERATION_
 
 export function errorHintFromMessage(message: string | null | undefined) {
   if (!message) return null;
-  if (message === LOGIN_REQUIRED_MESSAGE) return "请重新登录后再操作。";
-  if (message === UNSUPPORTED_IMAGE_MESSAGE) return "请上传 JPG、PNG 或 WEBP 格式图片。";
-  if (message === IMAGE_PARSE_FAILED_MESSAGE) return "请更换更清晰的商品图，或重新上传。";
-  if (message === AI_QUOTA_MESSAGE) return "请检查模型额度、计费配置或稍后重试。";
-  if (message === SYSTEM_BUSY_MESSAGE) return "建议稍后再试，或降低图片数量和规格。";
+  if (message === LOGIN_REQUIRED_MESSAGE) return "请重新登录后再试。";
+  if (message === UNSUPPORTED_IMAGE_MESSAGE) return "请上传 JPG、PNG 或 WEBP 格式的图片。";
+  if (message === IMAGE_PARSE_FAILED_MESSAGE) return "请更换更清晰的商品图，或重新上传后再试。";
+  if (message === AI_QUOTA_MESSAGE) return "请先充值积分，或稍后再试。";
+  if (message === SYSTEM_BUSY_MESSAGE) return "建议稍后再试，或减少图片数量与规格。";
   if (message === GENERATION_FAILED_MESSAGE) return "建议保留当前识别结果，稍后重新生成一次。";
+  if (message === "邮箱或密码不正确") return "请检查邮箱和密码是否输入正确。";
+  if (message === "验证码有误或已过期，请重新发送") return "请使用最新一封邮件中的验证码。";
   return null;
 }
 

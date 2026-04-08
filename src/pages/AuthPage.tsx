@@ -50,7 +50,7 @@ function normalizeAuthError(raw: unknown) {
     lower.includes("token has expired") ||
     lower.includes("expired")
   ) {
-    return "验证码有误或已过期，请重新发送最新验证码";
+    return "验证码有误或已过期，请重新发送";
   }
 
   if (lower.includes("invalid login credentials")) {
@@ -62,7 +62,7 @@ function normalizeAuthError(raw: unknown) {
   }
 
   if (lower.includes("email not confirmed")) {
-    return "账号尚未完成验证，请先使用邮箱验证码完成注册";
+    return "账号尚未完成验证，请先完成注册";
   }
 
   return base || fallback;
@@ -142,8 +142,8 @@ export default function AuthPage() {
 
   const pageDescription = useMemo(() => {
     if (mode === "signup") return "使用邮箱验证码完成注册，验证通过后设置密码即可登录。";
-    if (mode === "reset") return "使用邮箱验证码验证身份后直接设置新密码。";
-    return "使用邮箱密码登录，注册和找回密码使用邮箱验证码。";
+    if (mode === "reset") return "使用邮箱验证码验证身份后，直接设置新密码。";
+    return "使用邮箱密码登录，使用邮箱验证码注册并找回密码。";
   }, [mode]);
 
   const showError = (raw: unknown) => {
@@ -156,9 +156,9 @@ export default function AuthPage() {
 
   const switchMode = (nextMode: AuthMode) => {
     setMode(nextMode);
-    resetTransientState();
     setPassword("");
     setConfirmPassword("");
+    resetTransientState();
   };
 
   const ensureEmail = () => {
@@ -205,8 +205,31 @@ export default function AuthPage() {
     return true;
   };
 
+  const ensureOtpReady = () => {
+    if (!codeSent) {
+      toast({
+        title: "请先发送验证码",
+        description: "请先发送本次验证码，再完成验证。",
+        variant: "destructive",
+      });
+      return false;
+    }
+
+    if (!otpCode.trim()) {
+      toast({
+        title: "请输入验证码",
+        description: `请填写邮箱中收到的最新 ${OTP_LENGTH} 位验证码。`,
+        variant: "destructive",
+      });
+      return false;
+    }
+
+    return true;
+  };
+
   const handleSendCode = async () => {
     if (!ensureEmail()) return;
+
     if (mode === "signup" && !displayName.trim()) {
       toast({
         title: "请输入昵称",
@@ -240,9 +263,9 @@ export default function AuthPage() {
             : `请使用本次邮件中的 ${OTP_LENGTH} 位验证码完成密码重置。`,
       });
     } catch (error) {
-      showError(error);
       setCodeSent(false);
       setCooldown(0);
+      showError(error);
     } finally {
       setSendingCode(false);
     }
@@ -250,7 +273,7 @@ export default function AuthPage() {
 
   const handlePasswordLogin = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!ensureEmail() || !ensurePassword(false)) return;
+    if (!ensureEmail() || !ensurePassword()) return;
 
     setSubmitting(true);
 
@@ -272,28 +295,6 @@ export default function AuthPage() {
     } finally {
       setSubmitting(false);
     }
-  };
-
-  const ensureOtpReady = () => {
-    if (!codeSent) {
-      toast({
-        title: "请先发送验证码",
-        description: "请先发送本次验证码，再完成验证。",
-        variant: "destructive",
-      });
-      return false;
-    }
-
-    if (!otpCode.trim()) {
-      toast({
-        title: "请输入验证码",
-        description: `请填写邮箱中收到的最新 ${OTP_LENGTH} 位验证码。`,
-        variant: "destructive",
-      });
-      return false;
-    }
-
-    return true;
   };
 
   const handleSignup = async () => {
@@ -353,6 +354,7 @@ export default function AuthPage() {
 
       setPassword("");
       setConfirmPassword("");
+      setDisplayName("");
       resetTransientState();
       setMode("login");
     } catch (error) {
@@ -374,7 +376,7 @@ export default function AuthPage() {
         </div>
 
         <div className="relative z-10 flex max-w-md flex-1 flex-col justify-center">
-          <h1 className="mb-4 text-4xl font-extrabold leading-tight tracking-tight">AI 点燃商品图片创意</h1>
+          <h1 className="mb-4 text-4xl font-extrabold leading-tight tracking-tight">AI 商品图片创意</h1>
           <p className="mb-8 text-base leading-relaxed text-white/75">
             上传一张商品图，即刻生成电商主图、买家秀、场景图等多种风格。让 AI 成为你的专属摄影师与设计师。
           </p>
@@ -484,7 +486,7 @@ export default function AuthPage() {
                         onClick={() => switchMode("reset")}
                         className="text-xs text-primary hover:underline"
                       >
-                        忘记密码？
+                        忘记密码?
                       </button>
                     </div>
                     <Input
@@ -514,7 +516,7 @@ export default function AuthPage() {
                       {mode === "signup" ? "邮箱验证码注册" : "邮箱验证码重置密码"}
                     </div>
                     <p className="mt-2 leading-relaxed">
-                      当前邮箱验证码一般为 {OTP_LENGTH} 位数字。发送后请使用本次邮件中的最新验证码，旧验证码会失效。
+                      当前邮件验证码一般为 {OTP_LENGTH} 位数字。发送后请使用本次邮件中的最新验证码，旧验证码会失效。
                     </p>
                   </div>
 

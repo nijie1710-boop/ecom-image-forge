@@ -2,11 +2,27 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
-const NEW_SUPABASE_URL = 'https://rqgrovumfgjwuhkthqxe.supabase.co';
-const NEW_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_kR5Qt951QycXiDjppFSquQ_XODYlvpq';
+const DEFAULT_SUPABASE_URL = 'https://rqgrovumfgjwuhkthqxe.supabase.co';
+const DEFAULT_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_kR5Qt951QycXiDjppFSquQ_XODYlvpq';
 
-const SUPABASE_URL = NEW_SUPABASE_URL;
-const SUPABASE_PUBLISHABLE_KEY = NEW_SUPABASE_PUBLISHABLE_KEY;
+function getProductionOverride() {
+  if (typeof window === 'undefined') return null;
+
+  const hostname = window.location.hostname;
+  if (hostname === 'picspark.cn' || hostname === 'www.picspark.cn') {
+    return {
+      url: DEFAULT_SUPABASE_URL,
+      key: DEFAULT_SUPABASE_PUBLISHABLE_KEY,
+    };
+  }
+
+  return null;
+}
+
+const productionOverride = getProductionOverride();
+const SUPABASE_URL = productionOverride?.url || import.meta.env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL;
+const SUPABASE_PUBLISHABLE_KEY =
+  productionOverride?.key || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || DEFAULT_SUPABASE_PUBLISHABLE_KEY;
 
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
