@@ -52,24 +52,23 @@ export type OptimizeProductInfoParams = {
 
 function isMissingFunctionError(raw: unknown) {
   const text = String(raw || "").toLowerCase();
+  return text.includes("requested function was not found") || text.includes("not_found") || text.includes("404");
+}
+
+function buildFallbackProductInfo(params: OptimizeProductInfoParams) {
   return (
-    text.includes("requested function was not found") ||
-    text.includes("not_found") ||
-    text.includes("404")
+    params.productInfo?.trim() ||
+    "请基于上传商品图整理商品类型、核心卖点、材质、尺寸、适用人群和需要保留的关键信息。"
   );
 }
 
-export async function generateDetailPlan(
-  params: DetailPlanParams,
-): Promise<DetailPlanResponse> {
+export async function generateDetailPlan(params: DetailPlanParams): Promise<DetailPlanResponse> {
   const { data, error } = await supabase.functions.invoke("detail-plan", {
     body: params,
   });
 
   if (error) {
-    throw new Error(
-      normalizeUserErrorMessage(error.message, "详情页策划失败，请稍后重试。"),
-    );
+    throw new Error(normalizeUserErrorMessage(error.message, "详情页策划失败，请稍后重试。"));
   }
 
   if (!data) {
@@ -79,29 +78,23 @@ export async function generateDetailPlan(
   return data as DetailPlanResponse;
 }
 
-export async function optimizeProductInfo(
-  params: OptimizeProductInfoParams,
-): Promise<string> {
+export async function optimizeProductInfo(params: OptimizeProductInfoParams): Promise<string> {
   const { data, error } = await supabase.functions.invoke("optimize-product-info", {
     body: params,
   });
 
   if (error) {
     if (isMissingFunctionError(error.message)) {
-      return (
-        params.productInfo?.trim() ||
-        "请基于上传商品图整理商品类型、核心卖点、材质、尺寸、适用人群和希望保留的关键信息。"
-      );
+      return buildFallbackProductInfo(params);
     }
 
-    throw new Error(
-      normalizeUserErrorMessage(error.message, "产品信息优化失败，请稍后重试。"),
-    );
+    console.warn("optimize-product-info failed, fallback to manual content:", error.message);
+    return buildFallbackProductInfo(params);
   }
 
   const optimized = data?.optimizedText;
   if (!optimized || typeof optimized !== "string") {
-    throw new Error("产品信息优化没有返回有效结果，请重新尝试。");
+    return buildFallbackProductInfo(params);
   }
 
   return optimized;

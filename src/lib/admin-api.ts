@@ -4,22 +4,19 @@ function normalizeAdminErrorMessage(message?: string) {
   const text = String(message || "").trim();
   if (!text) return "管理员请求失败，请稍后重试。";
 
-  if (text.includes("not admin") || text.includes("没有管理员权限")) {
-    return "当前账号没有管理员权限，请重新登录管理员账号后再试。";
+  const lower = text.toLowerCase();
+
+  if (lower.includes("not admin") || lower.includes("admin only")) {
+    return "当前账号没有管理员权限，请切换管理员账号后再试。";
   }
 
-  if (
-    text.includes("JWT") ||
-    text.includes("session") ||
-    text.includes("登录") ||
-    text.includes("token")
-  ) {
+  if (lower.includes("jwt") || lower.includes("session") || lower.includes("token") || lower.includes("login")) {
     return "登录状态已失效，请重新登录后再进入后台。";
   }
 
   if (
-    text.includes("Failed to send a request to the Edge Function") ||
-    text.includes("Edge Function returned a non-2xx status code")
+    lower.includes("failed to send a request to the edge function") ||
+    lower.includes("edge function returned a non-2xx status code")
   ) {
     return "后台接口暂时不可用，请刷新页面后重试。";
   }
@@ -60,9 +57,7 @@ export async function callAdminApi(body: Record<string, unknown>) {
     throw new Error("登录状态已失效，请重新登录后再进入后台。");
   }
 
-  const { data, error } = await supabase.functions.invoke("admin-users", {
-    body,
-  });
+  const { data, error } = await supabase.functions.invoke("admin-users", { body });
 
   if (error) {
     throw new Error(await readInvokeError(error as Error & { context?: Response | string }));
