@@ -1,5 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
-import { Coins, CreditCard, History, Loader2, ReceiptText, Sparkles } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import {
+  Coins,
+  CreditCard,
+  ExternalLink,
+  History,
+  Loader2,
+  ReceiptText,
+  Sparkles,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -7,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
+import { getAppOrigin } from "@/lib/app-config";
 
 interface BalanceInfo {
   balance: number;
@@ -61,6 +71,22 @@ interface CreditRules {
   };
 }
 
+interface RechargeOrder {
+  id: string;
+  order_no: string;
+  package_id: string;
+  package_label?: string | null;
+  amount: number;
+  credits: number;
+  payment_channel: string;
+  status: string;
+  subject?: string | null;
+  trade_no?: string | null;
+  buyer_logon_id?: string | null;
+  created_at: string;
+  paid_at?: string | null;
+}
+
 function formatDate(dateStr?: string | null) {
   if (!dateStr) return "-";
   return new Date(dateStr).toLocaleString("zh-CN", {
@@ -75,23 +101,51 @@ function formatDate(dateStr?: string | null) {
 function getOperationLabel(type: string) {
   const labels: Record<string, string> = {
     generate_image: "AI 生图",
-    generate_copy: "AI 详情页",
+    detail_generation: "AI 详情页逐屏生成",
+    detail_planning: "AI 详情页策划",
     translate_image: "图文翻译",
     manual_adjustment: "手动调整",
+    image_generation: "AI 生图",
   };
-
   return labels[type] || type || "其他";
 }
 
+function getOrderStatusLabel(status: string) {
+  const labels: Record<string, string> = {
+    pending: "待支付",
+    paid: "已支付",
+    closed: "已关闭",
+    wait_buyer_pay: "待支付",
+    trade_success: "已支付",
+    trade_finished: "已支付",
+  };
+  return labels[String(status || "").toLowerCase()] || status || "未知";
+}
+
+function getOrderStatusVariant(status: string): "default" | "secondary" | "destructive" | "outline" {
+  const normalized = String(status || "").toLowerCase();
+  if (normalized === "paid" || normalized === "trade_success" || normalized === "trade_finished") return "default";
+  if (normalized === "pending" || normalized === "wait_buyer_pay") return "secondary";
+  if (normalized === "closed" || normalized === "failed") return "destructive";
+  return "outline";
+}
+
 export default function RechargePage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [isLoading, setIsLoading] = useState(true);
   const [isPurchasing, setIsPurchasing] = useState(false);
+  const [isPolling, setIsPolling] = useState(false);
   const [balance, setBalance] = useState<BalanceInfo | null>(null);
   const [packages, setPackages] = useState<RechargePackage[]>([]);
   const [creditRules, setCreditRules] = useState<CreditRules | null>(null);
   const [rechargeHistory, setRechargeHistory] = useState<RechargeRecord[]>([]);
   const [consumptionHistory, setConsumptionHistory] = useState<ConsumptionRecord[]>([]);
+  const [orders, setOrders] = useState<RechargeOrder[]>([]);
   const [selectedPackageId, setSelectedPackageId] = useState("");
+  const successToastShownRef = useRef(false);
+
+  const returnedOrderNo = searchParams.get("order_no") || "";
+  const returnedStatus = searchParams.get("payment_status") || "";
 
   const selectedPackage = useMemo(
     () => packages.find((item) => item.id === selectedPackageId) || null,
@@ -102,8 +156,66 @@ export default function RechargePage() {
     void loadAll();
   }, []);
 
+  useEffect(() => {
+    if (!returnedOrderNo || returnedStatus !== "return") return;
+    let cancelled = false;
+
+    async function pollOrder() {
+      setIsPolling(true);
+
+      for (let attempt = 0; attempt < 10 && !cancelled; attempt += 1) {
+        try {
+          const data = await invokePaymentApi({ action: "status", orderNo: returnedOrderNo });
+          const order = data.order as RechargeOrder | undefined;
+
+          if (order) {
+            setOrders((current) => {
+              const others = current.filter((item) => item.order_no !== order.order_no);
+              return [order, ...others].sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at));
+            });
+          }
+
+          if (order?.status === "paid") {
+            await loadAll();
+            if (!successToastShownRef.current) {
+              successToastShownRef.current = true;
+              toast.success(`支付成功，已到账 ${order.credits} 积分`);
+            }
+            const next = new URLSearchParams(searchParams);
+            next.delete("payment_status");
+            next.delete("order_no");
+            setSearchParams(next, { replace: true });
+            break;
+          }
+        } catch (error) {
+          if (attempt === 0) {
+            toast.error(error instanceof Error ? error.message : "订单状态查询失败，请稍后刷新重试");
+          }
+          break;
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      }
+
+      if (!cancelled) setIsPolling(false);
+    }
+
+    void pollOrder();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [returnedOrderNo, returnedStatus, searchParams, setSearchParams]);
+
   async function invokeManageBalance(body: Record<string, unknown>) {
     const { data, error } = await supabase.functions.invoke("manage-balance", { body });
+    if (error) throw error;
+    if (data?.error) throw new Error(String(data.error));
+    return data;
+  }
+
+  async function invokePaymentApi(body: Record<string, unknown>) {
+    const { data, error } = await supabase.functions.invoke("alipay-order", { body });
     if (error) throw error;
     if (data?.error) throw new Error(String(data.error));
     return data;
@@ -112,10 +224,11 @@ export default function RechargePage() {
   async function loadAll() {
     setIsLoading(true);
     try {
-      const [balanceResponse, pricingResponse, historyResponse] = await Promise.all([
+      const [balanceResponse, pricingResponse, historyResponse, ordersResponse] = await Promise.all([
         invokeManageBalance({ action: "get" }),
         invokeManageBalance({ action: "get_pricing" }),
         invokeManageBalance({ action: "history" }),
+        invokePaymentApi({ action: "list" }),
       ]);
 
       setBalance(balanceResponse.balance || null);
@@ -123,13 +236,15 @@ export default function RechargePage() {
       setCreditRules(pricingResponse.creditRules || null);
       setRechargeHistory(historyResponse.recharges || []);
       setConsumptionHistory(historyResponse.consumptions || []);
+      setOrders(ordersResponse.orders || []);
       setSelectedPackageId((current) => {
         if (current) return current;
         const highlighted = pricingResponse.packages?.find((item: RechargePackage) => item.highlight);
         return highlighted?.id || pricingResponse.packages?.[0]?.id || "";
       });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "加载充值中心失败，请稍后再试。");
+      console.error("load recharge center failed:", error);
+      toast.error(error instanceof Error ? error.message : "加载充值中心失败，请稍后再试");
     } finally {
       setIsLoading(false);
     }
@@ -137,32 +252,30 @@ export default function RechargePage() {
 
   async function handlePurchase() {
     if (!selectedPackage) {
-      toast.error("请先选择一个充值套餐。");
+      toast.error("请先选择一个充值套餐");
       return;
     }
 
     setIsPurchasing(true);
     try {
-      const response = await invokeManageBalance({
-        action: "purchase_package",
+      const scene = /iphone|android|mobile|ipad|harmonyos/i.test(window.navigator.userAgent) ? "mobile" : "pc";
+      const response = await invokePaymentApi({
+        action: "create",
         packageId: selectedPackage.id,
-        paymentMethod: "auto_credit",
-        notes: `购买${selectedPackage.label}`,
+        origin: getAppOrigin(),
+        scene,
       });
 
-      toast.success(`充值成功，已到账 ${selectedPackage.credits} 积分。`);
-      setBalance((current) =>
-        current
-          ? {
-              ...current,
-              balance: response.result?.new_balance ?? current.balance + selectedPackage.credits,
-              total_recharged: current.total_recharged + selectedPackage.credits,
-            }
-          : current,
-      );
-      await loadAll();
+      const payUrl = String(response.payUrl || "");
+      if (!payUrl) {
+        throw new Error("支付链接创建失败，请稍后再试");
+      }
+
+      toast.success("订单已创建，正在跳转支付宝支付");
+      window.location.href = payUrl;
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "充值失败，请稍后再试。");
+      console.error("create payment order failed:", error);
+      toast.error(error instanceof Error ? error.message : "创建支付订单失败，请稍后再试");
     } finally {
       setIsPurchasing(false);
     }
@@ -184,11 +297,12 @@ export default function RechargePage() {
             <div>
               <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-medium">
                 <Sparkles className="h-3.5 w-3.5" />
-                充值中心
+                积分充值中心
               </div>
-              <h1 className="mt-3 text-3xl font-semibold">给你的创作额度快速补给</h1>
+              <h1 className="mt-3 text-3xl font-semibold">支付成功后自动到账积分</h1>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-white/85">
-                充值套餐与扣费规则直接来自后台系统配置。当前版本支持站内自动到账，购买成功后会立即增加积分并写入充值历史。
+                当前页面已经切换为真实支付流程：先创建支付宝订单，支付成功并收到回调后再自动加积分，
+                不再支持点击后直接到账。
               </p>
             </div>
             <div className="grid min-w-[260px] gap-3 rounded-3xl border border-white/15 bg-white/10 p-4 backdrop-blur">
@@ -200,21 +314,34 @@ export default function RechargePage() {
               <div className="grid grid-cols-2 gap-3 text-xs text-white/80">
                 <div className="rounded-2xl bg-black/10 p-3">
                   <div>累计充值</div>
-                  <div className="mt-1 text-lg font-semibold text-white">
-                    {balance?.total_recharged ?? 0}
-                  </div>
+                  <div className="mt-1 text-lg font-semibold text-white">{balance?.total_recharged ?? 0}</div>
                 </div>
                 <div className="rounded-2xl bg-black/10 p-3">
-                  <div>累计消耗</div>
-                  <div className="mt-1 text-lg font-semibold text-white">
-                    {balance?.total_consumed ?? 0}
-                  </div>
+                  <div>累计消费</div>
+                  <div className="mt-1 text-lg font-semibold text-white">{balance?.total_consumed ?? 0}</div>
                 </div>
               </div>
             </div>
           </div>
         </CardContent>
       </Card>
+
+      {returnedOrderNo ? (
+        <Card className="rounded-3xl border border-primary/20 bg-primary/5">
+          <CardContent className="flex flex-col gap-3 p-5 md:flex-row md:items-center md:justify-between">
+            <div>
+              <div className="text-sm font-medium text-foreground">正在查询支付结果</div>
+              <div className="mt-1 text-sm text-muted-foreground">
+                订单号：{returnedOrderNo}
+                {isPolling ? "，支付宝回调处理中..." : ""}
+              </div>
+            </div>
+            <Button variant="outline" onClick={() => void loadAll()}>
+              刷新订单状态
+            </Button>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
         <Card className="rounded-3xl border border-border shadow-sm">
@@ -223,7 +350,9 @@ export default function RechargePage() {
               <CreditCard className="h-5 w-5 text-primary" />
               充值套餐
             </CardTitle>
-            <CardDescription>选择套餐后点击购买，积分会立即自动入账。</CardDescription>
+            <CardDescription>
+              选择套餐后跳转支付宝支付，只有支付成功并收到回调后才会增加积分。
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-4 md:grid-cols-2">
@@ -247,16 +376,12 @@ export default function RechargePage() {
                         <div className="text-lg font-semibold text-foreground">{pkg.label}</div>
                         <div className="mt-1 text-sm text-muted-foreground">到账 {pkg.credits} 积分</div>
                       </div>
-                      {pkg.badge ? (
-                        <Badge variant={pkg.highlight ? "default" : "outline"}>{pkg.badge}</Badge>
-                      ) : null}
+                      {pkg.badge ? <Badge variant={pkg.highlight ? "default" : "outline"}>{pkg.badge}</Badge> : null}
                     </div>
                     <div className="mt-5 flex items-end justify-between gap-3">
                       <div>
                         <div className="text-3xl font-bold text-foreground">¥ {pkg.price}</div>
-                        <div className="mt-1 text-xs text-muted-foreground">
-                          约 ¥ {unitPrice} / 积分
-                        </div>
+                        <div className="mt-1 text-xs text-muted-foreground">约 ¥ {unitPrice} / 积分</div>
                       </div>
                       {active ? <Badge>已选中</Badge> : null}
                     </div>
@@ -273,17 +398,21 @@ export default function RechargePage() {
                     {selectedPackage ? `${selectedPackage.label} · ${selectedPackage.credits} 积分` : "请选择一个充值套餐"}
                   </div>
                   <div className="mt-2 text-sm text-muted-foreground">
-                    购买后系统会自动加积分并写入充值记录，后续接入真实支付回调时也可以继续复用这条入账链路。
+                    点击后将跳转支付宝网站支付页面。支付完成回到本站后，系统会自动查询订单状态并到账积分。
                   </div>
                 </div>
                 <Button
                   size="lg"
-                  className="min-w-[200px] rounded-2xl"
+                  className="min-w-[220px] rounded-2xl"
                   onClick={handlePurchase}
                   disabled={!selectedPackage || isPurchasing}
                 >
-                  {isPurchasing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CreditCard className="mr-2 h-4 w-4" />}
-                  立即充值
+                  {isPurchasing ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <ExternalLink className="mr-2 h-4 w-4" />
+                  )}
+                  前往支付宝支付
                 </Button>
               </div>
             </div>
@@ -296,7 +425,7 @@ export default function RechargePage() {
               <ReceiptText className="h-5 w-5 text-primary" />
               扣费规则
             </CardTitle>
-            <CardDescription>下面的积分规则来自后台系统配置，便于你后续按模型和功能统一调价。</CardDescription>
+            <CardDescription>当前积分规则来自后台系统配置，可随时调整。</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="rounded-3xl border border-border bg-muted/30 p-4">
@@ -360,14 +489,43 @@ export default function RechargePage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-xl">
             <History className="h-5 w-5 text-primary" />
-            积分流水
+            支付与积分流水
           </CardTitle>
-          <CardDescription>包含最近充值与消费记录，方便你核对自动入账是否正常。</CardDescription>
+          <CardDescription>上方是支付宝订单，下方是积分到账记录和消费记录。</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          <div className="space-y-3">
+            <div className="text-sm font-medium text-foreground">最近订单</div>
+            {orders.length ? (
+              orders.map((order) => (
+                <div
+                  key={order.id}
+                  className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 md:flex-row md:items-center md:justify-between"
+                >
+                  <div>
+                    <div className="text-sm font-medium text-foreground">
+                      {order.package_label || order.package_id} · ¥ {order.amount}
+                    </div>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      订单号：{order.order_no} · 支付方式：{order.payment_channel}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 text-right text-xs text-muted-foreground">
+                    <Badge variant={getOrderStatusVariant(order.status)}>{getOrderStatusLabel(order.status)}</Badge>
+                    <div>{formatDate(order.paid_at || order.created_at)}</div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+                暂无支付宝订单，选择套餐后会在这里显示支付状态。
+              </div>
+            )}
+          </div>
+
           <Tabs defaultValue="recharge" className="space-y-4">
             <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="recharge">充值记录</TabsTrigger>
+              <TabsTrigger value="recharge">到账记录</TabsTrigger>
               <TabsTrigger value="consumption">消费记录</TabsTrigger>
             </TabsList>
 
@@ -394,7 +552,7 @@ export default function RechargePage() {
                 ))
               ) : (
                 <div className="rounded-2xl border border-dashed border-border p-10 text-center text-sm text-muted-foreground">
-                  暂无充值记录，购买任意套餐后会自动出现在这里。
+                  暂无到账记录，支付完成后会自动出现在这里。
                 </div>
               )}
             </TabsContent>

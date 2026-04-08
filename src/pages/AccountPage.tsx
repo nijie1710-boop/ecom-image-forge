@@ -11,6 +11,7 @@ import {
   User,
 } from "lucide-react";
 import { toast } from "sonner";
+
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -22,14 +23,39 @@ type HistoryImage = {
   source: "cloud" | "local";
 };
 
-const AccountPage = () => {
+type BalanceInfo = {
+  balance: number;
+  total_recharged: number;
+  total_consumed: number;
+  recharge_count?: number;
+  consumption_count?: number;
+};
+
+export default function AccountPage() {
   const navigate = useNavigate();
   const { user, signOut, isAdmin } = useAuth();
   const [localImages, setLocalImages] = useState<HistoryImage[]>([]);
-  const [balance, setBalance] = useState<number | null>(null);
   const [isSigningOut, setIsSigningOut] = useState(false);
 
-  const { data: cloudImages } = useQuery({
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("local_image_history") || "[]";
+      const parsed = JSON.parse(raw) as Array<Record<string, unknown>>;
+      setLocalImages(
+        parsed.slice(0, 4).map((item) => ({
+          id: String(item.id || crypto.randomUUID()),
+          image_url: String(item.image_url || ""),
+          created_at: String(item.created_at || new Date().toISOString()),
+          source: "local",
+        })),
+      );
+    } catch (error) {
+      console.error("load local image history failed:", error);
+      setLocalImages([]);
+    }
+  }, []);
+
+  const cloudImagesQuery = useQuery({
     queryKey: ["account-images", user?.id],
     enabled: Boolean(user?.id),
     queryFn: async () => {
@@ -42,14 +68,14 @@ const AccountPage = () => {
 
       if (error) throw error;
 
-      return (data || []).map((image) => ({
-        ...image,
+      return (data || []).map((item) => ({
+        ...item,
         source: "cloud" as const,
       }));
     },
   });
 
-  const { data: profile } = useQuery({
+  const profileQuery = useQuery({
     queryKey: ["account-profile", user?.id],
     enabled: Boolean(user?.id),
     queryFn: async () => {
@@ -64,63 +90,49 @@ const AccountPage = () => {
     },
   });
 
-  useEffect(() => {
-    try {
-      const localHistory = JSON.parse(localStorage.getItem("local_image_history") || "[]");
-      setLocalImages(
-        (localHistory || []).slice(0, 4).map((image: any) => ({
-          id: image.id,
-          image_url: image.image_url,
-          created_at: image.created_at,
-          source: "local" as const,
-        })),
-      );
-    } catch (error) {
-      console.error("load local image history failed:", error);
-    }
-  }, []);
+  const balanceQuery = useQuery({
+    queryKey: ["account-balance", user?.id],
+    enabled: Boolean(user?.id),
+    queryFn: async (): Promise<BalanceInfo> => {
+      const { data, error } = await supabase.functions.invoke("manage-balance", {
+        body: { action: "get" },
+      });
 
-  useEffect(() => {
-    if (!user) return;
+      if (error) throw error;
+      if (data?.error) throw new Error(String(data.error));
 
-    const loadBalance = async () => {
-      try {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-        const token = session?.access_token;
-        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-
-        const response = await fetch(`${supabaseUrl}/functions/v1/manage-balance`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token || ""}`,
-          },
-          body: JSON.stringify({ action: "get" }),
-        });
-
-        const data = await response.json();
-        if (data?.balance?.balance !== undefined) {
-          setBalance(data.balance.balance);
+      return (
+        data?.balance || {
+          balance: 0,
+          total_recharged: 0,
+          total_consumed: 0,
+          recharge_count: 0,
+          consumption_count: 0,
         }
-      } catch (error) {
-        console.error("load balance failed:", error);
-      }
-    };
-
-    void loadBalance();
-  }, [user]);
+      );
+    },
+  });
 
   const recentImages = useMemo(() => {
-    return [...(cloudImages || []), ...localImages]
-      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    return [...(cloudImagesQuery.data || []), ...localImages]
+      .filter((item) => item.image_url)
+      .sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at))
       .slice(0, 4);
-  }, [cloudImages, localImages]);
+  }, [cloudImagesQuery.data, localImages]);
 
-  const totalImages = (cloudImages?.length || 0) + localImages.length;
-  const displayName = profile?.display_name || user?.email?.split("@")[0] || "未设置";
-  const email = user?.email || "未绑定邮箱";
+  const handleRefresh = async () => {
+    try {
+      await Promise.all([
+        cloudImagesQuery.refetch(),
+        profileQuery.refetch(),
+        balanceQuery.refetch(),
+      ]);
+      toast.success("账户信息已刷新");
+    } catch (error) {
+      console.error("refresh account page failed:", error);
+      toast.error("刷新失败，请稍后再试");
+    }
+  };
 
   const handleSignOut = async () => {
     if (isSigningOut) return;
@@ -130,24 +142,40 @@ const AccountPage = () => {
       await signOut();
       toast.success("已退出登录");
       navigate("/auth", { replace: true });
-
-      window.setTimeout(() => {
-        if (window.location.pathname !== "/auth") {
-          window.location.replace("/auth");
-        }
-      }, 120);
     } catch (error) {
       console.error("sign out failed:", error);
-      toast.error("退出登录失败，请稍后重试");
+      toast.error("退出登录失败，请稍后再试");
       setIsSigningOut(false);
     }
   };
 
+  const displayName = profileQuery.data?.display_name || user?.email?.split("@")[0] || "未设置";
+  const email = user?.email || "未绑定邮箱";
+  const totalImages = (cloudImagesQuery.data?.length || 0) + localImages.length;
+  const balance = balanceQuery.data;
+
   return (
     <div className="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6 lg:px-8">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-foreground">账户设置</h1>
-        <p className="mt-1 text-sm text-muted-foreground">管理你的个人资料、图片记录和积分余额。</p>
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">账户设置</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            查看你的资料、最近图片记录和积分余额。
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => void handleRefresh()}>
+            刷新数据
+          </Button>
+          <Button variant="outline" onClick={handleSignOut} disabled={isSigningOut}>
+            {isSigningOut ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <LogOut className="mr-2 h-4 w-4" />
+            )}
+            退出登录
+          </Button>
+        </div>
       </div>
 
       <div className="mb-6 rounded-3xl border border-border bg-card p-5 shadow-sm sm:p-6">
@@ -158,17 +186,22 @@ const AccountPage = () => {
             </div>
             <div>
               <h2 className="font-semibold text-card-foreground">我的图片</h2>
-              <p className="text-xs text-muted-foreground">最近生成和本地保存的图片会显示在这里。</p>
+              <p className="text-xs text-muted-foreground">
+                最近生成和本地保存的图片会显示在这里。
+              </p>
             </div>
           </div>
-
           <Button variant="ghost" size="sm" onClick={() => navigate("/dashboard/images")}>
             查看全部
             <ChevronRight className="ml-1 h-4 w-4" />
           </Button>
         </div>
 
-        {recentImages.length > 0 ? (
+        {cloudImagesQuery.isLoading ? (
+          <div className="flex min-h-28 items-center justify-center rounded-2xl border border-dashed border-border bg-muted/30">
+            <Loader2 className="h-5 w-5 animate-spin text-primary" />
+          </div>
+        ) : recentImages.length > 0 ? (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {recentImages.map((image) => (
               <button
@@ -196,14 +229,14 @@ const AccountPage = () => {
           </div>
         ) : (
           <div className="rounded-2xl border border-dashed border-border bg-muted/30 px-4 py-8 text-center text-sm text-muted-foreground">
-            还没有生成过图片，去工作台开始第一张吧。
+            还没有生成过图片，去工作台开始创作吧。
           </div>
         )}
 
         <div className="mt-4 text-xs text-muted-foreground">当前共记录 {totalImages} 张图片</div>
       </div>
 
-      <div className="mb-6 grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
+      <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
         <section className="rounded-3xl border border-border bg-card p-5 shadow-sm sm:p-6">
           <div className="mb-5 flex items-center gap-3">
             <div className="rounded-2xl bg-primary/10 p-2 text-primary">
@@ -211,13 +244,13 @@ const AccountPage = () => {
             </div>
             <div>
               <h2 className="font-semibold text-card-foreground">个人资料</h2>
-              <p className="text-xs text-muted-foreground">查看当前登录账号和权限信息。</p>
+              <p className="text-xs text-muted-foreground">查看当前账号和权限信息。</p>
             </div>
           </div>
 
           <div className="space-y-4">
             <div className="flex items-center justify-between gap-4 border-b border-border pb-3 text-sm">
-              <span className="text-muted-foreground">姓名</span>
+              <span className="text-muted-foreground">昵称</span>
               <span className="font-medium text-card-foreground">{displayName}</span>
             </div>
             <div className="flex items-center justify-between gap-4 border-b border-border pb-3 text-sm">
@@ -227,7 +260,7 @@ const AccountPage = () => {
             <div className="flex items-center justify-between gap-4 text-sm">
               <span className="text-muted-foreground">账户角色</span>
               <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
-                {isAdmin && <Shield className="h-3.5 w-3.5" />}
+                {isAdmin ? <Shield className="h-3.5 w-3.5" /> : null}
                 {isAdmin ? "管理员" : "普通用户"}
               </span>
             </div>
@@ -241,49 +274,60 @@ const AccountPage = () => {
             </div>
             <div>
               <h2 className="font-semibold text-card-foreground">我的积分</h2>
-              <p className="text-xs text-muted-foreground">高成本生成能力会优先消耗账户积分。</p>
+              <p className="text-xs text-muted-foreground">高成本能力会优先消耗账户积分。</p>
             </div>
           </div>
 
           <div className="rounded-2xl border border-border bg-muted/30 p-4">
-            <div className="text-sm text-muted-foreground">当前余额</div>
-            <div className="mt-1 text-3xl font-bold text-foreground">
-              {balance ?? 0}
-              <span className="ml-2 text-base font-medium text-primary">积分</span>
-            </div>
-            <p className="mt-2 text-xs leading-6 text-muted-foreground">
-              生成图片和图文翻译会消耗积分，余额不足时请先充值后再继续使用。
-            </p>
+            {balanceQuery.isLoading ? (
+              <div className="flex min-h-28 items-center justify-center">
+                <Loader2 className="h-5 w-5 animate-spin text-primary" />
+              </div>
+            ) : (
+              <>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm text-muted-foreground">当前余额</div>
+                    <div className="mt-1 text-3xl font-bold text-foreground">
+                      {balance?.balance ?? 0}
+                      <span className="ml-2 text-base font-medium text-primary">积分</span>
+                    </div>
+                  </div>
+                  <Button variant="ghost" size="sm" onClick={() => void balanceQuery.refetch()}>
+                    刷新
+                  </Button>
+                </div>
+
+                <div className="mt-4 grid grid-cols-2 gap-3 text-xs text-muted-foreground">
+                  <div className="rounded-2xl bg-background/70 p-3">
+                    <div>累计充值</div>
+                    <div className="mt-1 text-lg font-semibold text-foreground">
+                      {balance?.total_recharged ?? 0}
+                    </div>
+                  </div>
+                  <div className="rounded-2xl bg-background/70 p-3">
+                    <div>累计消费</div>
+                    <div className="mt-1 text-lg font-semibold text-foreground">
+                      {balance?.total_consumed ?? 0}
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
 
-          <div className="mt-4 flex gap-3">
+          <div className="mt-4 flex gap-2">
             <Button className="flex-1" onClick={() => navigate("/dashboard/recharge")}>
               去充值
             </Button>
-            {isAdmin && (
-              <Button variant="outline" className="flex-1" onClick={() => navigate("/admin")}>
-                进入后台
+            {isAdmin ? (
+              <Button variant="outline" className="flex-1" onClick={() => navigate("/admin/users")}>
+                后台管理
               </Button>
-            )}
+            ) : null}
           </div>
         </section>
       </div>
-
-      <Button
-        variant="outline"
-        className="w-full border-destructive/30 text-destructive hover:bg-destructive/5 hover:text-destructive"
-        onClick={handleSignOut}
-        disabled={isSigningOut}
-      >
-        {isSigningOut ? (
-          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-        ) : (
-          <LogOut className="mr-2 h-4 w-4" />
-        )}
-        {isSigningOut ? "正在退出..." : "退出登录"}
-      </Button>
     </div>
   );
-};
-
-export default AccountPage;
+}
