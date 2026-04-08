@@ -1,4 +1,4 @@
-﻿import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
+import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
 import {
   generateImage,
   type GenerationModel,
@@ -100,18 +100,6 @@ export interface DetailGenParams {
   onComplete?: (screens: DetailScreenJobResult[]) => void;
 }
 
-type DetailScreenAttemptArgs = {
-  prompt: string;
-  aspectRatio: string;
-  textLanguage: string;
-  model?: GenerationModel;
-  resolution?: OutputResolution;
-  imageBase64: string;
-  referenceGallery?: string[];
-  styleReferenceImage?: string;
-  styleReferenceText?: string;
-};
-
 interface GenerationContextType {
   jobs: GenerationJob[];
   activeJob: GenerationJob | null;
@@ -142,10 +130,17 @@ type HistoryPayload = {
   scene?: string;
 };
 
-async function blobFromDataUrlOrRemote(source: string): Promise<Blob> {
+class JobCanceledError extends Error {
+  constructor() {
+    super("任务已取消");
+    this.name = "JobCanceledError";
+  }
+}
+
+async function blobFromDataUrlOrRemote(source: string, signal?: AbortSignal): Promise<Blob> {
   if (source.startsWith("data:")) {
     const [header, body] = source.split(",");
-    const mimeType = header.match(/^data:(.+);base64$/)?.[1] || "image/png";
+    const mimeType = header.match(/^data:([^;]+);base64$/)?.[1] || "image/png";
     const binary = atob(body);
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i += 1) {
@@ -154,45 +149,19 @@ async function blobFromDataUrlOrRemote(source: string): Promise<Blob> {
     return new Blob([bytes], { type: mimeType });
   }
 
-  const response = await fetch(source);
+  const response = await fetch(source, { signal });
   if (!response.ok) {
     throw new Error(`图片下载失败: ${response.status}`);
   }
   return await response.blob();
 }
 
-async function generateDetailScreenWithRetry(args: DetailScreenAttemptArgs) {
-  let lastError = "当前生成失败，请重试";
-
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    const result = await generateImage({
-      prompt: args.prompt,
-      aspectRatio: args.aspectRatio,
-      n: 1,
-      imageBase64: args.imageBase64,
-      imageType: "详情图",
-      textLanguage: args.textLanguage,
-      model: args.model,
-      resolution: args.resolution,
-      referenceGallery: args.referenceGallery,
-      styleReferenceImage: args.styleReferenceImage,
-      styleReferenceText: args.styleReferenceText,
-    });
-
-    if (!result.error && result.images[0]) {
-      return result.images[0];
-    }
-
-    lastError = result.error || lastError;
-  }
-
-  throw new Error(lastError);
-}
-
 export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [jobs, setJobs] = useState<GenerationJob[]>([]);
   const jobsRef = useRef<GenerationJob[]>([]);
   const canceledJobsRef = useRef<Set<string>>(new Set());
+  const jobRunIdsRef = useRef<Map<string, string>>(new Map());
+  const jobAbortControllersRef = useRef<Map<string, AbortController>>(new Map());
 
   const updateJobsState = useCallback((updater: (prev: GenerationJob[]) => GenerationJob[]) => {
     setJobs((prev) => {
@@ -211,15 +180,17 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const updateJob = useCallback(
     (id: string, patch: Partial<GenerationJob>) => {
-      updateJobsState((prev) =>
-        prev.map((job) => (job.id === id ? { ...job, ...patch } : job)),
-      );
+      updateJobsState((prev) => prev.map((job) => (job.id === id ? { ...job, ...patch } : job)));
     },
     [updateJobsState],
   );
 
   const updateDetailScreen = useCallback(
-    (jobId: string, screenNumber: number, updater: (screen: DetailScreenJobResult) => DetailScreenJobResult) => {
+    (
+      jobId: string,
+      screenNumber: number,
+      updater: (screen: DetailScreenJobResult) => DetailScreenJobResult,
+    ) => {
       updateJobsState((prev) =>
         prev.map((job) => {
           if (job.id !== jobId) return job;
@@ -235,9 +206,42 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     [updateJobsState],
   );
 
-  const uploadToStorage = useCallback(async (source: string, id: string): Promise<string> => {
+  const startJobExecution = useCallback((jobId: string) => {
+    canceledJobsRef.current.delete(jobId);
+    const controller = new AbortController();
+    const runId = crypto.randomUUID();
+    jobRunIdsRef.current.set(jobId, runId);
+    jobAbortControllersRef.current.set(jobId, controller);
+    return { runId, controller };
+  }, []);
+
+  const finishJobExecution = useCallback((jobId: string, runId: string) => {
+    if (jobRunIdsRef.current.get(jobId) === runId) {
+      jobRunIdsRef.current.delete(jobId);
+      jobAbortControllersRef.current.delete(jobId);
+      canceledJobsRef.current.delete(jobId);
+    }
+  }, []);
+
+  const isJobExecutionActive = useCallback((jobId: string, runId: string) => {
+    return (
+      jobRunIdsRef.current.get(jobId) === runId &&
+      !canceledJobsRef.current.has(jobId)
+    );
+  }, []);
+
+  const assertJobExecutionActive = useCallback(
+    (jobId: string, runId: string) => {
+      if (!isJobExecutionActive(jobId, runId)) {
+        throw new JobCanceledError();
+      }
+    },
+    [isJobExecutionActive],
+  );
+
+  const uploadToStorage = useCallback(async (source: string, id: string, signal?: AbortSignal): Promise<string> => {
     try {
-      const blob = await blobFromDataUrlOrRemote(source);
+      const blob = await blobFromDataUrlOrRemote(source, signal);
       const fileName = `generated/${id}.png`;
       const { error } = await supabase.storage
         .from("generated-images")
@@ -253,47 +257,42 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       } = supabase.storage.from("generated-images").getPublicUrl(fileName);
       return publicUrl;
     } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        throw new JobCanceledError();
+      }
       console.error("upload generated image unexpected error:", error);
       return source;
     }
   }, []);
 
-  const saveLocalHistory = useCallback(
-    async (images: string[], payload: HistoryPayload) => {
-      if (!images.length) return;
-      try {
-        const existing = JSON.parse(localStorage.getItem("local_image_history") || "[]");
-        const permanentUrls = await Promise.all(
-          images.map((url) => uploadToStorage(url, crypto.randomUUID())),
-        );
-        const records = permanentUrls.map((url) => ({
-          id: crypto.randomUUID(),
-          image_url: url,
-          prompt: payload.prompt,
-          style: payload.style || "",
-          scene: payload.scene || "",
-          aspect_ratio: payload.aspectRatio,
-          image_type: payload.imageType || "",
-          created_at: new Date().toISOString(),
-        }));
-        localStorage.setItem(
-          "local_image_history",
-          JSON.stringify([...records, ...existing].slice(0, 150)),
-        );
-      } catch (error) {
-        console.error("save local history failed:", error);
-      }
-    },
-    [uploadToStorage],
-  );
+  const writeLocalHistory = useCallback(async (permanentUrls: string[], payload: HistoryPayload) => {
+    if (!permanentUrls.length) return;
+    try {
+      const existing = JSON.parse(localStorage.getItem("local_image_history") || "[]");
+      const records = permanentUrls.map((url) => ({
+        id: crypto.randomUUID(),
+        image_url: url,
+        prompt: payload.prompt,
+        style: payload.style || "",
+        scene: payload.scene || "",
+        aspect_ratio: payload.aspectRatio,
+        image_type: payload.imageType || "",
+        created_at: new Date().toISOString(),
+      }));
 
-  const saveCloudHistory = useCallback(
-    async (userId: string | undefined, images: string[], payload: HistoryPayload) => {
-      if (!userId || !images.length) return;
+      localStorage.setItem(
+        "local_image_history",
+        JSON.stringify([...records, ...existing].slice(0, 150)),
+      );
+    } catch (error) {
+      console.error("save local history failed:", error);
+    }
+  }, []);
+
+  const writeCloudHistory = useCallback(
+    async (userId: string | undefined, permanentUrls: string[], payload: HistoryPayload) => {
+      if (!userId || !permanentUrls.length) return;
       try {
-        const permanentUrls = await Promise.all(
-          images.map((url) => uploadToStorage(url, crypto.randomUUID())),
-        );
         const records = permanentUrls.map((url) => ({
           user_id: userId,
           image_url: url,
@@ -311,7 +310,33 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         console.error("save cloud history unexpected error:", error);
       }
     },
-    [uploadToStorage],
+    [],
+  );
+
+  const persistHistoryOnce = useCallback(
+    async (
+      userId: string | undefined,
+      images: string[],
+      payload: HistoryPayload,
+      signal?: AbortSignal,
+    ) => {
+      if (!images.length) return;
+      if (signal?.aborted) throw new JobCanceledError();
+
+      const permanentUrls = await Promise.all(
+        images.map((url) => uploadToStorage(url, crypto.randomUUID(), signal)),
+      );
+
+      if (signal?.aborted) throw new JobCanceledError();
+
+      await Promise.all([
+        writeLocalHistory(permanentUrls, payload),
+        writeCloudHistory(userId, permanentUrls, payload),
+      ]);
+
+      return permanentUrls;
+    },
+    [uploadToStorage, writeCloudHistory, writeLocalHistory],
   );
 
   const getValidImageUrl = useCallback((source: string | undefined): string | undefined => {
@@ -321,11 +346,11 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   }, []);
 
   const ensureUsableImageUrl = useCallback(
-    async (source: string | undefined, tag: string): Promise<string | undefined> => {
+    async (source: string | undefined, tag: string, signal?: AbortSignal): Promise<string | undefined> => {
       if (!source) return undefined;
       if (source.startsWith("data:")) return source;
       if (/^https?:\/\//i.test(source)) return source;
-      const uploaded = await uploadToStorage(source, `${tag}-${crypto.randomUUID()}`);
+      const uploaded = await uploadToStorage(source, `${tag}-${crypto.randomUUID()}`, signal);
       return uploaded;
     },
     [uploadToStorage],
@@ -334,8 +359,7 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const startCopyGeneration = useCallback(
     (params: CopyGenParams): string => {
       const jobId = crypto.randomUUID();
-      const total =
-        params.copyImageType === "all" ? 5 : params.copyImageType === "main" ? 1 : 3;
+      const total = params.copyImageType === "all" ? 5 : params.copyImageType === "main" ? 1 : 3;
 
       addJob({
         id: jobId,
@@ -350,12 +374,16 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         createdAt: Date.now(),
       });
 
-      (async () => {
+      const { runId, controller } = startJobExecution(jobId);
+
+      void (async () => {
         try {
           const productImage = await ensureUsableImageUrl(
             getValidImageUrl(params.uploadedImages[0]),
             "copy-source",
+            controller.signal,
           );
+          assertJobExecutionActive(jobId, runId);
 
           if (!productImage) {
             updateJob(jobId, { status: "error", error: "产品图上传失败，请重试" });
@@ -381,7 +409,9 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
               imageBase64: productImage,
               imageType: "主图",
               n: 1,
+              signal: controller.signal,
             });
+            assertJobExecutionActive(jobId, runId);
             if (mainResult.images.length) {
               allImages.push(...mainResult.images);
             }
@@ -404,10 +434,7 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             ];
 
             for (let index = 0; index < detailPrompts.length; index += 1) {
-              if (canceledJobsRef.current.has(jobId)) {
-                updateJob(jobId, { status: "canceled", step: "已取消" });
-                return;
-              }
+              assertJobExecutionActive(jobId, runId);
               const stepNumber = params.copyImageType === "all" ? index + 2 : index + 1;
               updateJob(jobId, { step: detailPrompts[index].label, current: stepNumber });
               const detailResult = await generateImage({
@@ -416,7 +443,9 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                 imageBase64: productImage,
                 imageType: "详情图",
                 n: 1,
+                signal: controller.signal,
               });
+              assertJobExecutionActive(jobId, runId);
               if (detailResult.images.length) {
                 allImages.push(...detailResult.images);
               }
@@ -442,6 +471,7 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                 }),
               ),
             );
+            assertJobExecutionActive(jobId, runId);
           }
 
           const payload: HistoryPayload = {
@@ -449,24 +479,32 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             aspectRatio: mainRatio,
           };
 
-          await Promise.all([
-            saveLocalHistory(finalImages, payload),
-            saveCloudHistory(params.userId, finalImages, payload),
-          ]);
+          const persistedUrls =
+            (await persistHistoryOnce(params.userId, finalImages, payload, controller.signal)) || finalImages;
+          assertJobExecutionActive(jobId, runId);
 
           updateJob(jobId, {
             status: "done",
             step: "完成",
             current: total,
-            results: finalImages,
+            results: persistedUrls,
             error: undefined,
           });
-          params.onComplete?.(finalImages);
+          params.onComplete?.(persistedUrls);
         } catch (error) {
+          if (error instanceof JobCanceledError || (error instanceof DOMException && error.name === "AbortError")) {
+            updateJob(jobId, { status: "canceled", step: "已取消", error: undefined });
+            return;
+          }
+          if (!isJobExecutionActive(jobId, runId)) {
+            return;
+          }
           updateJob(jobId, {
             status: "error",
             error: error instanceof Error ? error.message : "生成失败",
           });
+        } finally {
+          finishJobExecution(jobId, runId);
         }
       })();
 
@@ -474,10 +512,13 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     },
     [
       addJob,
+      assertJobExecutionActive,
       ensureUsableImageUrl,
+      finishJobExecution,
       getValidImageUrl,
-      saveCloudHistory,
-      saveLocalHistory,
+      isJobExecutionActive,
+      persistHistoryOnce,
+      startJobExecution,
       updateJob,
     ],
   );
@@ -497,44 +538,36 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         createdAt: Date.now(),
       });
 
-      (async () => {
+      const { runId, controller } = startJobExecution(jobId);
+
+      void (async () => {
         try {
           const primaryImage = await ensureUsableImageUrl(
             getValidImageUrl(params.imageBase64),
             "single-source",
+            controller.signal,
           );
           const gallery = await Promise.all(
             (params.referenceGallery || [])
               .filter((item) => item && item !== params.imageBase64)
-              .map((item, index) =>
-                ensureUsableImageUrl(getValidImageUrl(item), `gallery-${index}`),
-              ),
+              .map((item, index) => ensureUsableImageUrl(getValidImageUrl(item), `gallery-${index}`, controller.signal)),
           );
           const styleReferenceImage = await ensureUsableImageUrl(
             getValidImageUrl(params.styleReferenceImage),
             "style-reference",
+            controller.signal,
           );
           const modelImage = await ensureUsableImageUrl(
             getValidImageUrl(params.modelImage),
             "model-reference",
+            controller.signal,
           );
+          assertJobExecutionActive(jobId, runId);
 
           const results: string[] = [];
           for (let index = 0; index < params.n; index += 1) {
-            if (canceledJobsRef.current.has(jobId)) {
-              updateJob(jobId, {
-                status: "canceled",
-                step: "已取消",
-                current: index,
-                results,
-              });
-              return;
-            }
-
-            updateJob(jobId, {
-              step: `生成第 ${index + 1} 张`,
-              current: index + 1,
-            });
+            assertJobExecutionActive(jobId, runId);
+            updateJob(jobId, { step: `生成第 ${index + 1} 张`, current: index + 1 });
 
             const result = await generateImage({
               ...params,
@@ -543,14 +576,12 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
               referenceGallery: gallery.filter(Boolean) as string[],
               styleReferenceImage,
               modelImage,
+              signal: controller.signal,
             });
+            assertJobExecutionActive(jobId, runId);
 
             if (result.error) {
-              updateJob(jobId, {
-                status: "error",
-                error: result.error,
-                results,
-              });
+              updateJob(jobId, { status: "error", error: result.error, results });
               return;
             }
 
@@ -571,26 +602,36 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             style: params.styleReferenceText,
           };
 
+          const persistedUrls = (await persistHistoryOnce(params.userId, results, payload, controller.signal)) || results;
+          assertJobExecutionActive(jobId, runId);
+
           updateJob(jobId, {
             status: "done",
             step: "完成",
             current: params.n,
-            results,
+            results: persistedUrls,
             error: undefined,
           });
-          params.onComplete?.(results);
-
-          void Promise.all([
-            saveLocalHistory(results, payload),
-            saveCloudHistory(params.userId, results, payload),
-          ]).catch((error) => {
-            console.error("save image generation history failed:", error);
-          });
+          params.onComplete?.(persistedUrls);
         } catch (error) {
+          if (error instanceof JobCanceledError || (error instanceof DOMException && error.name === "AbortError")) {
+            updateJob(jobId, {
+              status: "canceled",
+              step: "已取消",
+              current: 0,
+              error: undefined,
+            });
+            return;
+          }
+          if (!isJobExecutionActive(jobId, runId)) {
+            return;
+          }
           updateJob(jobId, {
             status: "error",
             error: error instanceof Error ? error.message : "生成失败",
           });
+        } finally {
+          finishJobExecution(jobId, runId);
         }
       })();
 
@@ -598,10 +639,13 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     },
     [
       addJob,
+      assertJobExecutionActive,
       ensureUsableImageUrl,
+      finishJobExecution,
       getValidImageUrl,
-      saveCloudHistory,
-      saveLocalHistory,
+      isJobExecutionActive,
+      persistHistoryOnce,
+      startJobExecution,
       updateJob,
     ],
   );
@@ -630,12 +674,17 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         createdAt: Date.now(),
       });
 
-      (async () => {
+      const { runId, controller } = startJobExecution(jobId);
+
+      void (async () => {
         try {
           const primaryImage = await ensureUsableImageUrl(
             getValidImageUrl(params.productImages[0]),
             "detail-primary",
+            controller.signal,
           );
+          assertJobExecutionActive(jobId, runId);
+
           if (!primaryImage) {
             updateJob(jobId, { status: "error", error: "缺少主商品图，无法生成" });
             return;
@@ -644,37 +693,23 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           const gallery = await Promise.all(
             params.productImages
               .slice(1)
-              .map((item, index) =>
-                ensureUsableImageUrl(getValidImageUrl(item), `detail-gallery-${index}`),
-              ),
+              .map((item, index) => ensureUsableImageUrl(getValidImageUrl(item), `detail-gallery-${index}`, controller.signal)),
           );
           const styleReferenceImage = await ensureUsableImageUrl(
             getValidImageUrl(params.styleReferenceImage),
             "detail-style",
+            controller.signal,
           );
+          assertJobExecutionActive(jobId, runId);
+
           const completedImages: string[] = [];
           const failedScreens: Array<{ screen: number; error: string }> = [];
 
           for (let index = 0; index < params.screens.length; index += 1) {
             const screen = params.screens[index];
-            if (canceledJobsRef.current.has(jobId)) {
-              updateJob(jobId, {
-                status: "canceled",
-                step: "已取消",
-                current: index,
-                results: completedImages,
-              });
-              updateDetailScreen(jobId, screen.screen, (current) => ({
-                ...current,
-                status: "canceled",
-              }));
-              return;
-            }
+            assertJobExecutionActive(jobId, runId);
 
-            updateJob(jobId, {
-              step: `生成第 ${screen.screen} 屏`,
-              current: index + 1,
-            });
+            updateJob(jobId, { step: `生成第 ${screen.screen} 屏`, current: index + 1 });
             updateDetailScreen(jobId, screen.screen, (current) => ({
               ...current,
               status: "running",
@@ -693,7 +728,9 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
               referenceGallery: gallery.filter(Boolean) as string[],
               styleReferenceImage,
               styleReferenceText: params.styleReferenceText,
+              signal: controller.signal,
             });
+            assertJobExecutionActive(jobId, runId);
 
             if (result.error || !result.images[0]) {
               const screenError = result.error || "本屏生成失败";
@@ -734,6 +771,10 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             style: params.styleReferenceText,
           };
 
+          const persistedUrls =
+            (await persistHistoryOnce(params.userId, completedImages, payload, controller.signal)) || completedImages;
+          assertJobExecutionActive(jobId, runId);
+
           const finalScreens =
             (jobsRef.current.find((job) => job.id === jobId)?.detailScreens || []) as DetailScreenJobResult[];
 
@@ -741,24 +782,31 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             status: "done",
             step: failedScreens.length ? "部分完成" : "完成",
             current: params.screens.length,
-            results: completedImages,
+            results: persistedUrls,
             error: failedScreens.length
               ? `已完成 ${completedImages.length} 屏，${failedScreens.length} 屏失败，可单独重生失败分屏。`
               : undefined,
           });
           params.onComplete?.(finalScreens);
-
-          void Promise.all([
-            saveLocalHistory(completedImages, payload),
-            saveCloudHistory(params.userId, completedImages, payload),
-          ]).catch((error) => {
-            console.error("save detail generation history failed:", error);
-          });
         } catch (error) {
+          if (error instanceof JobCanceledError || (error instanceof DOMException && error.name === "AbortError")) {
+            updateJob(jobId, {
+              status: "canceled",
+              step: "已取消",
+              current: 0,
+              error: undefined,
+            });
+            return;
+          }
+          if (!isJobExecutionActive(jobId, runId)) {
+            return;
+          }
           updateJob(jobId, {
             status: "error",
             error: error instanceof Error ? error.message : "逐屏生成失败",
           });
+        } finally {
+          finishJobExecution(jobId, runId);
         }
       })();
 
@@ -766,10 +814,13 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     },
     [
       addJob,
+      assertJobExecutionActive,
       ensureUsableImageUrl,
+      finishJobExecution,
       getValidImageUrl,
-      saveCloudHistory,
-      saveLocalHistory,
+      isJobExecutionActive,
+      persistHistoryOnce,
+      startJobExecution,
       updateDetailScreen,
       updateJob,
     ],
@@ -778,12 +829,14 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const cancelJob = useCallback(
     (id: string) => {
       canceledJobsRef.current.add(id);
+      jobAbortControllersRef.current.get(id)?.abort();
       const currentJob = jobsRef.current.find((job) => job.id === id);
       if (!currentJob || currentJob.status !== "running") return;
 
       updateJob(id, {
         status: "canceled",
-        step: "姝ｅ湪鍙栨秷",
+        step: "正在取消",
+        error: undefined,
       });
     },
     [updateJob],
@@ -792,6 +845,8 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const clearJob = useCallback(
     (id: string) => {
       canceledJobsRef.current.delete(id);
+      jobRunIdsRef.current.delete(id);
+      jobAbortControllersRef.current.delete(id);
       updateJobsState((prev) => prev.filter((job) => job.id !== id));
     },
     [updateJobsState],
@@ -835,4 +890,3 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   return <GenerationContext.Provider value={value}>{children}</GenerationContext.Provider>;
 };
-

@@ -1,15 +1,38 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
-
 type SceneSuggestion = {
   scene: string;
   description: string;
 };
+
+const allowedOrigins = new Set([
+  "https://www.picspark.cn",
+  "https://picspark.cn",
+  "https://ecom-image-forge.vercel.app",
+  "http://localhost:5173",
+  "http://localhost:4173",
+]);
+
+function buildCorsHeaders(origin: string | null) {
+  const allowOrigin = origin && allowedOrigins.has(origin) ? origin : "https://www.picspark.cn";
+  return {
+    "Access-Control-Allow-Origin": allowOrigin,
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    Vary: "Origin",
+  };
+}
+
+function jsonResponse(origin: string | null, body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      ...buildCorsHeaders(origin),
+      "Content-Type": "application/json",
+    },
+  });
+}
 
 function coerceImageInput(value: unknown): string {
   if (typeof value === "string") return value;
@@ -51,7 +74,7 @@ function buildDescription(
   summary: string,
   sellingPoints: string,
   composition: string,
-): string {
+) {
   return [
     `风格名称：${title}`,
     "",
@@ -149,28 +172,26 @@ function buildFallbackSuggestions(imageType: "main" | "detail", productSummary: 
   ];
 }
 
-async function tryOptionalAuth(req: Request) {
+async function requireAuth(req: Request) {
   const authHeader = req.headers.get("Authorization");
   if (!authHeader?.startsWith("Bearer ")) {
-    return;
+    return { user: null, error: "未登录，请先登录" };
   }
 
-  try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    if (!supabaseUrl || !serviceRoleKey) {
-      return;
-    }
-
-    const supabase = createClient(supabaseUrl, serviceRoleKey);
-    const token = authHeader.replace("Bearer ", "");
-    const { data } = await supabase.auth.getUser(token);
-    if (!data.user) {
-      console.warn("suggest-scenes: auth token invalid, continue anonymously");
-    }
-  } catch (error) {
-    console.warn("suggest-scenes: optional auth check failed", error);
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!supabaseUrl || !serviceRoleKey) {
+    return { user: null, error: "系统繁忙，请稍后再试" };
   }
+
+  const supabase = createClient(supabaseUrl, serviceRoleKey);
+  const token = authHeader.replace("Bearer ", "");
+  const { data, error } = await supabase.auth.getUser(token);
+  if (error || !data.user) {
+    return { user: null, error: "未登录，请先登录" };
+  }
+
+  return { user: data.user, error: null };
 }
 
 async function callGemini(apiKey: string, mimeType: string, base64Data: string, promptText: string) {
@@ -209,12 +230,14 @@ async function callGemini(apiKey: string, mimeType: string, base64Data: string, 
     if (response.ok) {
       try {
         const parsed = JSON.parse(rawText);
-        const text = parsed?.candidates?.[0]?.content?.parts?.find((part: { text?: string }) => typeof part.text === "string")?.text;
+        const text = parsed?.candidates?.[0]?.content?.parts?.find((part: { text?: string }) =>
+          typeof part.text === "string"
+        )?.text;
         if (text) {
           return text;
         }
       } catch {
-        // fall through to next model
+        // continue to next model
       }
       lastError = `${model}: empty candidate text`;
       continue;
@@ -225,7 +248,7 @@ async function callGemini(apiKey: string, mimeType: string, base64Data: string, 
       const parsed = JSON.parse(rawText);
       detail = parsed?.error?.message || detail;
     } catch {
-      // ignore
+      // ignore parse error
     }
     console.error(`suggest-scenes Gemini error on ${model}:`, response.status, detail);
     lastError = `${model}: ${detail}`;
@@ -235,25 +258,26 @@ async function callGemini(apiKey: string, mimeType: string, base64Data: string, 
 }
 
 serve(async (req: Request) => {
+  const origin = req.headers.get("Origin");
+
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    return new Response(null, { headers: buildCorsHeaders(origin) });
   }
 
-  const fallbackImageType = "main";
-  let imageType: "main" | "detail" = fallbackImageType;
+  let imageType: "main" | "detail" = "main";
 
   try {
-    await tryOptionalAuth(req);
+    const authResult = await requireAuth(req);
+    if (authResult.error) {
+      return jsonResponse(origin, { error: authResult.error }, 401);
+    }
 
     const body = await req.json();
     const imageBase64 = coerceImageInput(body.imageBase64);
     imageType = normalizeImageType(body.imageType);
 
     if (!imageBase64 || imageBase64.length < 100) {
-      return new Response(JSON.stringify({ error: "请上传有效的产品图片" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonResponse(origin, { error: "请上传有效的产品图片" }, 400);
     }
 
     const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
@@ -262,19 +286,18 @@ serve(async (req: Request) => {
 
     if (!geminiApiKey) {
       const fallback = buildFallbackSuggestions(imageType, "该商品");
-      return new Response(JSON.stringify({
+      return jsonResponse(origin, {
         product_summary: "未识别到具体商品，已返回兜底方案",
         visible_text: "NONE",
         suggestions: fallback,
         warning: "GEMINI_API_KEY not configured",
-      }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const shotGoal = imageType === "detail"
-      ? "You are generating detail-image suggestions for an e-commerce product detail page."
-      : "You are generating main-image suggestions for an e-commerce product listing cover image.";
+    const shotGoal =
+      imageType === "detail"
+        ? "You are generating detail-image suggestions for an e-commerce product detail page."
+        : "You are generating main-image suggestions for an e-commerce product listing cover image.";
 
     const promptText = [
       "You are a senior e-commerce product analyst and art director.",
@@ -316,27 +339,22 @@ serve(async (req: Request) => {
       }))
       .filter((item) => item.description.trim().length > 0);
 
-    const finalSuggestions = suggestions.length >= 3
-      ? suggestions
-      : buildFallbackSuggestions(imageType, productSummary);
+    const finalSuggestions =
+      suggestions.length >= 3 ? suggestions : buildFallbackSuggestions(imageType, productSummary);
 
-    return new Response(JSON.stringify({
+    return jsonResponse(origin, {
       product_summary: productSummary,
       visible_text: visibleText,
       suggestions: finalSuggestions,
-    }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
     console.error("suggest-scenes error:", error);
     const fallback = buildFallbackSuggestions(imageType, "该商品");
-    return new Response(JSON.stringify({
+    return jsonResponse(origin, {
       product_summary: "商品识别暂时不稳定，已返回兜底方案",
       visible_text: "NONE",
       suggestions: fallback,
       warning: error instanceof Error ? error.message : "unknown error",
-    }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 });

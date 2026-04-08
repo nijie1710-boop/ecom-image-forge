@@ -10,7 +10,7 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.suggest-scenes]
-verify_jwt = false
+verify_jwt = true
 
 [functions.detail-plan]
 verify_jwt = false
@@ -22,4 +22,10 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.admin-users]
+verify_jwt = false
+
+[functions.alipay-order]
+verify_jwt = false
+
+[functions.alipay-notify]
 verify_jwt = false

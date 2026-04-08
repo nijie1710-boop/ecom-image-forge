@@ -135,6 +135,49 @@ const SelectField = ({
   </div>
 );
 
+type InvokeLikeError = {
+  message?: string;
+  context?: {
+    json?: () => Promise<unknown>;
+    text?: () => Promise<string>;
+  };
+};
+
+async function extractInvokeErrorMessage(error: unknown, fallback: string) {
+  if (!error || typeof error !== "object") {
+    return fallback;
+  }
+
+  const invokeError = error as InvokeLikeError;
+
+  if (invokeError.context?.json) {
+    try {
+      const payload = (await invokeError.context.json()) as
+        | { error?: string; message?: string; detail?: string }
+        | undefined;
+      const detailed = payload?.error || payload?.message || payload?.detail;
+      if (detailed) {
+        return normalizeUserErrorMessage(detailed, fallback);
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  if (invokeError.context?.text) {
+    try {
+      const text = await invokeError.context.text();
+      if (text) {
+        return normalizeUserErrorMessage(text, fallback);
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  return normalizeUserErrorMessage(invokeError.message, fallback);
+}
+
 const GeneratePage = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -353,7 +396,7 @@ const GeneratePage = () => {
       });
 
       if (error) {
-        throw new Error(error.message || "场景识别失败");
+        throw new Error(await extractInvokeErrorMessage(error, "场景识别失败，请稍后重试。"));
       }
       if (data?.error) {
         throw new Error(data.error);

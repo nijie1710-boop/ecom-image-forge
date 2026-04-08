@@ -23,6 +23,7 @@ export interface GenerateImageParams {
   styleReferenceText?: string;
   modelMode?: ModelMode;
   modelImage?: string;
+  signal?: AbortSignal;
 }
 
 export interface GenerateImageResult {
@@ -30,9 +31,9 @@ export interface GenerateImageResult {
   error?: string;
 }
 
-const DEFAULT_ERROR = "图片生成服务暂时不可用，请稍后重试。";
-const GENERATE_FAIL_ERROR = "图片生成失败，请稍后重试。";
-const NO_IMAGE_ERROR = "本次没有返回有效图片，请稍后重试。";
+const DEFAULT_ERROR = "系统繁忙，请稍后再试";
+const GENERATE_FAIL_ERROR = "当前生成失败，请重试";
+const NO_IMAGE_ERROR = "商品图解析失败";
 
 type InvokeLikeError = {
   message?: string;
@@ -44,6 +45,12 @@ type InvokeLikeError = {
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function ensureNotAborted(signal?: AbortSignal) {
+  if (signal?.aborted) {
+    throw new DOMException("任务已取消", "AbortError");
+  }
 }
 
 async function extractInvokeErrorMessage(error: unknown): Promise<string> {
@@ -145,6 +152,7 @@ function buildRequestVariants(params: GenerateImageParams): GenerateImageParams[
       model,
       resolution: resolution === "4k" ? "2k" : "1k",
     });
+
     if (hasExtraRefs) {
       variants.push({
         ...params,
@@ -193,10 +201,9 @@ function isFatalError(message: string | undefined): boolean {
     "billing",
     "not authenticated",
     "login expired",
-    "登录",
+    "未登录",
     "余额不足",
     "积分不足",
-    "未登录",
     "无权限",
   ].some((keyword) => normalized.includes(keyword));
 }
@@ -223,8 +230,7 @@ function isRetryableError(message: string | undefined): boolean {
     "429",
     "超时",
     "限流",
-    "拥挤",
-    "服务繁忙",
+    "系统繁忙",
     "稍后重试",
     "没有返回有效图片",
   ].some((keyword) => normalized.includes(keyword));
@@ -234,6 +240,8 @@ async function generateSingleImageRaw(
   params: GenerateImageParams,
   attemptLabel: string,
 ): Promise<{ url: string | null; error: string | null }> {
+  ensureNotAborted(params.signal);
+
   const { data, error } = await supabase.functions.invoke("generate-image", {
     body: {
       prompt: params.prompt,
@@ -250,6 +258,8 @@ async function generateSingleImageRaw(
       modelImage: params.modelImage || undefined,
     },
   });
+
+  ensureNotAborted(params.signal);
 
   if (error) {
     console.error(`[${attemptLabel}] generate-image edge function error:`, error);
@@ -295,6 +305,7 @@ async function generateSingleImageStable(
     const retryCount = isFatalError(lastError || undefined) ? 1 : 2;
 
     for (let attempt = 0; attempt < retryCount; attempt += 1) {
+      ensureNotAborted(params.signal);
       const attemptLabel = `batch-${batchIndex}-variant-${variantIndex + 1}-attempt-${attempt + 1}`;
       const result = await generateSingleImageRaw(variant, attemptLabel);
       if (result.url) {
@@ -312,6 +323,7 @@ async function generateSingleImageStable(
 
       if (attempt < retryCount - 1) {
         await sleep(1200 * (attempt + 1));
+        ensureNotAborted(params.signal);
       }
     }
   }
@@ -322,19 +334,16 @@ async function generateSingleImageStable(
   };
 }
 
-export async function generateImage(
-  params: GenerateImageParams,
-): Promise<GenerateImageResult> {
+export async function generateImage(params: GenerateImageParams): Promise<GenerateImageResult> {
   try {
+    ensureNotAborted(params.signal);
     const total = Math.min(Math.max(params.n || 1, 1), 9);
     const images: string[] = [];
     let lastError: string | undefined;
 
     for (let index = 0; index < total; index += 1) {
-      const result = await generateSingleImageStable(
-        { ...params, n: 1 },
-        index + 1,
-      );
+      const result = await generateSingleImageStable({ ...params, n: 1 }, index + 1);
+      ensureNotAborted(params.signal);
 
       if (result.url) {
         images.push(result.url);
@@ -347,6 +356,7 @@ export async function generateImage(
 
       if (index < total - 1) {
         await sleep(images.length ? 900 : 1500);
+        ensureNotAborted(params.signal);
       }
     }
 
@@ -367,6 +377,10 @@ export async function generateImage(
 
     return { images };
   } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      return { images: [], error: "任务已取消" };
+    }
+
     console.error("generateImage unexpected error:", error);
     return {
       images: [],
