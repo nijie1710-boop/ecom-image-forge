@@ -1,5 +1,6 @@
 import { useLocation } from "react-router-dom";
 import { Shield, Sparkles } from "lucide-react";
+
 import { NavLink } from "@/components/NavLink";
 import {
   Sidebar,
@@ -13,9 +14,9 @@ import {
   SidebarSeparator,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { cn } from "@/lib/utils";
-import { matchDashboardNavItem, sidebarSections } from "@/lib/dashboard-nav";
 import { useAuth } from "@/contexts/AuthContext";
+import { matchDashboardNavItem, sidebarSections } from "@/lib/dashboard-nav";
+import { cn } from "@/lib/utils";
 import logo from "@/assets/logo.png";
 
 const allNavItems = sidebarSections.flatMap((section) => section.items);
@@ -55,9 +56,7 @@ export function AppSidebar() {
               </span>
               <div className="min-w-0">
                 <div className="text-sm font-medium text-sidebar-foreground">{currentItem.label}</div>
-                <div className="mt-1 text-xs leading-5 text-sidebar-foreground/70">
-                  {currentItem.description}
-                </div>
+                <div className="mt-1 text-xs leading-5 text-sidebar-foreground/70">{currentItem.description}</div>
               </div>
             </div>
           </div>
@@ -100,11 +99,9 @@ export function AppSidebar() {
                             {!collapsed && (
                               <span className="min-w-0">
                                 <span className="block truncate text-sm font-medium">{item.label}</span>
-                                {item.description && (
-                                  <span className="block truncate text-xs text-sidebar-foreground/55">
-                                    {item.description}
-                                  </span>
-                                )}
+                                {item.description ? (
+                                  <span className="block truncate text-xs text-sidebar-foreground/55">{item.description}</span>
+                                ) : null}
                               </span>
                             )}
                           </NavLink>
@@ -116,11 +113,11 @@ export function AppSidebar() {
               </SidebarGroupContent>
             </SidebarGroup>
 
-            {sectionIndex < sidebarSections.length - 1 && <SidebarSeparator className="my-2" />}
+            {sectionIndex < sidebarSections.length - 1 ? <SidebarSeparator className="my-2" /> : null}
           </div>
         ))}
 
-        {isAdmin && (
+        {isAdmin ? (
           <div className="rounded-2xl border border-primary/20 bg-primary/5 p-2">
             <SidebarMenu className="gap-1.5">
               <SidebarMenuItem>
@@ -136,9 +133,7 @@ export function AppSidebar() {
                     {!collapsed && (
                       <span className="min-w-0">
                         <span className="block truncate text-sm font-medium">管理后台</span>
-                        <span className="block truncate text-xs text-sidebar-foreground/60">
-                          仅管理员可见
-                        </span>
+                        <span className="block truncate text-xs text-sidebar-foreground/60">仅管理员可见</span>
                       </span>
                     )}
                   </NavLink>
@@ -146,9 +141,9 @@ export function AppSidebar() {
               </SidebarMenuItem>
             </SidebarMenu>
           </div>
-        )}
+        ) : null}
 
-        {!collapsed && (
+        {!collapsed ? (
           <div className="mt-auto rounded-2xl border border-primary/15 bg-primary/5 p-3">
             <div className="flex items-start gap-3">
               <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/15 text-primary">
@@ -162,8 +157,10 @@ export function AppSidebar() {
               </div>
             </div>
           </div>
-        )}
+        ) : null}
       </SidebarContent>
     </Sidebar>
   );
 }
+
+export default AppSidebar;

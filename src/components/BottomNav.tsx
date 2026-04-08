@@ -1,7 +1,8 @@
 import { Link, useLocation } from "react-router-dom";
+import { FolderOpen, LayoutDashboard } from "lucide-react";
+
 import { creationNavItems } from "@/lib/dashboard-nav";
 import { cn } from "@/lib/utils";
-import { FolderOpen, LayoutDashboard } from "lucide-react";
 
 const navItems = [
   { path: "/dashboard", icon: LayoutDashboard, label: "首页", end: true },
@@ -48,3 +49,5 @@ export function BottomNav() {
     </div>
   );
 }
+
+export default BottomNav;
