@@ -62,9 +62,6 @@ export async function callAdminApi(body: Record<string, unknown>) {
 
   const { data, error } = await supabase.functions.invoke("admin-users", {
     body,
-    headers: {
-      "x-admin-email": session.user.email ?? "",
-    },
   });
 
   if (error) {

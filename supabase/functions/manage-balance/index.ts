@@ -10,18 +10,16 @@ type BalanceAction =
   | "history"
   | "deduct"
   | "recharge"
-  | "get_pricing"
-  | "purchase_package";
+  | "get_pricing";
 
 interface BalanceRequest {
-  action: BalanceAction;
+  action: BalanceAction | "purchase_package";
   userId?: string;
   amount?: number;
   operationType?: string;
   description?: string;
   paymentMethod?: string;
   notes?: string;
-  packageId?: string;
 }
 
 interface RechargePackage {
@@ -31,6 +29,27 @@ interface RechargePackage {
   credits: number;
   badge?: string;
   highlight?: boolean;
+}
+
+interface PricingDefaults {
+  recharge_packages: RechargePackage[];
+  credit_rules: {
+    generation: {
+      nanoBanana: number;
+      nanoBanana2: number;
+      nanoBananaPro: number;
+    };
+    detail: {
+      planning: number;
+      nanoBanana: number;
+      nanoBanana2: number;
+      nanoBananaPro: number;
+    };
+    translation: {
+      basic: number;
+      refined: number;
+    };
+  };
 }
 
 function json(data: unknown, status = 200) {
@@ -43,7 +62,7 @@ function json(data: unknown, status = 200) {
   });
 }
 
-function getDefaultPricing() {
+function getDefaultPricing(): PricingDefaults {
   return {
     recharge_packages: [
       { id: "starter", label: "体验包", price: 19.9, credits: 200, badge: "适合试用", highlight: false },
@@ -125,13 +144,34 @@ async function applyRecharge(
     amount: credits,
     payment_method: paymentMethod,
     status: "completed",
-    notes: notes || "站内自动充值",
+    notes: notes || "管理员手动补充积分",
     completed_at: now,
   });
 
   if (rechargeInsertError) throw rechargeInsertError;
 
   return nextBalance;
+}
+
+async function getPricingSettings(supabase: ReturnType<typeof createClient>) {
+  const defaults = getDefaultPricing();
+  const { data: rows, error } = await supabase
+    .from("admin_settings")
+    .select("key,value")
+    .in("key", ["recharge_packages", "credit_rules"]);
+
+  if (error) throw error;
+
+  const settings =
+    rows?.reduce((acc: Record<string, unknown>, row: { key: string; value: unknown }) => {
+      acc[row.key] = row.value;
+      return acc;
+    }, { ...defaults }) || defaults;
+
+  return {
+    packages: (settings.recharge_packages as RechargePackage[] | undefined) || defaults.recharge_packages,
+    creditRules: settings.credit_rules || defaults.credit_rules,
+  };
 }
 
 Deno.serve(async (req) => {
@@ -144,7 +184,7 @@ Deno.serve(async (req) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
     if (!supabaseUrl || !supabaseServiceKey) {
-      return json({ error: "系统配置缺失，请联系管理员。" }, 500);
+      return json({ error: "系统配置缺失，请联系管理员" }, 500);
     }
 
     const authHeader = req.headers.get("Authorization");
@@ -172,7 +212,6 @@ Deno.serve(async (req) => {
       description,
       paymentMethod,
       notes,
-      packageId,
     } = body;
 
     const targetUserId = body.userId || user.id;
@@ -219,54 +258,17 @@ Deno.serve(async (req) => {
       }
 
       case "get_pricing": {
-        const defaults = getDefaultPricing();
-        const { data: rows, error } = await supabase
-          .from("admin_settings")
-          .select("key,value")
-          .in("key", ["recharge_packages", "credit_rules"]);
-
-        if (error) throw error;
-
-        const settings =
-          rows?.reduce((acc: Record<string, unknown>, row: { key: string; value: unknown }) => {
-            acc[row.key] = row.value;
-            return acc;
-          }, { ...defaults }) || defaults;
-
-        return json({
-          packages: settings.recharge_packages || defaults.recharge_packages,
-          creditRules: settings.credit_rules || defaults.credit_rules,
-        });
+        const pricing = await getPricingSettings(supabase);
+        return json(pricing);
       }
 
       case "purchase_package": {
-        const defaults = getDefaultPricing();
-        const { data: rows } = await supabase
-          .from("admin_settings")
-          .select("key,value")
-          .eq("key", "recharge_packages");
-
-        const packages =
-          (rows?.[0]?.value as RechargePackage[] | undefined) || defaults.recharge_packages;
-
-        const selectedPackage = packages.find((item) => item.id === packageId);
-        if (!selectedPackage) {
-          return json({ error: "充值套餐不存在，请刷新后重试。" }, 400);
-        }
-
-        const newBalance = await applyRecharge(
-          supabase,
-          user.id,
-          Number(selectedPackage.credits || 0),
-          paymentMethod || "auto_credit",
-          notes || `购买${selectedPackage.label}`,
+        return json(
+          {
+            error: "当前充值已切换为支付宝网站支付，请从充值页发起支付，支付成功后系统会自动加积分。",
+          },
+          410,
         );
-
-        return json({
-          success: true,
-          package: selectedPackage,
-          result: { new_balance: newBalance },
-        });
       }
 
       case "deduct": {

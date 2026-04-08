@@ -50,6 +50,15 @@ export type OptimizeProductInfoParams = {
   targetPlatform?: string;
 };
 
+function isMissingFunctionError(raw: unknown) {
+  const text = String(raw || "").toLowerCase();
+  return (
+    text.includes("requested function was not found") ||
+    text.includes("not_found") ||
+    text.includes("404")
+  );
+}
+
 export async function generateDetailPlan(
   params: DetailPlanParams,
 ): Promise<DetailPlanResponse> {
@@ -58,7 +67,9 @@ export async function generateDetailPlan(
   });
 
   if (error) {
-    throw new Error(normalizeUserErrorMessage(error.message, "详情页策划失败，请稍后重试。"));
+    throw new Error(
+      normalizeUserErrorMessage(error.message, "详情页策划失败，请稍后重试。"),
+    );
   }
 
   if (!data) {
@@ -76,7 +87,16 @@ export async function optimizeProductInfo(
   });
 
   if (error) {
-    throw new Error(normalizeUserErrorMessage(error.message, "产品信息优化失败，请稍后重试。"));
+    if (isMissingFunctionError(error.message)) {
+      return (
+        params.productInfo?.trim() ||
+        "请基于上传商品图整理商品类型、核心卖点、材质、尺寸、适用人群和希望保留的关键信息。"
+      );
+    }
+
+    throw new Error(
+      normalizeUserErrorMessage(error.message, "产品信息优化失败，请稍后重试。"),
+    );
   }
 
   const optimized = data?.optimizedText;

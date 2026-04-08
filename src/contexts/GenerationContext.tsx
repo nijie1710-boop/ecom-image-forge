@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
+﻿import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
 import {
   generateImage,
   type GenerationModel,
@@ -391,7 +391,7 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             const detailPrompts = [
               {
                 label: "卖点展示",
-                prompt: `Product detail page image for ${params.generatedCopy.productName}. Highlights: ${params.generatedCopy.sellingPoints.slice(0, 3).join("；")}.`,
+                prompt: `Product detail page image for ${params.generatedCopy.productName}. Highlights: ${params.generatedCopy.sellingPoints.slice(0, 3).join("，")}.`,
               },
               {
                 label: "场景展示",
@@ -696,17 +696,14 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             });
 
             if (result.error || !result.images[0]) {
+              const screenError = result.error || "本屏生成失败";
+              failedScreens.push({ screen: screen.screen, error: screenError });
               updateDetailScreen(jobId, screen.screen, (current) => ({
                 ...current,
                 status: "error",
-                error: result.error || "本屏生成失败",
+                error: screenError,
               }));
-              updateJob(jobId, {
-                status: "error",
-                error: result.error || `第 ${screen.screen} 屏生成失败`,
-                results: completedImages,
-              });
-              return;
+              continue;
             }
 
             completedImages.push(result.images[0]);
@@ -716,6 +713,18 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
               imageUrl: result.images[0],
               error: undefined,
             }));
+          }
+
+          if (!completedImages.length) {
+            updateJob(jobId, {
+              status: "error",
+              step: "生成失败",
+              current: params.screens.length,
+              results: [],
+              error:
+                failedScreens[0]?.error || "当前生成失败，请重试。建议保留当前识别结果，稍后重新生成一次。",
+            });
+            return;
           }
 
           const payload: HistoryPayload = {
@@ -730,10 +739,12 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
           updateJob(jobId, {
             status: "done",
-            step: "完成",
+            step: failedScreens.length ? "部分完成" : "完成",
             current: params.screens.length,
             results: completedImages,
-            error: undefined,
+            error: failedScreens.length
+              ? `已完成 ${completedImages.length} 屏，${failedScreens.length} 屏失败，可单独重生失败分屏。`
+              : undefined,
           });
           params.onComplete?.(finalScreens);
 
@@ -772,7 +783,7 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
       updateJob(id, {
         status: "canceled",
-        step: "正在取消",
+        step: "姝ｅ湪鍙栨秷",
       });
     },
     [updateJob],
@@ -824,3 +835,4 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   return <GenerationContext.Provider value={value}>{children}</GenerationContext.Provider>;
 };
+
