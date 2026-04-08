@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   ChevronRight,
-  CreditCard,
   Image as ImageIcon,
   Loader2,
   LogOut,
@@ -13,6 +12,7 @@ import {
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -33,7 +33,7 @@ type BalanceInfo = {
 
 export default function AccountPage() {
   const navigate = useNavigate();
-  const { user, signOut, isAdmin } = useAuth();
+  const { user, signOut, isAdmin, loading } = useAuth();
   const [localImages, setLocalImages] = useState<HistoryImage[]>([]);
   const [isSigningOut, setIsSigningOut] = useState(false);
 
@@ -57,7 +57,7 @@ export default function AccountPage() {
 
   const cloudImagesQuery = useQuery({
     queryKey: ["account-images", user?.id],
-    enabled: Boolean(user?.id),
+    enabled: !loading && Boolean(user?.id),
     queryFn: async () => {
       const { data, error } = await supabase
         .from("generated_images")
@@ -77,7 +77,7 @@ export default function AccountPage() {
 
   const profileQuery = useQuery({
     queryKey: ["account-profile", user?.id],
-    enabled: Boolean(user?.id),
+    enabled: !loading && Boolean(user?.id),
     queryFn: async () => {
       const { data, error } = await supabase
         .from("profiles")
@@ -92,7 +92,8 @@ export default function AccountPage() {
 
   const balanceQuery = useQuery({
     queryKey: ["account-balance", user?.id],
-    enabled: Boolean(user?.id),
+    enabled: !loading && Boolean(user?.id),
+    retry: 1,
     queryFn: async (): Promise<BalanceInfo> => {
       const { data, error } = await supabase.functions.invoke("manage-balance", {
         body: { action: "get" },
@@ -122,11 +123,7 @@ export default function AccountPage() {
 
   const handleRefresh = async () => {
     try {
-      await Promise.all([
-        cloudImagesQuery.refetch(),
-        profileQuery.refetch(),
-        balanceQuery.refetch(),
-      ]);
+      await Promise.all([cloudImagesQuery.refetch(), profileQuery.refetch(), balanceQuery.refetch()]);
       toast.success("账户信息已刷新");
     } catch (error) {
       console.error("refresh account page failed:", error);
@@ -155,12 +152,12 @@ export default function AccountPage() {
   const balance = balanceQuery.data;
 
   return (
-    <div className="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6 lg:px-8">
+    <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 lg:px-8">
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">账户设置</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            查看你的资料、最近图片记录和积分余额。
+            查看个人资料、最近图片和当前积分余额。
           </p>
         </div>
         <div className="flex gap-2">
@@ -178,155 +175,147 @@ export default function AccountPage() {
         </div>
       </div>
 
-      <div className="mb-6 rounded-3xl border border-border bg-card p-5 shadow-sm sm:p-6">
-        <div className="mb-4 flex items-center justify-between gap-3">
+      <Card className="mb-6 rounded-3xl border border-border shadow-sm">
+        <CardHeader className="flex flex-row items-start justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="rounded-2xl bg-primary/10 p-2 text-primary">
               <ImageIcon className="h-5 w-5" />
             </div>
             <div>
-              <h2 className="font-semibold text-card-foreground">我的图片</h2>
-              <p className="text-xs text-muted-foreground">
-                最近生成和本地保存的图片会显示在这里。
-              </p>
+              <CardTitle className="text-lg">我的图片</CardTitle>
+              <CardDescription>最近生成或保存的图片会显示在这里。</CardDescription>
             </div>
           </div>
           <Button variant="ghost" size="sm" onClick={() => navigate("/dashboard/images")}>
             查看全部
             <ChevronRight className="ml-1 h-4 w-4" />
           </Button>
-        </div>
-
-        {cloudImagesQuery.isLoading ? (
-          <div className="flex min-h-28 items-center justify-center rounded-2xl border border-dashed border-border bg-muted/30">
-            <Loader2 className="h-5 w-5 animate-spin text-primary" />
-          </div>
-        ) : recentImages.length > 0 ? (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {recentImages.map((image) => (
-              <button
-                key={image.id}
-                type="button"
-                className="group relative aspect-square overflow-hidden rounded-2xl border border-border bg-muted text-left"
-                onClick={() => navigate("/dashboard/images")}
-              >
-                <img
-                  src={image.image_url}
-                  alt="最近图片"
-                  className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                />
-                <span
-                  className={`absolute right-2 top-2 rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                    image.source === "cloud"
-                      ? "bg-blue-500/90 text-white"
-                      : "bg-orange-500/90 text-white"
-                  }`}
+        </CardHeader>
+        <CardContent>
+          {cloudImagesQuery.isLoading ? (
+            <div className="flex min-h-28 items-center justify-center rounded-2xl border border-dashed border-border bg-muted/30">
+              <Loader2 className="h-5 w-5 animate-spin text-primary" />
+            </div>
+          ) : recentImages.length > 0 ? (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {recentImages.map((image) => (
+                <button
+                  key={image.id}
+                  type="button"
+                  className="group relative aspect-square overflow-hidden rounded-2xl border border-border bg-muted text-left"
+                  onClick={() => navigate("/dashboard/images")}
                 >
-                  {image.source === "cloud" ? "云端" : "本地"}
-                </span>
-              </button>
-            ))}
-          </div>
-        ) : (
-          <div className="rounded-2xl border border-dashed border-border bg-muted/30 px-4 py-8 text-center text-sm text-muted-foreground">
-            还没有生成过图片，去工作台开始创作吧。
-          </div>
-        )}
+                  <img
+                    src={image.image_url}
+                    alt="最近生成的图片"
+                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                  />
+                  <span
+                    className={`absolute right-2 top-2 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                      image.source === "cloud" ? "bg-blue-500/90 text-white" : "bg-orange-500/90 text-white"
+                    }`}
+                  >
+                    {image.source === "cloud" ? "云端" : "本地"}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-border bg-muted/30 px-4 py-8 text-center text-sm text-muted-foreground">
+              还没有图片记录，去创作页开始生成吧。
+            </div>
+          )}
 
-        <div className="mt-4 text-xs text-muted-foreground">当前共记录 {totalImages} 张图片</div>
-      </div>
+          <div className="mt-4 text-xs text-muted-foreground">当前共记录 {totalImages} 张图片</div>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-        <section className="rounded-3xl border border-border bg-card p-5 shadow-sm sm:p-6">
-          <div className="mb-5 flex items-center gap-3">
-            <div className="rounded-2xl bg-primary/10 p-2 text-primary">
-              <User className="h-5 w-5" />
-            </div>
-            <div>
-              <h2 className="font-semibold text-card-foreground">个人资料</h2>
-              <p className="text-xs text-muted-foreground">查看当前账号和权限信息。</p>
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <div className="flex items-center justify-between gap-4 border-b border-border pb-3 text-sm">
-              <span className="text-muted-foreground">昵称</span>
-              <span className="font-medium text-card-foreground">{displayName}</span>
-            </div>
-            <div className="flex items-center justify-between gap-4 border-b border-border pb-3 text-sm">
-              <span className="text-muted-foreground">邮箱</span>
-              <span className="font-medium text-card-foreground">{email}</span>
-            </div>
-            <div className="flex items-center justify-between gap-4 text-sm">
-              <span className="text-muted-foreground">账户角色</span>
-              <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
-                {isAdmin ? <Shield className="h-3.5 w-3.5" /> : null}
-                {isAdmin ? "管理员" : "普通用户"}
-              </span>
-            </div>
-          </div>
-        </section>
-
-        <section className="rounded-3xl border border-border bg-card p-5 shadow-sm sm:p-6">
-          <div className="mb-5 flex items-center gap-3">
-            <div className="rounded-2xl bg-primary/10 p-2 text-primary">
-              <CreditCard className="h-5 w-5" />
-            </div>
-            <div>
-              <h2 className="font-semibold text-card-foreground">我的积分</h2>
-              <p className="text-xs text-muted-foreground">高成本能力会优先消耗账户积分。</p>
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-border bg-muted/30 p-4">
-            {balanceQuery.isLoading ? (
-              <div className="flex min-h-28 items-center justify-center">
-                <Loader2 className="h-5 w-5 animate-spin text-primary" />
+        <Card className="rounded-3xl border border-border shadow-sm">
+          <CardHeader>
+            <div className="flex items-center gap-3">
+              <div className="rounded-2xl bg-primary/10 p-2 text-primary">
+                <User className="h-5 w-5" />
               </div>
-            ) : (
-              <>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-sm text-muted-foreground">当前余额</div>
-                    <div className="mt-1 text-3xl font-bold text-foreground">
-                      {balance?.balance ?? 0}
-                      <span className="ml-2 text-base font-medium text-primary">积分</span>
-                    </div>
-                  </div>
-                  <Button variant="ghost" size="sm" onClick={() => void balanceQuery.refetch()}>
-                    刷新
-                  </Button>
-                </div>
+              <div>
+                <CardTitle className="text-lg">个人资料</CardTitle>
+                <CardDescription>查看当前登录账号与权限信息。</CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4 text-sm">
+            <div className="flex items-center justify-between rounded-2xl border border-border px-4 py-3">
+              <span className="text-muted-foreground">姓名</span>
+              <span className="font-medium text-foreground">{displayName}</span>
+            </div>
+            <div className="flex items-center justify-between rounded-2xl border border-border px-4 py-3">
+              <span className="text-muted-foreground">邮箱</span>
+              <span className="font-medium text-foreground">{email}</span>
+            </div>
+            <div className="flex items-center justify-between rounded-2xl border border-border px-4 py-3">
+              <span className="text-muted-foreground">账户角色</span>
+              <div className="flex items-center gap-2">
+                {isAdmin ? <Shield className="h-4 w-4 text-primary" /> : null}
+                <span className="font-medium text-foreground">{isAdmin ? "管理员" : "普通用户"}</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
-                <div className="mt-4 grid grid-cols-2 gap-3 text-xs text-muted-foreground">
-                  <div className="rounded-2xl bg-background/70 p-3">
-                    <div>累计充值</div>
-                    <div className="mt-1 text-lg font-semibold text-foreground">
-                      {balance?.total_recharged ?? 0}
-                    </div>
-                  </div>
-                  <div className="rounded-2xl bg-background/70 p-3">
-                    <div>累计消费</div>
-                    <div className="mt-1 text-lg font-semibold text-foreground">
-                      {balance?.total_consumed ?? 0}
-                    </div>
-                  </div>
+        <Card className="rounded-3xl border border-border shadow-sm">
+          <CardHeader>
+            <div className="flex items-center gap-3">
+              <div className="rounded-2xl bg-primary/10 p-2 text-primary">
+                <Shield className="h-5 w-5" />
+              </div>
+              <div>
+                <CardTitle className="text-lg">我的积分</CardTitle>
+                <CardDescription>高成本生成能力会优先消耗账户积分。</CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="rounded-2xl border border-border bg-muted/20 p-5">
+              <div className="text-sm text-muted-foreground">当前余额</div>
+              <div className="mt-2 text-4xl font-bold text-foreground">
+                {balanceQuery.isLoading ? (
+                  <Loader2 className="h-7 w-7 animate-spin text-primary" />
+                ) : (
+                  <>
+                    {balance?.balance ?? 0}
+                    <span className="ml-2 text-lg font-medium text-primary">积分</span>
+                  </>
+                )}
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl border border-border px-4 py-3">
+                  <div className="text-xs text-muted-foreground">累计充值</div>
+                  <div className="mt-1 text-lg font-semibold text-foreground">{balance?.total_recharged ?? 0}</div>
                 </div>
-              </>
-            )}
-          </div>
+                <div className="rounded-2xl border border-border px-4 py-3">
+                  <div className="text-xs text-muted-foreground">累计消费</div>
+                  <div className="mt-1 text-lg font-semibold text-foreground">{balance?.total_consumed ?? 0}</div>
+                </div>
+              </div>
+              {balanceQuery.error ? (
+                <p className="mt-4 text-sm text-destructive">积分信息加载失败，请点击刷新数据重试。</p>
+              ) : (
+                <p className="mt-4 text-sm text-muted-foreground">
+                  生成图片和图文翻译会消耗积分，余额不足时请先充值后继续使用。
+                </p>
+              )}
+            </div>
 
-          <div className="mt-4 flex gap-2">
-            <Button className="flex-1" onClick={() => navigate("/dashboard/recharge")}>
-              去充值
-            </Button>
-            {isAdmin ? (
-              <Button variant="outline" className="flex-1" onClick={() => navigate("/admin/users")}>
-                后台管理
-              </Button>
-            ) : null}
-          </div>
-        </section>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button onClick={() => navigate("/dashboard/recharge")}>去充值</Button>
+              {isAdmin ? (
+                <Button variant="outline" onClick={() => navigate("/admin/users")}>
+                  管理后台
+                </Button>
+              ) : null}
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

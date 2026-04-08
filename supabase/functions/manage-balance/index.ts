@@ -10,10 +10,11 @@ type BalanceAction =
   | "history"
   | "deduct"
   | "recharge"
-  | "get_pricing";
+  | "get_pricing"
+  | "purchase_package";
 
 interface BalanceRequest {
-  action: BalanceAction | "purchase_package";
+  action: BalanceAction;
   userId?: string;
   amount?: number;
   operationType?: string;
@@ -65,10 +66,10 @@ function json(data: unknown, status = 200) {
 function getDefaultPricing(): PricingDefaults {
   return {
     recharge_packages: [
-      { id: "starter", label: "体验包", price: 19.9, credits: 200, badge: "适合试用", highlight: false },
+      { id: "starter", label: "体验包", price: 19.9, credits: 200, badge: "适合试用" },
       { id: "growth", label: "常用包", price: 49.9, credits: 520, badge: "推荐", highlight: true },
-      { id: "pro", label: "进阶包", price: 99, credits: 1080, badge: "更省单价", highlight: false },
-      { id: "business", label: "商用包", price: 199, credits: 2280, badge: "高频创作", highlight: false },
+      { id: "pro", label: "进阶包", price: 99, credits: 1080, badge: "单价更省" },
+      { id: "business", label: "商用包", price: 199, credits: 2280, badge: "高频创作" },
     ],
     credit_rules: {
       generation: {
@@ -205,15 +206,7 @@ Deno.serve(async (req) => {
     }
 
     const body = (await req.json().catch(() => ({}))) as BalanceRequest;
-    const {
-      action,
-      amount,
-      operationType,
-      description,
-      paymentMethod,
-      notes,
-    } = body;
-
+    const { action, amount, operationType, description, paymentMethod, notes } = body;
     const targetUserId = body.userId || user.id;
 
     const { data: roleData } = await supabase
@@ -314,7 +307,7 @@ Deno.serve(async (req) => {
 
       case "recharge": {
         if (!isAdmin) {
-          return json({ error: "权限不足，当前账号不能手动充值。" }, 403);
+          return json({ error: "权限不足，当前账户不能手动充值。" }, 403);
         }
 
         if (!amount || amount <= 0) {
