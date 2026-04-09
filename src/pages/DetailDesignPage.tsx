@@ -564,6 +564,9 @@ const DetailDesignPage = () => {
       setGenerationError(normalizeUserErrorMessage(activeDetailJob.error, "逐屏生成失败，请稍后重试。"));
     } else if (activeDetailJob.status === "canceled") {
       setGenerationError("后台任务已取消");
+    } else if (activeDetailJob.status === "done" && activeDetailJob.error) {
+      // 部分屏失败时 status 仍为 done，需单独展示失败摘要
+      setGenerationError(activeDetailJob.error);
     } else {
       setGenerationError(null);
     }

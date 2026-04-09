@@ -703,6 +703,7 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           assertJobExecutionActive(jobId, runId);
 
           const completedImages: string[] = [];
+          const completedScreenNumbers: number[] = [];
           const failedScreens: Array<{ screen: number; error: string }> = [];
 
           for (let index = 0; index < params.screens.length; index += 1) {
@@ -744,6 +745,7 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             }
 
             completedImages.push(result.images[0]);
+            completedScreenNumbers.push(screen.screen);
             updateDetailScreen(jobId, screen.screen, (current) => ({
               ...current,
               status: "done",
@@ -774,6 +776,14 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           const persistedUrls =
             (await persistHistoryOnce(params.userId, completedImages, payload, controller.signal)) || completedImages;
           assertJobExecutionActive(jobId, runId);
+
+          // Write persisted URLs back to individual screen results
+          persistedUrls.forEach((url, index) => {
+            const screenNumber = completedScreenNumbers[index];
+            if (screenNumber !== undefined && url !== completedImages[index]) {
+              updateDetailScreen(jobId, screenNumber, (current) => ({ ...current, imageUrl: url }));
+            }
+          });
 
           const finalScreens =
             (jobsRef.current.find((job) => job.id === jobId)?.detailScreens || []) as DetailScreenJobResult[];
