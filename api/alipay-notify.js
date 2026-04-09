@@ -54,17 +54,48 @@ export default async function handler(req, res) {
     const supabase = createAdminClient();
 
     if (!paid) {
-      const { error } = await supabase
+      // 幂等：只在状态确实变化时才写库，避免重复通知反复更新
+      const { data: existing } = await supabase
         .from("recharge_orders")
-        .update({
-          status: tradeStatus ? tradeStatus.toLowerCase() : "pending",
-          raw_notify: payload,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("order_no", orderNo);
+        .select("status")
+        .eq("order_no", orderNo)
+        .maybeSingle();
 
-      if (error) throw error;
+      const newStatus = tradeStatus ? tradeStatus.toLowerCase() : "pending";
+      if (existing && existing.status !== newStatus && existing.status !== "paid") {
+        const { error } = await supabase
+          .from("recharge_orders")
+          .update({
+            status: newStatus,
+            raw_notify: payload,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("order_no", orderNo);
+
+        if (error) throw error;
+      }
+
+      // 不管订单是否存在都返回 success，避免支付宝无限重试
       return textResponse(res, 200, "success");
+    }
+
+    // 校验通知金额与订单金额一致，防止篡改
+    const { data: orderRow } = await supabase
+      .from("recharge_orders")
+      .select("amount")
+      .eq("order_no", orderNo)
+      .maybeSingle();
+
+    if (!orderRow) {
+      // 订单不存在，告知支付宝已收到，不再重试
+      return textResponse(res, 200, "success");
+    }
+
+    const notifyAmount = Number(payload.total_amount || 0);
+    const orderAmount = Number(orderRow.amount || 0);
+    if (Math.abs(notifyAmount - orderAmount) > 0.01) {
+      console.error(`alipay notify amount mismatch: notify=${notifyAmount} order=${orderAmount} order_no=${orderNo}`);
+      return textResponse(res, 400, "fail");
     }
 
     const { data, error } = await supabase.rpc("apply_recharge_order_payment", {
@@ -76,7 +107,8 @@ export default async function handler(req, res) {
 
     if (error) throw error;
     if (!data || data.length === 0) {
-      return textResponse(res, 404, "fail");
+      // RPC 返回空 = 订单已处理（幂等），告知支付宝成功
+      return textResponse(res, 200, "success");
     }
 
     return textResponse(res, 200, "success");

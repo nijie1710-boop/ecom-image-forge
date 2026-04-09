@@ -354,6 +354,10 @@ export default function RechargePage() {
         nextParams.delete("order_no");
         nextParams.delete("payment_status");
         setSearchParams(nextParams, { replace: true });
+
+        if (!successToastShownRef.current) {
+          toast.warning("暂未检测到支付结果，请稍后刷新页面查看积分是否到账，或联系客服。");
+        }
       }
 
       setIsPolling(false);
