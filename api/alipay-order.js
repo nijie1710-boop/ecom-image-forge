@@ -33,7 +33,10 @@ function getAction(body) {
 export default async function handler(req, res) {
   if (handleOptions(req, res)) return;
   if (req.method !== "POST") {
-    return respondJson(res, 405, { error: "METHOD_NOT_ALLOWED", message: "仅支持 POST 请求" });
+    return respondJson(res, 405, {
+      error: "METHOD_NOT_ALLOWED",
+      message: "仅支持 POST 请求",
+    });
   }
 
   try {
@@ -57,7 +60,10 @@ export default async function handler(req, res) {
     if (action === "status") {
       const orderNo = String(body?.orderNo || "").trim();
       if (!orderNo) {
-        return respondJson(res, 400, { error: "ORDER_NO_REQUIRED", message: "缺少订单号" });
+        return respondJson(res, 400, {
+          error: "ORDER_NO_REQUIRED",
+          message: "缺少订单号",
+        });
       }
 
       const { data, error } = await supabase
@@ -69,14 +75,20 @@ export default async function handler(req, res) {
 
       if (error) throw error;
       if (!data) {
-        return respondJson(res, 404, { error: "ORDER_NOT_FOUND", message: "订单不存在" });
+        return respondJson(res, 404, {
+          error: "ORDER_NOT_FOUND",
+          message: "订单不存在",
+        });
       }
 
       return respondJson(res, 200, { order: data });
     }
 
     if (action !== "create") {
-      return respondJson(res, 400, { error: "INVALID_ACTION", message: "不支持的支付操作" });
+      return respondJson(res, 400, {
+        error: "INVALID_ACTION",
+        message: "不支持的支付操作",
+      });
     }
 
     const requiredEnv = getRequiredOrderEnv();
@@ -90,13 +102,19 @@ export default async function handler(req, res) {
 
     const packageId = String(body?.packageId || "").trim();
     if (!packageId) {
-      return respondJson(res, 400, { error: "PACKAGE_REQUIRED", message: "请选择充值套餐" });
+      return respondJson(res, 400, {
+        error: "PACKAGE_REQUIRED",
+        message: "请选择充值套餐",
+      });
     }
 
     const packages = await loadPackages(supabase);
     const selectedPackage = packages.find((item) => item.id === packageId);
     if (!selectedPackage) {
-      return respondJson(res, 400, { error: "PACKAGE_NOT_FOUND", message: "充值套餐不存在，请刷新页面后重试" });
+      return respondJson(res, 400, {
+        error: "PACKAGE_NOT_FOUND",
+        message: "充值套餐不存在，请刷新页面后重试",
+      });
     }
 
     const orderNo = createOrderNo(user.id);
