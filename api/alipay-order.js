@@ -2,6 +2,7 @@ import {
   appendQueryParams,
   buildEnvErrorMessage,
   createAdminClient,
+  createUserClient,
   createOrderNo,
   formatAlipayTimestamp,
   getMissingEnv,
@@ -42,11 +43,14 @@ export default async function handler(req, res) {
   try {
     const body = await parseJsonBody(req);
     const action = getAction(body);
-    const supabase = createAdminClient();
     const user = await requireUserFromRequest(req);
 
+    // list / status 只读操作用用户自己的 JWT，不需要 service role key
+    const token = (req.headers.authorization || req.headers.Authorization || "").slice(7);
+    const userClient = createUserClient(token);
+
     if (action === "list") {
-      const { data, error } = await supabase
+      const { data, error } = await userClient
         .from("recharge_orders")
         .select("*")
         .eq("user_id", user.id)
@@ -66,7 +70,7 @@ export default async function handler(req, res) {
         });
       }
 
-      const { data, error } = await supabase
+      const { data, error } = await userClient
         .from("recharge_orders")
         .select("*")
         .eq("order_no", orderNo)
@@ -83,6 +87,9 @@ export default async function handler(req, res) {
 
       return respondJson(res, 200, { order: data });
     }
+
+    // create 操作需要 admin client 写库
+    const supabase = createAdminClient();
 
     if (action !== "create") {
       return respondJson(res, 400, {

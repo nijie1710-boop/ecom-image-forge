@@ -143,6 +143,18 @@ export function createAdminClient() {
   });
 }
 
+export function createUserClient(accessToken) {
+  const { supabaseUrl } = getSupabaseConfig();
+  const publishableKey =
+    process.env.SUPABASE_PUBLISHABLE_KEY ||
+    process.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+    DEFAULT_SUPABASE_PUBLISHABLE_KEY;
+  return createClient(supabaseUrl, publishableKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+    global: { headers: { Authorization: `Bearer ${accessToken}` } },
+  });
+}
+
 export function getRequiredOrderEnv() {
   return {
     ALIPAY_APP_ID: process.env.ALIPAY_APP_ID || "",
