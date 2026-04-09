@@ -42,7 +42,7 @@ import {
   type GenerationModel,
   type OutputResolution,
 } from "@/lib/ai-generator";
-import { WorkspaceHeader } from "@/components/workspace/WorkspaceShell";
+import { WorkspaceHeader, WorkspaceShell } from "@/components/workspace/WorkspaceShell";
 import {
   WorkspaceEmptyState,
   WorkspaceSection,
@@ -1064,7 +1064,7 @@ const DetailDesignPage = () => {
     modelOptions.find((option) => option.value === selectedModel)?.hint || "";
 
   return (
-    <div className="mx-auto max-w-[1480px] space-y-6 px-4 py-6 md:px-6">
+    <div className="mx-auto max-w-[1480px] space-y-5 px-3 py-4 sm:px-4 sm:py-5 md:space-y-6 md:px-6 md:py-6">
       <WorkspaceHeader
         icon={LayoutPanelTop}
         badge="AI 详情页"
@@ -1073,8 +1073,9 @@ const DetailDesignPage = () => {
         steps={["1. 上传商品", "2. 选方案", "3. 逐屏生成"]}
       />
 
-      <div className="grid gap-6 xl:grid-cols-[380px_minmax(0,1fr)]">
-        <div className="space-y-5 rounded-3xl border border-border bg-card p-5 shadow-sm xl:sticky xl:top-24 xl:max-h-[calc(100vh-7rem)] xl:overflow-y-auto xl:pr-1">
+      <WorkspaceShell
+        sidebar={
+        <div className="space-y-5 rounded-3xl border border-border bg-card p-5 pb-24 shadow-sm xl:max-h-[calc(100vh-7rem)] xl:overflow-y-auto xl:pb-6">
           <section className="rounded-2xl border border-border bg-background/70 p-4">
             <div className="mb-4 flex items-center justify-between">
               <div>
@@ -1569,8 +1570,9 @@ const DetailDesignPage = () => {
             </section>
           )}
         </div>
-
-        <div className="space-y-6">
+        }
+        content={
+        <div className="space-y-5">
           {!activePlan ? (
             <EmptyState />
           ) : (
@@ -2107,7 +2109,8 @@ const DetailDesignPage = () => {
             </>
           )}
         </div>
-      </div>
+        }
+      />
 
       <Dialog
         open={!!previewImageUrl}
