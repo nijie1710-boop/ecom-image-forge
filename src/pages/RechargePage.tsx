@@ -222,9 +222,36 @@ export default function RechargePage() {
   }, []);
 
   const invokePaymentApi = useCallback(async (body: Record<string, unknown>) => {
-    const { data, error } = await supabase.functions.invoke("alipay-order", { body });
-    if (error) throw error;
-    if (data?.error) throw new Error(String(data.error));
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session?.access_token) {
+      throw new Error("未登录，请先登录");
+    }
+
+    const response = await fetch("/api/alipay-order", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify(body),
+    });
+
+    const text = await response.text();
+    let data: Record<string, unknown> = {};
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch {
+      data = { error: text || "PAYMENT_API_FAILED" };
+    }
+
+    if (!response.ok) {
+      throw new Error(String(data?.message || data?.error || "支付接口暂时不可用，请稍后再试"));
+    }
+
+    if (data?.error) throw new Error(String(data.message || data.error));
     return data;
   }, []);
 
