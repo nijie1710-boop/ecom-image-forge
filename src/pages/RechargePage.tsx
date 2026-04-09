@@ -1,14 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import {
-  Coins,
-  CreditCard,
-  ExternalLink,
-  History,
-  Loader2,
-  ReceiptText,
-  Sparkles,
-} from "lucide-react";
+import { Coins, CreditCard, ExternalLink, Loader2, ReceiptText, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -18,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { getAppOrigin } from "@/lib/app-config";
 import { useAuth } from "@/contexts/AuthContext";
+import { normalizeUserErrorMessage } from "@/lib/error-messages";
 
 interface BalanceInfo {
   balance: number;
@@ -30,7 +23,7 @@ interface BalanceInfo {
 interface RechargeRecord {
   id: string;
   amount: number;
-  payment_method: string;
+  payment_method: string | null;
   status: string;
   notes?: string | null;
   created_at: string;
@@ -88,6 +81,19 @@ interface RechargeOrder {
   paid_at?: string | null;
 }
 
+const DEFAULT_PACKAGES: RechargePackage[] = [
+  { id: "starter", label: "体验包", price: 19.9, credits: 200, badge: "适合试用" },
+  { id: "growth", label: "常用包", price: 49.9, credits: 520, badge: "推荐", highlight: true },
+  { id: "pro", label: "进阶包", price: 99, credits: 1080, badge: "单价更省" },
+  { id: "business", label: "商用包", price: 199, credits: 2280, badge: "高频创作" },
+];
+
+const DEFAULT_RULES: CreditRules = {
+  generation: { nanoBanana: 5, nanoBanana2: 7, nanoBananaPro: 12 },
+  detail: { planning: 2, nanoBanana: 6, nanoBanana2: 8, nanoBananaPro: 14 },
+  translation: { basic: 4, refined: 6 },
+};
+
 function formatDate(dateStr?: string | null) {
   if (!dateStr) return "-";
   return new Date(dateStr).toLocaleString("zh-CN", {
@@ -102,11 +108,12 @@ function formatDate(dateStr?: string | null) {
 function getOperationLabel(type: string) {
   const labels: Record<string, string> = {
     generate_image: "AI 生图",
+    image_generation: "AI 生图",
     detail_generation: "AI 详情页逐屏生成",
     detail_planning: "AI 详情页方案策划",
+    generate_copy: "AI 文案",
     translate_image: "图文翻译",
     manual_adjustment: "手动调整",
-    image_generation: "AI 生图",
   };
   return labels[type] || type || "其他";
 }
@@ -131,6 +138,57 @@ function getOrderStatusVariant(status: string): "default" | "secondary" | "destr
   return "outline";
 }
 
+async function loadBalanceFallback(userId: string): Promise<BalanceInfo> {
+  const [balanceResp, rechargeResp, consumptionResp] = await Promise.all([
+    supabase.from("user_balances").select("balance,total_recharged,total_consumed").eq("user_id", userId).maybeSingle(),
+    supabase.from("recharge_records").select("id", { count: "exact", head: true }).eq("user_id", userId),
+    supabase.from("consumption_records").select("id", { count: "exact", head: true }).eq("user_id", userId),
+  ]);
+
+  if (balanceResp.error) throw balanceResp.error;
+  if (rechargeResp.error) throw rechargeResp.error;
+  if (consumptionResp.error) throw consumptionResp.error;
+
+  return {
+    balance: Number(balanceResp.data?.balance || 0),
+    total_recharged: Number(balanceResp.data?.total_recharged || 0),
+    total_consumed: Number(balanceResp.data?.total_consumed || 0),
+    recharge_count: Number(rechargeResp.count || 0),
+    consumption_count: Number(consumptionResp.count || 0),
+  };
+}
+
+async function loadHistoryFallback(userId: string) {
+  const [rechargesResp, consumptionsResp] = await Promise.all([
+    supabase.from("recharge_records").select("*").eq("user_id", userId).order("created_at", { ascending: false }).limit(50),
+    supabase.from("consumption_records").select("*").eq("user_id", userId).order("created_at", { ascending: false }).limit(50),
+  ]);
+
+  if (rechargesResp.error) throw rechargesResp.error;
+  if (consumptionsResp.error) throw consumptionsResp.error;
+
+  return {
+    recharges: (rechargesResp.data || []) as RechargeRecord[],
+    consumptions: (consumptionsResp.data || []) as ConsumptionRecord[],
+  };
+}
+
+async function loadPricingFallback() {
+  try {
+    const { data, error } = await supabase.from("admin_settings").select("key,value").in("key", ["recharge_packages", "credit_rules"]);
+    if (error) throw error;
+
+    const map = new Map((data || []).map((row) => [row.key, row.value]));
+    return {
+      packages: (map.get("recharge_packages") as RechargePackage[] | undefined) || DEFAULT_PACKAGES,
+      creditRules: (map.get("credit_rules") as CreditRules | undefined) || DEFAULT_RULES,
+    };
+  } catch (error) {
+    console.warn("load pricing fallback failed, use defaults:", error);
+    return { packages: DEFAULT_PACKAGES, creditRules: DEFAULT_RULES };
+  }
+}
+
 export default function RechargePage() {
   const { user, loading: authLoading } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -140,8 +198,8 @@ export default function RechargePage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [orderError, setOrderError] = useState<string | null>(null);
   const [balance, setBalance] = useState<BalanceInfo | null>(null);
-  const [packages, setPackages] = useState<RechargePackage[]>([]);
-  const [creditRules, setCreditRules] = useState<CreditRules | null>(null);
+  const [packages, setPackages] = useState<RechargePackage[]>(DEFAULT_PACKAGES);
+  const [creditRules, setCreditRules] = useState<CreditRules>(DEFAULT_RULES);
   const [rechargeHistory, setRechargeHistory] = useState<RechargeRecord[]>([]);
   const [consumptionHistory, setConsumptionHistory] = useState<ConsumptionRecord[]>([]);
   const [orders, setOrders] = useState<RechargeOrder[]>([]);
@@ -156,19 +214,31 @@ export default function RechargePage() {
     [packages, selectedPackageId],
   );
 
-  async function invokeManageBalance(body: Record<string, unknown>) {
+  const invokeManageBalance = useCallback(async (body: Record<string, unknown>) => {
     const { data, error } = await supabase.functions.invoke("manage-balance", { body });
     if (error) throw error;
     if (data?.error) throw new Error(String(data.error));
     return data;
-  }
+  }, []);
 
-  async function invokePaymentApi(body: Record<string, unknown>) {
+  const invokePaymentApi = useCallback(async (body: Record<string, unknown>) => {
     const { data, error } = await supabase.functions.invoke("alipay-order", { body });
     if (error) throw error;
     if (data?.error) throw new Error(String(data.error));
     return data;
-  }
+  }, []);
+
+  const loadOrders = useCallback(async () => {
+    try {
+      const ordersResponse = await invokePaymentApi({ action: "list" });
+      setOrders((ordersResponse.orders || []) as RechargeOrder[]);
+      setOrderError(null);
+    } catch (paymentError) {
+      console.error("load payment orders failed:", paymentError);
+      setOrders([]);
+      setOrderError("支付订单接口暂时不可用，但不影响余额、到账记录和消费记录查看。");
+    }
+  }, [invokePaymentApi]);
 
   const loadAll = useCallback(async () => {
     if (!user?.id) return;
@@ -177,47 +247,41 @@ export default function RechargePage() {
     setLoadError(null);
 
     try {
-      const [balanceResponse, pricingResponse, historyResponse] = await Promise.all([
-        invokeManageBalance({ action: "get" }),
-        invokeManageBalance({ action: "get_pricing" }),
-        invokeManageBalance({ action: "history" }),
+      const [pricingResponse, balanceResponse, historyResponse] = await Promise.all([
+        invokeManageBalance({ action: "get_pricing" }).catch(() => loadPricingFallback()),
+        invokeManageBalance({ action: "get" })
+          .then((response) => (response.balance || null) as BalanceInfo | null)
+          .catch(() => loadBalanceFallback(user.id)),
+        invokeManageBalance({ action: "history" }).catch(() => loadHistoryFallback(user.id)),
       ]);
 
-      setBalance(balanceResponse.balance || null);
-      setPackages(pricingResponse.packages || []);
-      setCreditRules(pricingResponse.creditRules || null);
-      setRechargeHistory(historyResponse.recharges || []);
-      setConsumptionHistory(historyResponse.consumptions || []);
+      setPackages(pricingResponse.packages || DEFAULT_PACKAGES);
+      setCreditRules(pricingResponse.creditRules || DEFAULT_RULES);
+      setBalance(balanceResponse || null);
+      setRechargeHistory((historyResponse.recharges || []) as RechargeRecord[]);
+      setConsumptionHistory((historyResponse.consumptions || []) as ConsumptionRecord[]);
       setSelectedPackageId((current) => {
         if (current) return current;
-        const highlighted = pricingResponse.packages?.find((item: RechargePackage) => item.highlight);
-        return highlighted?.id || pricingResponse.packages?.[0]?.id || "";
+        const highlighted = (pricingResponse.packages || []).find((item: RechargePackage) => item.highlight);
+        return highlighted?.id || pricingResponse.packages?.[0]?.id || DEFAULT_PACKAGES[0].id;
       });
 
-      try {
-        const ordersResponse = await invokePaymentApi({ action: "list" });
-        setOrders(ordersResponse.orders || []);
-        setOrderError(null);
-      } catch (error) {
-        console.error("load payment orders failed:", error);
-        setOrders([]);
-        setOrderError(error instanceof Error ? error.message : "支付订单暂时不可用");
-      }
+      await loadOrders();
     } catch (error) {
       console.error("load recharge center failed:", error);
-      const message = error instanceof Error ? error.message : "加载充值中心失败，请稍后再试";
+      const message = normalizeUserErrorMessage(error, "充值中心加载失败，请稍后再试");
       setLoadError(message);
       toast.error(message);
     } finally {
       setIsLoading(false);
     }
-  }, [user?.id]);
+  }, [invokeManageBalance, loadOrders, user?.id]);
 
   useEffect(() => {
     if (authLoading) return;
     if (!user?.id) {
       setIsLoading(false);
-      setLoadError("请先登录后查看充值与积分记录");
+      setLoadError("请先登录后查看充值和积分记录");
       return;
     }
     void loadAll();
@@ -243,30 +307,29 @@ export default function RechargePage() {
             });
           }
 
-          if (order?.status === "paid") {
-            await loadAll();
+          if (order?.status === "paid" || order?.status === "trade_success" || order?.status === "trade_finished") {
             if (!successToastShownRef.current) {
+              toast.success("支付成功，积分已到账");
               successToastShownRef.current = true;
-              toast.success(`支付成功，已到账 ${order.credits} 积分`);
             }
-            const next = new URLSearchParams(searchParams);
-            next.delete("payment_status");
-            next.delete("order_no");
-            setSearchParams(next, { replace: true });
+            await loadAll();
             break;
           }
-        } catch (error) {
-          console.error("poll order failed:", error);
-          if (attempt === 0) {
-            toast.error(error instanceof Error ? error.message : "订单状态查询失败，请稍后刷新重试");
-          }
-          break;
+        } catch (statusError) {
+          console.warn("poll payment status failed:", statusError);
         }
 
         await new Promise((resolve) => setTimeout(resolve, 2000));
       }
 
-      if (!cancelled) setIsPolling(false);
+      if (!cancelled) {
+        const nextParams = new URLSearchParams(searchParams);
+        nextParams.delete("order_no");
+        nextParams.delete("payment_status");
+        setSearchParams(nextParams, { replace: true });
+      }
+
+      setIsPolling(false);
     }
 
     void pollOrder();
@@ -274,82 +337,76 @@ export default function RechargePage() {
     return () => {
       cancelled = true;
     };
-  }, [returnedOrderNo, returnedStatus, user?.id, loadAll, searchParams, setSearchParams]);
+  }, [invokePaymentApi, loadAll, returnedOrderNo, returnedStatus, searchParams, setSearchParams, user?.id]);
 
-  async function handlePurchase() {
-    if (!selectedPackage) {
-      toast.error("请先选择一个充值套餐");
+  const handlePurchase = async () => {
+    if (!user?.id || !selectedPackage) {
+      toast.error("请选择充值套餐后再继续");
       return;
     }
 
-    setIsPurchasing(true);
     try {
-      const scene = /iphone|android|mobile|ipad|harmonyos/i.test(window.navigator.userAgent) ? "mobile" : "pc";
+      setIsPurchasing(true);
       const response = await invokePaymentApi({
         action: "create",
         packageId: selectedPackage.id,
-        origin: getAppOrigin(),
-        scene,
+        returnUrl: `${getAppOrigin()}/dashboard/recharge?payment_status=return`,
       });
 
-      const payUrl = String(response.payUrl || "");
-      if (!payUrl) {
-        throw new Error("支付链接创建失败，请稍后再试");
+      if (!response?.payUrl) {
+        throw new Error("未获取到支付宝支付链接");
       }
 
-      toast.success("订单已创建，正在跳转支付宝支付");
-      window.location.href = payUrl;
+      window.location.href = String(response.payUrl);
     } catch (error) {
-      console.error("create payment order failed:", error);
-      toast.error(error instanceof Error ? error.message : "创建支付订单失败，请稍后再试");
+      console.error("create purchase order failed:", error);
+      toast.error(normalizeUserErrorMessage(error, "创建支付订单失败，请稍后再试"));
     } finally {
       setIsPurchasing(false);
     }
-  }
+  };
 
-  if (isLoading) {
-    return (
-      <div className="flex min-h-[420px] items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
-  }
+  const totalOrderCount = orders.length;
+  const paidOrderCount = orders.filter((item) => ["paid", "trade_success", "trade_finished"].includes(String(item.status).toLowerCase())).length;
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
-      <Card className="overflow-hidden border-none bg-gradient-to-r from-orange-500 via-pink-500 to-purple-500 text-white shadow-lg">
-        <CardContent className="p-6">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <div className="mb-2 inline-flex items-center rounded-full bg-white/15 px-3 py-1 text-xs font-medium">
-                积分充值中心
-              </div>
-              <h1 className="text-3xl font-bold">支付与积分流水</h1>
-              <p className="mt-2 max-w-2xl text-sm text-white/90">
-                充值套餐、支付订单、积分到账记录和消费流水都会汇总在这里。
-              </p>
-            </div>
-            <div className="grid min-w-[260px] grid-cols-2 gap-3 text-sm">
-              <div className="rounded-2xl bg-white/10 p-4 backdrop-blur">
-                <div className="text-white/80">当前余额</div>
-                <div className="mt-2 text-3xl font-semibold">{balance?.balance ?? 0}</div>
-              </div>
-              <div className="rounded-2xl bg-white/10 p-4 backdrop-blur">
-                <div className="text-white/80">累计消费</div>
-                <div className="mt-2 text-3xl font-semibold">{balance?.total_consumed ?? 0}</div>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+    <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-foreground">充值中心</h1>
+        <p className="mt-1 text-sm text-muted-foreground">选择充值套餐、查看支付状态和积分流水。支付成功后系统会自动到账。</p>
+      </div>
 
       {loadError ? (
-        <Card className="border border-destructive/30 bg-destructive/5 shadow-none">
+        <Card className="mb-6 border border-destructive/30 bg-destructive/5 shadow-none">
           <CardContent className="p-4 text-sm text-destructive">{loadError}</CardContent>
         </Card>
       ) : null}
 
-      <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
+      <div className="mb-6 grid gap-4 md:grid-cols-3">
+        <Card className="rounded-3xl border border-border shadow-sm">
+          <CardContent className="p-5">
+            <div className="text-sm text-muted-foreground">当前余额</div>
+            <div className="mt-3 flex items-end gap-2">
+              <span className="text-4xl font-bold text-foreground">{balance?.balance ?? "-"}</span>
+              <span className="pb-1 text-sm font-medium text-primary">积分</span>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="rounded-3xl border border-border shadow-sm">
+          <CardContent className="p-5">
+            <div className="text-sm text-muted-foreground">累计充值</div>
+            <div className="mt-3 text-3xl font-bold text-foreground">{balance?.total_recharged ?? "-"}</div>
+          </CardContent>
+        </Card>
+        <Card className="rounded-3xl border border-border shadow-sm">
+          <CardContent className="p-5">
+            <div className="text-sm text-muted-foreground">累计消费</div>
+            <div className="mt-3 text-3xl font-bold text-foreground">{balance?.total_consumed ?? "-"}</div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
         <div className="space-y-6">
           <Card className="rounded-3xl border border-border shadow-sm">
             <CardHeader>
@@ -358,41 +415,46 @@ export default function RechargePage() {
                   <CreditCard className="h-5 w-5" />
                 </div>
                 <div>
-                  <CardTitle>充值套餐</CardTitle>
-                  <CardDescription>支付成功后，积分会自动到账并可立即用于创作。</CardDescription>
+                  <CardTitle className="text-lg">充值套餐</CardTitle>
+                  <CardDescription>先使用管理员手动加积分或支付宝网站支付，后续可继续扩展更多支付方式。</CardDescription>
                 </div>
               </div>
             </CardHeader>
             <CardContent className="grid gap-4 md:grid-cols-2">
-              {packages.map((item) => {
-                const isSelected = item.id === selectedPackageId;
+              {packages.map((pkg) => {
+                const isSelected = pkg.id === selectedPackageId;
                 return (
                   <button
-                    key={item.id}
+                    key={pkg.id}
                     type="button"
+                    onClick={() => setSelectedPackageId(pkg.id)}
                     className={`rounded-3xl border p-5 text-left transition ${
                       isSelected
                         ? "border-primary bg-primary/5 shadow-sm"
-                        : "border-border bg-background hover:border-primary/40"
+                        : "border-border bg-background hover:border-primary/40 hover:bg-muted/20"
                     }`}
-                    onClick={() => setSelectedPackageId(item.id)}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <div className="flex items-center gap-2">
-                          <h3 className="text-lg font-semibold text-foreground">{item.label}</h3>
-                          {item.badge ? <Badge variant="secondary">{item.badge}</Badge> : null}
+                        <div className="text-lg font-semibold text-foreground">{pkg.label}</div>
+                        <div className="mt-2 text-3xl font-bold text-foreground">
+                          {pkg.price}
+                          <span className="ml-1 text-base font-medium text-muted-foreground">元</span>
                         </div>
-                        <p className="mt-1 text-sm text-muted-foreground">{item.credits} 积分</p>
+                        <div className="mt-2 text-sm text-muted-foreground">到账 {pkg.credits} 积分</div>
                       </div>
-                      {item.highlight ? <Badge>推荐</Badge> : null}
-                    </div>
-                    <div className="mt-6 flex items-end gap-1">
-                      <span className="text-3xl font-bold text-foreground">¥{item.price}</span>
+                      {pkg.badge ? <Badge variant={pkg.highlight ? "default" : "secondary"}>{pkg.badge}</Badge> : null}
                     </div>
                   </button>
                 );
               })}
+
+              <div className="md:col-span-2">
+                <Button className="w-full" size="lg" onClick={handlePurchase} disabled={isPurchasing || isPolling || !selectedPackage}>
+                  {isPurchasing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+                  {isPurchasing ? "正在创建支付订单..." : "去支付宝支付"}
+                </Button>
+              </div>
             </CardContent>
           </Card>
 
@@ -400,37 +462,37 @@ export default function RechargePage() {
             <CardHeader>
               <div className="flex items-center gap-3">
                 <div className="rounded-2xl bg-primary/10 p-2 text-primary">
-                  <Sparkles className="h-5 w-5" />
+                  <Coins className="h-5 w-5" />
                 </div>
                 <div>
-                  <CardTitle>积分规则</CardTitle>
-                  <CardDescription>按模型和功能消耗积分，先看清再充更划算。</CardDescription>
+                  <CardTitle className="text-lg">积分扣费规则</CardTitle>
+                  <CardDescription>实际扣费会以后台配置为准，下面展示当前生效的默认规则。</CardDescription>
                 </div>
               </div>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="rounded-2xl border border-border p-4">
-                <div className="mb-2 text-sm font-medium text-foreground">AI 生图</div>
-                <div className="grid gap-2 text-sm text-muted-foreground sm:grid-cols-3">
-                  <div>Nano Banana：{creditRules?.generation.nanoBanana ?? 0} 积分/张</div>
-                  <div>Nano Banana 2：{creditRules?.generation.nanoBanana2 ?? 0} 积分/张</div>
-                  <div>Nano Banana Pro：{creditRules?.generation.nanoBananaPro ?? 0} 积分/张</div>
+            <CardContent className="grid gap-4 lg:grid-cols-3">
+              <div className="rounded-2xl border border-border bg-muted/20 p-4">
+                <div className="mb-3 font-medium text-foreground">AI 生图</div>
+                <div className="space-y-2 text-sm text-muted-foreground">
+                  <div> Nano Banana：{creditRules.generation.nanoBanana} 积分/张</div>
+                  <div> Nano Banana 2：{creditRules.generation.nanoBanana2} 积分/张</div>
+                  <div> Nano Banana Pro：{creditRules.generation.nanoBananaPro} 积分/张</div>
                 </div>
               </div>
-              <div className="rounded-2xl border border-border p-4">
-                <div className="mb-2 text-sm font-medium text-foreground">AI 详情页</div>
-                <div className="grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
-                  <div>方案策划：{creditRules?.detail.planning ?? 0} 积分/次</div>
-                  <div>Nano Banana：{creditRules?.detail.nanoBanana ?? 0} 积分/屏</div>
-                  <div>Nano Banana 2：{creditRules?.detail.nanoBanana2 ?? 0} 积分/屏</div>
-                  <div>Nano Banana Pro：{creditRules?.detail.nanoBananaPro ?? 0} 积分/屏</div>
+              <div className="rounded-2xl border border-border bg-muted/20 p-4">
+                <div className="mb-3 font-medium text-foreground">AI 详情页</div>
+                <div className="space-y-2 text-sm text-muted-foreground">
+                  <div> 方案策划：{creditRules.detail.planning} 积分/次</div>
+                  <div> Nano Banana：{creditRules.detail.nanoBanana} 积分/屏</div>
+                  <div> Nano Banana 2：{creditRules.detail.nanoBanana2} 积分/屏</div>
+                  <div> Nano Banana Pro：{creditRules.detail.nanoBananaPro} 积分/屏</div>
                 </div>
               </div>
-              <div className="rounded-2xl border border-border p-4">
-                <div className="mb-2 text-sm font-medium text-foreground">图文翻译</div>
-                <div className="grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
-                  <div>基础翻译：{creditRules?.translation.basic ?? 0} 积分/张</div>
-                  <div>精修翻译：{creditRules?.translation.refined ?? 0} 积分/张</div>
+              <div className="rounded-2xl border border-border bg-muted/20 p-4">
+                <div className="mb-3 font-medium text-foreground">图文翻译</div>
+                <div className="space-y-2 text-sm text-muted-foreground">
+                  <div> 基础翻译：{creditRules.translation.basic} 积分/张</div>
+                  <div> 精修翻译：{creditRules.translation.refined} 积分/张</div>
                 </div>
               </div>
             </CardContent>
@@ -442,178 +504,117 @@ export default function RechargePage() {
             <CardHeader>
               <div className="flex items-center gap-3">
                 <div className="rounded-2xl bg-primary/10 p-2 text-primary">
-                  <Coins className="h-5 w-5" />
-                </div>
-                <div>
-                  <CardTitle>余额总览</CardTitle>
-                  <CardDescription>支付成功后系统会自动刷新到账积分。</CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="rounded-2xl border border-border bg-muted/20 p-5">
-                <div className="text-sm text-muted-foreground">当前可用积分</div>
-                <div className="mt-2 text-4xl font-bold text-foreground">{balance?.balance ?? 0}</div>
-                <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-2xl border border-border px-4 py-3">
-                    <div className="text-xs text-muted-foreground">累计充值</div>
-                    <div className="mt-1 text-lg font-semibold text-foreground">
-                      {balance?.total_recharged ?? 0}
-                    </div>
-                  </div>
-                  <div className="rounded-2xl border border-border px-4 py-3">
-                    <div className="text-xs text-muted-foreground">累计消费</div>
-                    <div className="mt-1 text-lg font-semibold text-foreground">
-                      {balance?.total_consumed ?? 0}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <Button className="w-full" size="lg" onClick={() => void handlePurchase()} disabled={!selectedPackage || isPurchasing}>
-                {isPurchasing ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    正在创建支付订单
-                  </>
-                ) : (
-                  <>
-                    去支付宝支付
-                    <ExternalLink className="ml-2 h-4 w-4" />
-                  </>
-                )}
-              </Button>
-              <p className="text-xs leading-6 text-muted-foreground">
-                仅在支付宝支付成功后自动加积分。若支付后页面未刷新，可稍后返回此页查看到账状态。
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card className="rounded-3xl border border-border shadow-sm">
-            <CardHeader>
-              <div className="flex items-center gap-3">
-                <div className="rounded-2xl bg-primary/10 p-2 text-primary">
                   <ReceiptText className="h-5 w-5" />
                 </div>
                 <div>
-                  <CardTitle>支付与积分流水</CardTitle>
-                  <CardDescription>上方是支付宝订单，下方是积分到账记录和消费记录。</CardDescription>
+                  <CardTitle className="text-lg">支付与积分流水</CardTitle>
+                  <CardDescription>上方是支付订单，下方是积分到账记录和消费记录。</CardDescription>
                 </div>
               </div>
             </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div>
-                  <div className="mb-3 text-sm font-medium text-foreground">最近订单</div>
-                  {orderError ? (
-                    <div className="rounded-2xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-                      {orderError}
-                    </div>
-                  ) : orders.length > 0 ? (
-                    <div className="space-y-3">
-                      {orders.slice(0, 5).map((order) => (
-                        <div key={order.id} className="rounded-2xl border border-border p-4">
-                          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                            <div>
-                              <div className="font-medium text-foreground">{order.package_label || order.subject || "积分订单"}</div>
-                              <div className="mt-1 text-xs text-muted-foreground">
-                                订单号：{order.order_no}
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <Badge variant={getOrderStatusVariant(order.status)}>
-                                {getOrderStatusLabel(order.status)}
-                              </Badge>
-                              <span className="text-sm font-semibold text-foreground">¥{order.amount}</span>
-                            </div>
+            <CardContent className="space-y-6">
+              <div>
+                <div className="mb-3 flex items-center justify-between">
+                  <div className="text-sm font-medium text-foreground">最近订单</div>
+                  <div className="text-xs text-muted-foreground">共 {totalOrderCount} 笔，已支付 {paidOrderCount} 笔</div>
+                </div>
+
+                {orderError ? (
+                  <div className="rounded-2xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">{orderError}</div>
+                ) : orders.length > 0 ? (
+                  <div className="space-y-3">
+                    {orders.slice(0, 5).map((order) => (
+                      <div key={order.id} className="rounded-2xl border border-border bg-muted/10 p-4">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <div className="font-medium text-foreground">{order.subject || order.package_label || order.package_id}</div>
+                            <div className="mt-1 text-xs text-muted-foreground">订单号：{order.order_no}</div>
                           </div>
-                          <div className="mt-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
-                            <div>积分：{order.credits}</div>
-                            <div>时间：{formatDate(order.created_at)}</div>
+                          <Badge variant={getOrderStatusVariant(order.status)}>{getOrderStatusLabel(order.status)}</Badge>
+                        </div>
+                        <div className="mt-3 grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
+                          <div>金额：{order.amount} 元</div>
+                          <div>积分：{order.credits}</div>
+                          <div>创建时间：{formatDate(order.created_at)}</div>
+                          <div>支付时间：{formatDate(order.paid_at)}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-border bg-muted/20 px-4 py-6 text-center text-sm text-muted-foreground">
+                    暂无支付宝订单，选择套餐后会在这里显示支付状态。
+                  </div>
+                )}
+              </div>
+
+              <Tabs defaultValue="recharges" className="w-full">
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="recharges">到账记录</TabsTrigger>
+                  <TabsTrigger value="consumptions">消费记录</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="recharges" className="mt-4">
+                  {rechargeHistory.length > 0 ? (
+                    <div className="space-y-3">
+                      {rechargeHistory.slice(0, 10).map((record) => (
+                        <div key={record.id} className="rounded-2xl border border-border bg-muted/10 p-4">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="font-medium text-foreground">+{record.amount} 积分</div>
+                            <Badge variant={record.status === "completed" ? "default" : "secondary"}>{record.status === "completed" ? "已到账" : record.status}</Badge>
+                          </div>
+                          <div className="mt-2 text-sm text-muted-foreground">
+                            <div>时间：{formatDate(record.created_at)}</div>
+                            <div>方式：{record.payment_method || "后台手动补充"}</div>
                           </div>
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <div className="rounded-2xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
-                      暂无支付宝订单，选择套餐后会在这里显示支付状态。
+                    <div className="rounded-2xl border border-dashed border-border bg-muted/20 px-4 py-6 text-center text-sm text-muted-foreground">
+                      暂无到账记录，充值成功后会显示在这里。
                     </div>
                   )}
-                </div>
+                </TabsContent>
 
-                <Tabs defaultValue="recharge" className="w-full">
-                  <TabsList className="grid w-full grid-cols-2 rounded-2xl bg-muted/40">
-                    <TabsTrigger value="recharge">到账记录</TabsTrigger>
-                    <TabsTrigger value="consumption">消费记录</TabsTrigger>
-                  </TabsList>
-
-                  <TabsContent value="recharge" className="mt-4">
-                    {rechargeHistory.length > 0 ? (
-                      <div className="space-y-3">
-                        {rechargeHistory.slice(0, 8).map((item) => (
-                          <div key={item.id} className="rounded-2xl border border-border p-4">
-                            <div className="flex items-center justify-between gap-3">
-                              <div>
-                                <div className="font-medium text-foreground">+{item.amount} 积分</div>
-                                <div className="mt-1 text-xs text-muted-foreground">
-                                  {item.notes || item.payment_method}
-                                </div>
-                              </div>
-                              <div className="text-right">
-                                <Badge variant="secondary">{item.status}</Badge>
-                                <div className="mt-1 text-xs text-muted-foreground">
-                                  {formatDate(item.completed_at || item.created_at)}
-                                </div>
-                              </div>
-                            </div>
+                <TabsContent value="consumptions" className="mt-4">
+                  {consumptionHistory.length > 0 ? (
+                    <div className="space-y-3">
+                      {consumptionHistory.slice(0, 10).map((record) => (
+                        <div key={record.id} className="rounded-2xl border border-border bg-muted/10 p-4">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="font-medium text-foreground">-{record.amount} 积分</div>
+                            <Badge variant="outline">{getOperationLabel(record.operation_type)}</Badge>
                           </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="rounded-2xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
-                        暂无到账记录，支付成功后会自动显示。
-                      </div>
-                    )}
-                  </TabsContent>
-
-                  <TabsContent value="consumption" className="mt-4">
-                    {consumptionHistory.length > 0 ? (
-                      <div className="space-y-3">
-                        {consumptionHistory.slice(0, 10).map((item) => (
-                          <div key={item.id} className="rounded-2xl border border-border p-4">
-                            <div className="flex items-center justify-between gap-3">
-                              <div>
-                                <div className="font-medium text-foreground">
-                                  -{item.amount} 积分 · {getOperationLabel(item.operation_type)}
-                                </div>
-                                <div className="mt-1 text-xs text-muted-foreground">
-                                  {item.description || "系统自动扣费"}
-                                </div>
-                              </div>
-                              <div className="text-xs text-muted-foreground">{formatDate(item.created_at)}</div>
-                            </div>
+                          <div className="mt-2 text-sm text-muted-foreground">
+                            <div>说明：{record.description || "系统自动扣费"}</div>
+                            <div>时间：{formatDate(record.created_at)}</div>
                           </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="rounded-2xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
-                        暂无消费记录，开始创作后系统会自动记账。
-                      </div>
-                    )}
-                  </TabsContent>
-                </Tabs>
-              </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-border bg-muted/20 px-4 py-6 text-center text-sm text-muted-foreground">
+                      暂无消费记录，开始创作后系统会自动记账。
+                    </div>
+                  )}
+                </TabsContent>
+              </Tabs>
             </CardContent>
           </Card>
 
-          {isPolling ? (
-            <Card className="border border-primary/20 bg-primary/5 shadow-none">
-              <CardContent className="flex items-center gap-3 p-4 text-sm text-primary">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                正在确认支付宝支付结果，请稍候…
-              </CardContent>
-            </Card>
-          ) : null}
+          <Card className="rounded-3xl border border-border shadow-sm">
+            <CardContent className="flex items-start justify-between gap-4 p-5">
+              <div>
+                <div className="font-medium text-foreground">支付成功后未自动跳回？</div>
+                <p className="mt-1 text-sm text-muted-foreground">可以返回账户中心或重新打开本页，系统会自动拉取最新积分和订单状态。</p>
+              </div>
+              <Button variant="outline" onClick={() => window.open(`${getAppOrigin()}/dashboard/account`, "_blank")}>
+                账户中心
+                <ExternalLink className="ml-2 h-4 w-4" />
+              </Button>
+            </CardContent>
+          </Card>
         </div>
       </div>
     </div>
