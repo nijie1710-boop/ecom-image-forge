@@ -236,8 +236,8 @@ async function callGemini(
       body: JSON.stringify({
         contents: [{ parts }],
         generationConfig: {
-          temperature: 0.35,
-          topP: 0.85,
+          temperature: 0.75,
+          topP: 0.92,
           maxOutputTokens: 4096,
           responseMimeType: "application/json",
           thinkingConfig: {
@@ -358,6 +358,9 @@ serve(async (req: Request) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // 提前解析 screenCount，catch 块也能访问
+  let screenCount = 4;
+
   try {
     await tryOptionalAuth(req);
 
@@ -366,7 +369,7 @@ serve(async (req: Request) => {
     const productInfo = safeString(body.productInfo);
     const targetPlatform = safeString(body.targetPlatform, "淘宝/天猫");
     const targetLanguage = safeString(body.targetLanguage, "zh");
-    const screenCount = clampScreenCount(body.screenCount);
+    screenCount = clampScreenCount(body.screenCount);
     const screenIdeas = normalizeScreenIdeas(body.screenIdeas, screenCount);
 
     if (!productImages.length) {
@@ -392,10 +395,14 @@ serve(async (req: Request) => {
 
     const promptText = [
       "You are a senior e-commerce detail-page strategist, visual planner, and copy planner.",
-      "Analyze the uploaded product images and produce exactly 3 different detail-page plans.",
+      "Analyze the uploaded product images and produce exactly 3 DISTINCTLY DIFFERENT detail-page plans.",
+      "IMPORTANT: The 3 plans must differ significantly in tone, target audience, visual style, and copy strategy. Do NOT produce 3 similar variations. Each plan must represent a genuinely different creative direction.",
+      "Plan 1: Focus on premium/brand quality — elegant, minimalist, lifestyle-aspirational, targeting quality-conscious buyers.",
+      "Plan 2: Focus on real-life scenarios and emotional connection — warm, authentic, relatable, targeting everyday users.",
+      "Plan 3: Focus on product features and rational persuasion — clear, data-driven, benefit-focused, targeting value-seeking buyers.",
       `Target platform: ${targetPlatform}.`,
       `Target language for overlay copy: ${targetLanguage}.`,
-      `Requested screen count: ${screenCount}.`,
+      `Requested screen count per plan: ${screenCount}. Each plan must have EXACTLY ${screenCount} screens. Do not add more or fewer.`,
       productInfo
         ? `User notes and selling points: ${productInfo}.`
         : "No extra notes were provided by the user.",
@@ -453,7 +460,7 @@ serve(async (req: Request) => {
     return new Response(JSON.stringify({
       productSummary: "详情页策划暂时不稳定，已返回兜底方案",
       visibleText: "NONE",
-      planOptions: fallbackPlans("该商品", 4),
+      planOptions: fallbackPlans("该商品", screenCount),
       warning: error instanceof Error ? error.message : "unknown error",
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
