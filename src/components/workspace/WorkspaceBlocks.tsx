@@ -15,7 +15,7 @@ export function WorkspaceSection({
   className?: string;
 }) {
   return (
-    <section className={`rounded-[28px] border border-border bg-card p-4 shadow-sm sm:p-5 ${className}`.trim()}>
+    <section className={`rounded-[26px] border border-border bg-card p-4 shadow-sm ${className}`.trim()}>
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
           <h2 className="text-base font-semibold text-foreground sm:text-lg">{title}</h2>
@@ -25,7 +25,7 @@ export function WorkspaceSection({
         </div>
         {actions ? <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap">{actions}</div> : null}
       </div>
-      <div className="mt-4 sm:mt-5">{children}</div>
+      <div className="mt-4">{children}</div>
     </section>
   );
 }
@@ -43,7 +43,7 @@ export function WorkspaceEmptyState({
 }) {
   return (
     <div
-      className={`flex min-h-[280px] flex-col items-center justify-center rounded-[28px] border border-dashed border-border bg-card/70 px-5 py-8 text-center sm:min-h-[360px] sm:px-6 sm:py-10 ${className}`.trim()}
+      className={`flex min-h-[260px] flex-col items-center justify-center rounded-[26px] border border-dashed border-border bg-card/70 px-5 py-8 text-center sm:min-h-[320px] sm:px-6 ${className}`.trim()}
     >
       <div className="rounded-3xl bg-primary/10 p-3 text-primary sm:p-4">
         <Icon className="h-8 w-8 sm:h-10 sm:w-10" />
@@ -62,7 +62,7 @@ export function WorkspaceStatGrid({
   return (
     <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
       {items.map((item) => (
-        <div key={item.label} className="rounded-2xl bg-muted/70 px-3 py-3">
+        <div key={item.label} className="rounded-2xl bg-muted/70 px-3 py-2.5">
           <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
             {item.label}
           </div>
