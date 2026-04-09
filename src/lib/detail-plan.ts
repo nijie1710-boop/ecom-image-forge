@@ -1,6 +1,25 @@
 import { supabase } from "@/integrations/supabase/client";
 import { normalizeUserErrorMessage } from "@/lib/error-messages";
 
+async function extractInvokeError(error: unknown, fallback: string): Promise<string> {
+  if (!error || typeof error !== "object") return fallback;
+  const e = error as { context?: { json?: () => Promise<unknown>; text?: () => Promise<string> }; message?: string };
+  if (e.context?.json) {
+    try {
+      const payload = (await e.context.json()) as { error?: string; message?: string } | undefined;
+      const msg = payload?.error || payload?.message;
+      if (msg) return normalizeUserErrorMessage(msg, fallback);
+    } catch { /* ignore */ }
+  }
+  if (e.context?.text) {
+    try {
+      const text = await e.context.text();
+      if (text) return normalizeUserErrorMessage(text, fallback);
+    } catch { /* ignore */ }
+  }
+  return normalizeUserErrorMessage(e.message, fallback);
+}
+
 export type DetailPlanScreen = {
   screen: number;
   title: string;
@@ -68,7 +87,7 @@ export async function generateDetailPlan(params: DetailPlanParams): Promise<Deta
   });
 
   if (error) {
-    throw new Error(normalizeUserErrorMessage(error.message, "详情页策划失败，请稍后重试。"));
+    throw new Error(await extractInvokeError(error, "详情页策划失败，请稍后重试。"));
   }
 
   if (!data) {
@@ -84,11 +103,11 @@ export async function optimizeProductInfo(params: OptimizeProductInfoParams): Pr
   });
 
   if (error) {
-    if (isMissingFunctionError(error.message)) {
+    const msg = await extractInvokeError(error, "");
+    if (isMissingFunctionError(msg) || isMissingFunctionError(error.message)) {
       return buildFallbackProductInfo(params);
     }
-
-    console.warn("optimize-product-info failed, fallback to manual content:", error.message);
+    console.warn("optimize-product-info failed, fallback to manual content:", msg);
     return buildFallbackProductInfo(params);
   }
 
