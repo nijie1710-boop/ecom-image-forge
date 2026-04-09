@@ -65,24 +65,30 @@ function getBase64Data(dataUrl: string): string {
   return dataUrl;
 }
 
-async function tryOptionalAuth(req: Request) {
+async function requireAuth(req: Request): Promise<void> {
   const authHeader = req.headers.get("Authorization");
   if (!authHeader?.startsWith("Bearer ")) {
+    throw new Response(JSON.stringify({ error: "未登录，请先登录" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!supabaseUrl || !serviceRoleKey) {
+    // 缺少环境变量时允许通过，避免配置问题完全阻断功能
     return;
   }
 
-  try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    if (!supabaseUrl || !serviceRoleKey) {
-      return;
-    }
-
-    const supabase = createClient(supabaseUrl, serviceRoleKey);
-    const token = authHeader.replace("Bearer ", "");
-    await supabase.auth.getUser(token);
-  } catch (error) {
-    console.warn("detail-plan optional auth check failed", error);
+  const supabase = createClient(supabaseUrl, serviceRoleKey);
+  const token = authHeader.replace("Bearer ", "");
+  const { error } = await supabase.auth.getUser(token);
+  if (error) {
+    throw new Response(JSON.stringify({ error: "未登录，请先登录" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 }
 
@@ -358,11 +364,21 @@ serve(async (req: Request) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // 401 先拦截，不进入后续 fallback 逻辑
+  try {
+    await requireAuth(req);
+  } catch (authErr) {
+    if (authErr instanceof Response) return authErr;
+    return new Response(JSON.stringify({ error: "未登录，请先登录" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
   // 提前解析 screenCount，catch 块也能访问
   let screenCount = 4;
 
   try {
-    await tryOptionalAuth(req);
 
     const body = await req.json();
     const productImages = normalizeImages(body.productImages);

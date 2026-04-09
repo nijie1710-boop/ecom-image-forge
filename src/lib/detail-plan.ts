@@ -71,7 +71,13 @@ export type OptimizeProductInfoParams = {
 
 function isMissingFunctionError(raw: unknown) {
   const text = String(raw || "").toLowerCase();
-  return text.includes("requested function was not found") || text.includes("not_found") || text.includes("404");
+  return (
+    text.includes("requested function was not found") ||
+    text.includes("function not found") ||
+    text.includes("not_found") ||
+    text.includes("404") ||
+    text.includes("edge function returned a non-2xx status code")
+  );
 }
 
 function buildFallbackProductInfo(params: OptimizeProductInfoParams) {
@@ -87,7 +93,11 @@ export async function generateDetailPlan(params: DetailPlanParams): Promise<Deta
   });
 
   if (error) {
-    throw new Error(await extractInvokeError(error, "详情页策划失败，请稍后重试。"));
+    const msg = await extractInvokeError(error, "详情页策划失败，请稍后重试。");
+    if (isMissingFunctionError(msg) || isMissingFunctionError(error.message)) {
+      throw new Error("详情页策划功能暂未部署或不可用，请联系管理员确认 detail-plan 函数已正确部署。");
+    }
+    throw new Error(msg);
   }
 
   if (!data) {
