@@ -1,6 +1,13 @@
 {
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "picspark.cn" }],
+      "destination": "https://www.picspark.cn/:path*",
+      "permanent": false
+    }
+  ],
   "rewrites": [
-    { "source": "/api/:path*", "destination": "/api/:path*" },
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/((?!api/|assets/|favicon\\.png|robots\\.txt|sitemap\\.xml).*)", "destination": "/index.html" }
   ]
 }
