@@ -1,8 +1,12 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN" translate="no">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- 禁止浏览器自动翻译：Chrome/Google 翻译会改写文本节点，
+         导致 React 在 diff 时无法找到原 DOM 节点，出现
+         "Failed to execute 'insertBefore' on 'Node'" 白屏。 -->
+    <meta name="google" content="notranslate" />
     <!-- TODO: Set the document title to the name of your application -->
     <title>PicSpark AI</title>
     <meta name="description" content="AI点燃商品图片创意">

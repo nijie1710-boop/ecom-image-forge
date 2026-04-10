@@ -527,11 +527,13 @@ export default function AuthPage() {
                     onClick={handleSendCode}
                   >
                     {sendingCode ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span className="inline-flex items-center">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      </span>
                     ) : cooldown > 0 ? (
-                      `请等待 ${cooldown} 秒`
+                      <span>{`请等待 ${cooldown} 秒`}</span>
                     ) : (
-                      "发送验证码"
+                      <span>发送验证码</span>
                     )}
                   </Button>
 
@@ -579,11 +581,13 @@ export default function AuthPage() {
                     onClick={mode === "signup" ? handleSignup : handleResetPassword}
                   >
                     {submitting ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span className="inline-flex items-center">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      </span>
                     ) : mode === "signup" ? (
-                      "验证并注册"
+                      <span>验证并注册</span>
                     ) : (
-                      "验证并重置密码"
+                      <span>验证并重置密码</span>
                     )}
                   </Button>
                 </>

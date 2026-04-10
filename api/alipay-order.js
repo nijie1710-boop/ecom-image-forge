@@ -178,10 +178,32 @@ export default async function handler(req, res) {
       payUrl: `${requiredEnv.ALIPAY_GATEWAY}?${search.toString()}`,
     });
   } catch (error) {
+    // 打印完整错误到 Vercel Logs，便于排查
+    console.error("[alipay-order] handler failed:", {
+      name: error?.name,
+      message: error?.message,
+      code: error?.code,
+      details: error?.details,
+      hint: error?.hint,
+      status: error?.status,
+      stack: error?.stack,
+    });
+
     const status = Number(error?.status || 500);
+    // Supabase 的 PostgrestError 不是 Error 实例，但有 message 字段；
+    // 这里兼容所有可能的形态，避免真实错误被吞掉。
+    const rawMessage =
+      (typeof error?.message === "string" && error.message) ||
+      (typeof error === "string" && error) ||
+      "";
+    const detailSuffix =
+      error?.code || error?.details ? ` (${[error?.code, error?.details].filter(Boolean).join(": ")})` : "";
+
     return respondJson(res, status, {
       error: status === 401 ? "UNAUTHORIZED" : "ALIPAY_ORDER_FAILED",
-      message: error instanceof Error ? error.message : "创建支付订单失败，请稍后再试",
+      message: rawMessage
+        ? `${rawMessage}${detailSuffix}`
+        : "创建支付订单失败，请稍后再试",
     });
   }
 }

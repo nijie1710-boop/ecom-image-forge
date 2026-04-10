@@ -754,12 +754,14 @@ const GeneratePage = () => {
                   disabled={isLoadingSuggestions}
                   className="flex items-center gap-1 rounded-full bg-primary px-2 py-0.5 text-[10px] text-primary-foreground transition-opacity disabled:opacity-60"
                 >
-                  {isLoadingSuggestions ? (
-                    <Loader2 className="h-2.5 w-2.5 animate-spin" />
-                  ) : (
-                    <Sparkles className="h-2.5 w-2.5" />
-                  )}
-                  分析产品
+                  <span className="inline-flex items-center gap-1">
+                    {isLoadingSuggestions ? (
+                      <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                    ) : (
+                      <Sparkles className="h-2.5 w-2.5" />
+                    )}
+                    <span>分析产品</span>
+                  </span>
                 </button>
                 {sceneSuggestions.length > 0 && (
                   <button

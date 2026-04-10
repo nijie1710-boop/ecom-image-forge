@@ -1175,15 +1175,15 @@ const DetailDesignPage = () => {
                     className="h-8 rounded-xl px-3 text-xs"
                   >
                     {isOptimizingProductInfo ? (
-                      <>
+                      <span className="inline-flex items-center">
                         <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                        AI 优化中
-                      </>
+                        <span>AI 优化中</span>
+                      </span>
                     ) : (
-                      <>
+                      <span className="inline-flex items-center">
                         <Wand2 className="mr-1.5 h-3.5 w-3.5" />
-                        AI 帮忙优化
-                      </>
+                        <span>AI 帮忙优化</span>
+                      </span>
                     )}
                   </Button>
                 </div>
@@ -1320,15 +1320,15 @@ const DetailDesignPage = () => {
               className="mt-5 h-12 w-full rounded-2xl text-sm font-semibold"
             >
               {isLoading ? (
-                <>
+                <span className="inline-flex items-center">
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  AI 正在策划详情页
-                </>
+                  <span>AI 正在策划详情页</span>
+                </span>
               ) : (
-                <>
+                <span className="inline-flex items-center">
                   <Sparkles className="mr-2 h-4 w-4" />
-                  生成 3 套详情页方案
-                </>
+                  <span>生成 3 套详情页方案</span>
+                </span>
               )}
             </Button>
           </section>
@@ -1547,15 +1547,15 @@ const DetailDesignPage = () => {
                   className="h-12 w-full rounded-2xl text-sm font-semibold"
                 >
                   {isGeneratingScreens ? (
-                    <>
+                    <span className="inline-flex items-center">
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      后台逐屏生成中
-                    </>
+                      <span>后台逐屏生成中</span>
+                    </span>
                   ) : (
-                    <>
+                    <span className="inline-flex items-center">
                       <ImagePlus className="mr-2 h-4 w-4" />
-                      生成已选 {selectedScreenNumbers.length || 0} 屏
-                    </>
+                      <span>生成已选 {selectedScreenNumbers.length || 0} 屏</span>
+                    </span>
                   )}
                 </Button>
                 {isGeneratingScreens && detailJobId && (
@@ -1952,12 +1952,14 @@ const DetailDesignPage = () => {
                               disabled={generated?.status === "running" || isGeneratingScreens}
                               onClick={() => void handleRegenerateScreen(screen)}
                             >
-                              {generated?.status === "running" ? (
-                                <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
-                              ) : (
-                                <RefreshCw className="mr-1.5 h-4 w-4" />
-                              )}
-                              {generated?.imageUrl ? "重生本屏" : "生成本屏"}
+                              <span className="inline-flex items-center">
+                                {generated?.status === "running" ? (
+                                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                                ) : (
+                                  <RefreshCw className="mr-1.5 h-4 w-4" />
+                                )}
+                                <span>{generated?.imageUrl ? "重生本屏" : "生成本屏"}</span>
+                              </span>
                             </Button>
                             {generated?.imageUrl && (
                               <Button
@@ -1967,8 +1969,10 @@ const DetailDesignPage = () => {
                                 className="rounded-xl"
                                 onClick={() => void handleOpenEditor(generated)}
                               >
-                                <Edit3 className="mr-1.5 h-4 w-4" />
-                                图片编辑
+                                <span className="inline-flex items-center">
+                                  <Edit3 className="mr-1.5 h-4 w-4" />
+                                  <span>图片编辑</span>
+                                </span>
                               </Button>
                             )}
                           </div>
@@ -2074,12 +2078,14 @@ const DetailDesignPage = () => {
                                   disabled={isPreparingPreview}
                                   onClick={() => void handlePreviewScreen(generated)}
                                 >
-                                  {isPreparingPreview ? (
-                                    <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
-                                  ) : (
-                                    <ZoomIn className="mr-1.5 h-4 w-4" />
-                                  )}
-                                  预览成品
+                                  <span className="inline-flex items-center">
+                                    {isPreparingPreview ? (
+                                      <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                                    ) : (
+                                      <ZoomIn className="mr-1.5 h-4 w-4" />
+                                    )}
+                                    <span>预览成品</span>
+                                  </span>
                                 </Button>
                                 <Button
                                   type="button"
