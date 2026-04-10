@@ -196,7 +196,6 @@ export default function RechargePage() {
   const [isPurchasing, setIsPurchasing] = useState(false);
   const [isPolling, setIsPolling] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [orderError, setOrderError] = useState<string | null>(null);
   const [balance, setBalance] = useState<BalanceInfo | null>(null);
   const [packages, setPackages] = useState<RechargePackage[]>(DEFAULT_PACKAGES);
   const [creditRules, setCreditRules] = useState<CreditRules>(DEFAULT_RULES);
@@ -259,11 +258,10 @@ export default function RechargePage() {
     try {
       const ordersResponse = await invokePaymentApi({ action: "list" });
       setOrders((ordersResponse.orders || []) as RechargeOrder[]);
-      setOrderError(null);
     } catch (paymentError) {
+      // 静默失败：仅打印日志，不再在界面上展示告警；未产生订单时直接显示空状态
       console.error("load payment orders failed:", paymentError);
       setOrders([]);
-      setOrderError("支付订单接口暂时不可用，但不影响余额、到账记录和消费记录查看。");
     }
   }, [invokePaymentApi]);
 
@@ -550,9 +548,7 @@ export default function RechargePage() {
                   <div className="text-xs text-muted-foreground">共 {totalOrderCount} 笔，已支付 {paidOrderCount} 笔</div>
                 </div>
 
-                {orderError ? (
-                  <div className="rounded-2xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">{orderError}</div>
-                ) : orders.length > 0 ? (
+                {orders.length > 0 ? (
                   <div className="space-y-3">
                     {orders.slice(0, 5).map((order) => (
                       <div key={order.id} className="rounded-2xl border border-border bg-muted/10 p-4">
