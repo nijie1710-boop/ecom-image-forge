@@ -1,4 +1,8 @@
-import { supabase } from "@/integrations/supabase/client";
+import {
+  SUPABASE_PUBLISHABLE_KEY,
+  SUPABASE_URL,
+  supabase,
+} from "@/integrations/supabase/client";
 import { normalizeUserErrorMessage } from "@/lib/error-messages";
 import type { GenerationModel } from "@/lib/gemini-models";
 
@@ -45,16 +49,6 @@ export interface GenerateImageResult {
   meta?: GenerateImageMeta[];
 }
 
-type InvokeLikeError = {
-  message?: string;
-  name?: string;
-  context?: {
-    json?: () => Promise<unknown>;
-    text?: () => Promise<string>;
-    status?: number;
-  };
-};
-
 const DEFAULT_ERROR = "系统繁忙，请稍后再试";
 const GENERATE_FAIL_ERROR = "当前生成失败，请重试";
 const NO_IMAGE_ERROR = "商品图片解析失败";
@@ -69,26 +63,6 @@ function ensureNotAborted(signal?: AbortSignal) {
   }
 }
 
-async function extractInvokeErrorPayload(error: unknown) {
-  if (!error || typeof error !== "object") {
-    return null;
-  }
-
-  const maybeError = error as InvokeLikeError;
-
-  if (maybeError.context?.json) {
-    try {
-      return (await maybeError.context.json()) as
-        | { error?: string; message?: string; detail?: string; meta?: Record<string, unknown> }
-        | undefined;
-    } catch {
-      // ignore JSON extraction failures
-    }
-  }
-
-  return null;
-}
-
 async function getInvokeHeaders() {
   const {
     data: { session },
@@ -99,48 +73,39 @@ async function getInvokeHeaders() {
   }
 
   return {
+    apikey: SUPABASE_PUBLISHABLE_KEY,
     Authorization: `Bearer ${session.access_token}`,
   };
 }
 
-async function extractInvokeErrorMessage(error: unknown): Promise<string> {
-  const payload = await extractInvokeErrorPayload(error);
-  const detailed = payload?.error || payload?.message || payload?.detail;
-  if (detailed) {
-    return normalizeUserErrorMessage(detailed, GENERATE_FAIL_ERROR);
+async function invokeGenerateImage(
+  body: Record<string, unknown>,
+  headers: Record<string, string>,
+) {
+  const response = await fetch(`${SUPABASE_URL}/functions/v1/generate-image`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...headers,
+    },
+    body: JSON.stringify(body),
+  });
+
+  const rawText = await response.text();
+  let payload: Record<string, unknown> | null = null;
+
+  try {
+    payload = rawText ? JSON.parse(rawText) as Record<string, unknown> : null;
+  } catch {
+    payload = null;
   }
 
-  const maybeError = error as InvokeLikeError;
-  if (maybeError?.context?.text) {
-    try {
-      const text = await maybeError.context.text();
-      if (text) {
-        return normalizeUserErrorMessage(text, GENERATE_FAIL_ERROR);
-      }
-    } catch {
-      // ignore text extraction failures
-    }
-  }
-
-  if (
-    maybeError?.message?.includes("non-2xx") &&
-    typeof maybeError?.context?.status === "number"
-  ) {
-    if (maybeError.context.status === 401) {
-      return normalizeUserErrorMessage("UNAUTHORIZED", GENERATE_FAIL_ERROR);
-    }
-    if (maybeError.context.status === 402) {
-      return normalizeUserErrorMessage("INSUFFICIENT_BALANCE", GENERATE_FAIL_ERROR);
-    }
-    if (maybeError.context.status === 429) {
-      return normalizeUserErrorMessage("UPSTREAM_429", GENERATE_FAIL_ERROR);
-    }
-    if ([500, 502, 503, 504].includes(maybeError.context.status)) {
-      return normalizeUserErrorMessage(`UPSTREAM_${maybeError.context.status}`, GENERATE_FAIL_ERROR);
-    }
-  }
-
-  return normalizeUserErrorMessage(maybeError?.message, DEFAULT_ERROR);
+  return {
+    ok: response.ok,
+    status: response.status,
+    payload,
+    rawText,
+  };
 }
 
 function normalizeModelLabel(model: GenerationModel | undefined): GenerationModel {
@@ -171,6 +136,7 @@ function isFatalError(message: string | undefined): boolean {
     "余额不足",
     "模型配置错误",
     "后端环境变量缺失",
+    "product_image_required",
   ].some((keyword) => normalized.includes(keyword));
 }
 
@@ -198,6 +164,19 @@ function isRetryableError(message: string | undefined): boolean {
   ].some((keyword) => normalized.includes(keyword));
 }
 
+function normalizeHttpError(status: number, payload: Record<string, unknown> | null, rawText: string) {
+  const detailed =
+    typeof payload?.error === "string"
+      ? payload.error
+      : typeof payload?.message === "string"
+      ? payload.message
+      : typeof payload?.detail === "string"
+      ? payload.detail
+      : rawText || `HTTP_${status}`;
+
+  return normalizeUserErrorMessage(detailed, GENERATE_FAIL_ERROR);
+}
+
 async function generateSingleImageRaw(
   params: GenerateImageParams,
   attemptLabel: string,
@@ -205,9 +184,8 @@ async function generateSingleImageRaw(
   ensureNotAborted(params.signal);
   const headers = await getInvokeHeaders();
 
-  const { data, error } = await supabase.functions.invoke("generate-image", {
-    headers,
-    body: {
+  const { ok, status, payload, rawText } = await invokeGenerateImage(
+    {
       prompt: params.prompt,
       imageBase64: params.imageBase64 || undefined,
       aspectRatio: params.aspectRatio || "1:1",
@@ -221,17 +199,26 @@ async function generateSingleImageRaw(
       modelMode: params.modelMode || "none",
       modelImage: params.modelImage || undefined,
     },
-  });
+    headers,
+  );
 
   ensureNotAborted(params.signal);
 
-  if (error) {
-    console.error(`[${attemptLabel}] generate-image edge function error:`, error);
+  if (!ok) {
+    const normalizedError = normalizeHttpError(status, payload, rawText);
+    console.error(`[${attemptLabel}] generate-image edge function error:`, {
+      status,
+      error: normalizedError,
+      payload,
+    });
     return {
       url: null,
-      error: await extractInvokeErrorMessage(error),
+      error: normalizedError,
+      meta: (payload?.meta as GenerateImageMeta | undefined) || undefined,
     };
   }
+
+  const data = payload as Record<string, any> | null;
 
   if (data?.error) {
     const errorMessage =
