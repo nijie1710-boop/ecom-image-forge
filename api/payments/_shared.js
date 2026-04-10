@@ -2,18 +2,41 @@ import crypto from "node:crypto";
 
 import { createClient } from "@supabase/supabase-js";
 
+// ============================================================
+// 常量配置：避免多处硬编码
+// ============================================================
 const DEFAULT_SUPABASE_URL = "https://rqgrovumfgjwuhkthqxe.supabase.co";
 const DEFAULT_APP_URL = "https://www.picspark.cn";
 const DEFAULT_SUPABASE_PUBLISHABLE_KEY = "sb_publishable_kR5Qt951QycXiDjppFSquQ_XODYlvpq";
 
-export function applyCors(res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
+// 允许的业务域名（CORS + URL 规范化共用）
+const ALLOWED_HOSTS = new Set(["picspark.cn", "www.picspark.cn"]);
+const ALLOWED_ORIGINS = [
+  "https://picspark.cn",
+  "https://www.picspark.cn",
+];
+
+function resolveAllowedOrigin(req) {
+  const origin = String(req?.headers?.origin || "").trim();
+  if (origin && ALLOWED_ORIGINS.includes(origin)) return origin;
+  // 本地开发 / Vercel Preview：放行常见的开发源
+  if (origin && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) return origin;
+  if (origin && /\.vercel\.app$/i.test(new URL(origin).hostname)) return origin;
+  // 默认回退到主站
+  return ALLOWED_ORIGINS[0];
+}
+
+export function applyCors(res, req) {
+  const allowOrigin = req ? resolveAllowedOrigin(req) : ALLOWED_ORIGINS[0];
+  res.setHeader("Access-Control-Allow-Origin", allowOrigin);
+  res.setHeader("Vary", "Origin");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.setHeader("Access-Control-Allow-Credentials", "true");
 }
 
 export function handleOptions(req, res) {
-  applyCors(res);
+  applyCors(res, req);
   if (req.method === "OPTIONS") {
     res.status(200).end();
     return true;
@@ -65,7 +88,7 @@ export function normalizeAppUrl(value) {
 
   try {
     const url = new URL(raw);
-    if (url.hostname === "picspark.cn" || url.hostname === "www.picspark.cn") {
+    if (ALLOWED_HOSTS.has(url.hostname)) {
       return DEFAULT_APP_URL;
     }
     return `${url.protocol}//${url.host}`;
@@ -84,15 +107,35 @@ export function appendQueryParams(url, params) {
   return target.toString();
 }
 
+// 严格的 PEM 头/尾正则：必须是 "-----BEGIN XXX-----" 和 "-----END XXX-----" 成对出现
+const PEM_BEGIN_RE = /-----BEGIN ([A-Z0-9 ]+)-----/;
+const PEM_END_RE = /-----END ([A-Z0-9 ]+)-----/;
+
 function normalizePem(value, kind) {
   const raw = String(value || "")
     .trim()
     .replace(/\\n/g, "\n");
 
   if (!raw) return "";
-  if (raw.includes("BEGIN ")) return raw;
 
-  const wrapped = raw.match(/.{1,64}/g)?.join("\n") || raw;
+  // 严格校验：必须同时有 BEGIN 和 END 且 label 一致
+  const beginMatch = raw.match(PEM_BEGIN_RE);
+  const endMatch = raw.match(PEM_END_RE);
+  if (beginMatch && endMatch && beginMatch[1] === endMatch[1]) {
+    return raw;
+  }
+  // 如果只有 BEGIN 没有 END，视为不完整，抛错
+  if (beginMatch || endMatch) {
+    throw new Error(`Invalid ${kind} PEM: BEGIN/END markers not paired correctly`);
+  }
+
+  // 纯 base64 字符串：必须只包含 base64 合法字符
+  if (!/^[A-Za-z0-9+/=\s]+$/.test(raw)) {
+    throw new Error(`Invalid ${kind} PEM: contains non-base64 characters`);
+  }
+
+  const compact = raw.replace(/\s+/g, "");
+  const wrapped = compact.match(/.{1,64}/g)?.join("\n") || compact;
   const header = kind === "private" ? "PRIVATE KEY" : "PUBLIC KEY";
   return `-----BEGIN ${header}-----\n${wrapped}\n-----END ${header}-----`;
 }
@@ -232,8 +275,12 @@ export async function requireUserFromRequest(req) {
   throw authError;
 }
 
-export function respondJson(res, status, payload) {
-  applyCors(res);
+export function respondJson(res, status, payload, req) {
+  // CORS 通常已由 handleOptions 在请求入口设置好；这里仅在未设置时兜底，
+  // 避免覆盖正确的 origin。
+  if (!res.getHeader || !res.getHeader("Access-Control-Allow-Origin")) {
+    applyCors(res, req);
+  }
   res.status(status).json(payload);
 }
 
