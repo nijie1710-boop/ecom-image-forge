@@ -24,7 +24,18 @@ export function handleOptions(req, res) {
 export async function parseJsonBody(req) {
   if (!req) return {};
   if (req.body && typeof req.body === "object") return req.body;
-  if (typeof req.body === "string" && req.body.trim()) return JSON.parse(req.body);
+
+  const safeParse = (text) => {
+    try {
+      return JSON.parse(text);
+    } catch {
+      const error = new Error("请求体不是合法的 JSON");
+      error.status = 400;
+      throw error;
+    }
+  };
+
+  if (typeof req.body === "string" && req.body.trim()) return safeParse(req.body);
 
   const chunks = [];
   for await (const chunk of req) {
@@ -33,7 +44,7 @@ export async function parseJsonBody(req) {
 
   if (chunks.length === 0) return {};
   const raw = Buffer.concat(chunks).toString("utf8");
-  return raw ? JSON.parse(raw) : {};
+  return raw ? safeParse(raw) : {};
 }
 
 export async function parseRawBody(req) {
