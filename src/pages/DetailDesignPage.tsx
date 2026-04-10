@@ -115,12 +115,24 @@ const modelOptions: { value: GenerationModel; label: string; hint: string }[] = 
   },
 ];
 
-const resolutionOptions: { value: OutputResolution; label: string }[] = [
+const allResolutionOptions: { value: OutputResolution; label: string }[] = [
   { value: "0.5k", label: "0.5K 快速" },
   { value: "1k", label: "1K 标准" },
   { value: "2k", label: "2K 高清" },
   { value: "4k", label: "4K 超清" },
 ];
+
+/** 每个模型可用的分辨率 */
+const modelResolutionMap: Record<GenerationModel, OutputResolution[]> = {
+  "gemini-2.5-flash-image": ["1k"],
+  "gemini-3.1-flash-image-preview": ["0.5k", "1k", "2k", "4k"],
+  "nano-banana-pro-preview": ["1k", "2k", "4k"],
+};
+
+function getResolutionOptions(model: GenerationModel) {
+  const allowed = modelResolutionMap[model] || ["1k"];
+  return allResolutionOptions.filter((o) => allowed.includes(o.value));
+}
 
 function toCssAspectRatio(ratio: string) {
   const [width, height] = ratio.split(":").map(Number);
@@ -1102,6 +1114,18 @@ const DetailDesignPage = () => {
 
   const currentModelHint =
     modelOptions.find((option) => option.value === selectedModel)?.hint || "";
+  const currentResolutionOptions = useMemo(
+    () => getResolutionOptions(selectedModel),
+    [selectedModel],
+  );
+
+  // 切换模型后自动修正不合法的分辨率
+  useEffect(() => {
+    const allowed = modelResolutionMap[selectedModel] || ["1k"];
+    if (!allowed.includes(selectedResolution)) {
+      setSelectedResolution(allowed[0]);
+    }
+  }, [selectedModel, selectedResolution]);
 
   // ---- 积分相关计算 ----
   const planCost = getDetailPlanCost();
@@ -1470,7 +1494,14 @@ const DetailDesignPage = () => {
                   <SelectField
                     label="生成模型"
                     value={selectedModel}
-                    onChange={(value) => setSelectedModel(value as GenerationModel)}
+                    onChange={(value) => {
+                      const nextModel = value as GenerationModel;
+                      setSelectedModel(nextModel);
+                      const allowed = modelResolutionMap[nextModel] || ["1k"];
+                      if (!allowed.includes(selectedResolution)) {
+                        setSelectedResolution(allowed[0]);
+                      }
+                    }}
                     options={modelOptions.map((option) => ({
                       value: option.value,
                       label: option.label,
@@ -1487,7 +1518,7 @@ const DetailDesignPage = () => {
                     label="清晰度"
                     value={selectedResolution}
                     onChange={(value) => setSelectedResolution(value as OutputResolution)}
-                    options={resolutionOptions}
+                    options={currentResolutionOptions}
                   />
                   <SelectField
                     label="文字语言"
