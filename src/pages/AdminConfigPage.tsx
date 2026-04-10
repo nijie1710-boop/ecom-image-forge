@@ -63,7 +63,17 @@ const EMPTY_SETTINGS: AdminSettingsPayload = {
   ],
   credit_rules: {
     generation: { nanoBanana: 5, nanoBanana2: 7, nanoBananaPro: 12 },
-    detail: { planning: 2, nanoBanana: 6, nanoBanana2: 8, nanoBananaPro: 14 },
+    detail: {
+      planning: 1,
+      nanoBanana: 7,
+      nanoBanana2_05k: 7,
+      nanoBanana2_1k: 9,
+      nanoBanana2_2k: 14,
+      nanoBanana2_4k: 18,
+      nanoBananaPro_1k: 14,
+      nanoBananaPro_2k: 16,
+      nanoBananaPro_4k: 30,
+    },
     translation: { basic: 4, refined: 6 },
   },
 };
@@ -577,32 +587,67 @@ export default function AdminConfigPage() {
               <div className="rounded-2xl border border-border p-4">
                 <h4 className="text-sm font-semibold text-foreground">AI 详情页</h4>
                 <div className="mt-4 space-y-4">
-                  <SettingField label="策划一次">
+                  <SettingField label="方案策划 / 次">
                     <NumberField
                       value={settings.credit_rules.detail.planning}
                       min={0}
                       onChange={(value) => updateCreditRule("detail", "planning", value)}
                     />
                   </SettingField>
-                  <SettingField label="Nano Banana / 屏">
+                  <SettingField label="Nano Banana / 屏（所有分辨率）">
                     <NumberField
                       value={settings.credit_rules.detail.nanoBanana}
                       min={0}
                       onChange={(value) => updateCreditRule("detail", "nanoBanana", value)}
                     />
                   </SettingField>
-                  <SettingField label="Nano Banana 2 / 屏">
+                  <SettingField label="Nano Banana 2 · 0.5K / 屏">
                     <NumberField
-                      value={settings.credit_rules.detail.nanoBanana2}
+                      value={settings.credit_rules.detail.nanoBanana2_05k}
                       min={0}
-                      onChange={(value) => updateCreditRule("detail", "nanoBanana2", value)}
+                      onChange={(value) => updateCreditRule("detail", "nanoBanana2_05k", value)}
                     />
                   </SettingField>
-                  <SettingField label="Nano Banana Pro / 屏">
+                  <SettingField label="Nano Banana 2 · 1K / 屏">
                     <NumberField
-                      value={settings.credit_rules.detail.nanoBananaPro}
+                      value={settings.credit_rules.detail.nanoBanana2_1k}
                       min={0}
-                      onChange={(value) => updateCreditRule("detail", "nanoBananaPro", value)}
+                      onChange={(value) => updateCreditRule("detail", "nanoBanana2_1k", value)}
+                    />
+                  </SettingField>
+                  <SettingField label="Nano Banana 2 · 2K / 屏">
+                    <NumberField
+                      value={settings.credit_rules.detail.nanoBanana2_2k}
+                      min={0}
+                      onChange={(value) => updateCreditRule("detail", "nanoBanana2_2k", value)}
+                    />
+                  </SettingField>
+                  <SettingField label="Nano Banana 2 · 4K / 屏">
+                    <NumberField
+                      value={settings.credit_rules.detail.nanoBanana2_4k}
+                      min={0}
+                      onChange={(value) => updateCreditRule("detail", "nanoBanana2_4k", value)}
+                    />
+                  </SettingField>
+                  <SettingField label="Nano Banana Pro · 1K / 屏">
+                    <NumberField
+                      value={settings.credit_rules.detail.nanoBananaPro_1k}
+                      min={0}
+                      onChange={(value) => updateCreditRule("detail", "nanoBananaPro_1k", value)}
+                    />
+                  </SettingField>
+                  <SettingField label="Nano Banana Pro · 2K / 屏">
+                    <NumberField
+                      value={settings.credit_rules.detail.nanoBananaPro_2k}
+                      min={0}
+                      onChange={(value) => updateCreditRule("detail", "nanoBananaPro_2k", value)}
+                    />
+                  </SettingField>
+                  <SettingField label="Nano Banana Pro · 4K / 屏">
+                    <NumberField
+                      value={settings.credit_rules.detail.nanoBananaPro_4k}
+                      min={0}
+                      onChange={(value) => updateCreditRule("detail", "nanoBananaPro_4k", value)}
                     />
                   </SettingField>
                 </div>

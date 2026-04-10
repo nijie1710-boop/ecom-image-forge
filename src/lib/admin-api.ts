@@ -160,8 +160,13 @@ export interface AdminSettingsPayload {
     detail: {
       planning: number;
       nanoBanana: number;
-      nanoBanana2: number;
-      nanoBananaPro: number;
+      nanoBanana2_05k: number;
+      nanoBanana2_1k: number;
+      nanoBanana2_2k: number;
+      nanoBanana2_4k: number;
+      nanoBananaPro_1k: number;
+      nanoBananaPro_2k: number;
+      nanoBananaPro_4k: number;
     };
     translation: {
       basic: number;

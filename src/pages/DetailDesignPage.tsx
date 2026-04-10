@@ -42,6 +42,13 @@ import {
   type GenerationModel,
   type OutputResolution,
 } from "@/lib/ai-generator";
+import {
+  deductCredits,
+  getDetailPlanCost,
+  getDetailScreenCost,
+  getDetailTotalCost,
+  getUserBalance,
+} from "@/lib/detail-credits";
 import { WorkspaceHeader, WorkspaceShell } from "@/components/workspace/WorkspaceShell";
 import {
   WorkspaceEmptyState,
@@ -397,6 +404,7 @@ const DetailDesignPage = () => {
   const [showScreenIdeas, setShowScreenIdeas] = useState(false);
   const [showGenerationSettings, setShowGenerationSettings] = useState(false);
   const [selectedScreenNumbers, setSelectedScreenNumbers] = useState<number[]>([]);
+  const [userBalance, setUserBalance] = useState<number | null>(null);
   const resultsSectionRef = useRef<HTMLElement | null>(null);
   const planningErrorHint = error ? errorHintFromMessage(error) : null;
   const generationErrorHint = generationError ? errorHintFromMessage(generationError) : null;
@@ -734,6 +742,19 @@ const DetailDesignPage = () => {
     setError(null);
 
     try {
+      // 方案策划扣费
+      const deductResult = await deductCredits(
+        planCost,
+        "detail_planning",
+        `AI 详情页方案策划（${planCost} 积分）`,
+      );
+      if (!deductResult.success) {
+        setError(deductResult.error || "积分不足，请先充值");
+        setIsLoading(false);
+        return;
+      }
+      refreshBalance();
+
       const result = await generateDetailPlan({
         productImages,
         productInfo: appendPlanningContext(),
@@ -949,7 +970,7 @@ const DetailDesignPage = () => {
     });
   };
 
-  const launchDetailGeneration = (
+  const launchDetailGeneration = async (
     screens: DetailPlanScreen[],
     promptOverrides?: Record<number, string>,
   ) => {
@@ -957,6 +978,22 @@ const DetailDesignPage = () => {
       setGenerationError("请先完成方案策划并保留至少 1 张商品图");
       return;
     }
+
+    // 逐屏生成扣费
+    const screenCost = getDetailScreenCost(selectedModel, selectedResolution);
+    const totalCost = screenCost * screens.length;
+    const modelLabel =
+      modelOptions.find((o) => o.value === selectedModel)?.label || selectedModel;
+    const deductResult = await deductCredits(
+      totalCost,
+      "detail_screen_generation",
+      `AI 详情页逐屏生成 ${screens.length} 屏（${modelLabel} ${selectedResolution}，${screenCost} 积分/屏）`,
+    );
+    if (!deductResult.success) {
+      setGenerationError(deductResult.error || "积分不足，请先充值");
+      return;
+    }
+    refreshBalance();
 
     const nextScreens = createScreenJobPayload(screens, promptOverrides);
     setGeneratedScreens((current) => {
@@ -991,13 +1028,13 @@ const DetailDesignPage = () => {
 
   const handleGenerateAllScreens = async () => {
     if (!activePlan) return;
-    launchDetailGeneration(activePlan.screens);
+    await launchDetailGeneration(activePlan.screens);
   };
 
   const handleRegenerateScreen = async (screen: DetailPlanScreen) => {
     const currentPrompt =
       generatedScreens.find((item) => item.screen === screen.screen)?.prompt || "";
-    launchDetailGeneration([screen], { [screen.screen]: currentPrompt });
+    await launchDetailGeneration([screen], { [screen.screen]: currentPrompt });
   };
 
   const toggleScreenSelection = (screenNumber: number) => {
@@ -1060,11 +1097,36 @@ const DetailDesignPage = () => {
       setGenerationError("请先勾选至少 1 屏再生成");
       return;
     }
-    launchDetailGeneration(selected);
+    await launchDetailGeneration(selected);
   };
 
   const currentModelHint =
     modelOptions.find((option) => option.value === selectedModel)?.hint || "";
+
+  // ---- 积分相关计算 ----
+  const planCost = getDetailPlanCost();
+  const perScreenCost = getDetailScreenCost(selectedModel, selectedResolution);
+  const batchTotalCost = getDetailTotalCost(
+    selectedModel,
+    selectedResolution,
+    selectedScreenNumbers.length,
+  );
+  const balanceInsufficient =
+    userBalance !== null && batchTotalCost > 0 && userBalance < batchTotalCost;
+  const singleScreenInsufficient =
+    userBalance !== null && perScreenCost > 0 && userBalance < perScreenCost;
+  const planInsufficient =
+    userBalance !== null && planCost > 0 && userBalance < planCost;
+
+  // 获取余额
+  useEffect(() => {
+    if (!user?.id) return;
+    void getUserBalance(user.id).then(setUserBalance);
+  }, [user?.id]);
+
+  const refreshBalance = () => {
+    if (user?.id) void getUserBalance(user.id).then(setUserBalance);
+  };
 
   return (
     <div className="mx-auto max-w-[1480px] space-y-5 px-3 py-4 sm:px-4 sm:py-5 md:space-y-6 md:px-6 md:py-6">
@@ -1316,7 +1378,7 @@ const DetailDesignPage = () => {
             <Button
               type="button"
               onClick={handleGeneratePlan}
-              disabled={isLoading}
+              disabled={isLoading || planInsufficient}
               className="mt-5 h-12 w-full rounded-2xl text-sm font-semibold"
             >
               {isLoading ? (
@@ -1331,6 +1393,12 @@ const DetailDesignPage = () => {
                 </span>
               )}
             </Button>
+            <div className="mt-2 text-center text-xs text-muted-foreground">
+              方案策划固定消耗 <span className="font-semibold text-foreground">{planCost} 积分</span>
+              {planInsufficient && (
+                <span className="ml-2 text-destructive">（余额不足，请先充值）</span>
+              )}
+            </div>
           </section>
 
           <section className="rounded-2xl border border-border bg-background/70 p-4">
@@ -1455,6 +1523,28 @@ const DetailDesignPage = () => {
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
+                  <span>单屏积分</span>
+                  <span className="font-medium text-foreground">
+                    {perScreenCost} 积分/屏
+                  </span>
+                </div>
+                {selectedScreenNumbers.length > 0 && (
+                  <div className="flex items-center justify-between">
+                    <span>预计消耗</span>
+                    <span className="font-semibold text-primary">
+                      {batchTotalCost} 积分
+                    </span>
+                  </div>
+                )}
+                {userBalance !== null && (
+                  <div className="flex items-center justify-between">
+                    <span>当前余额</span>
+                    <span className={`font-medium ${balanceInsufficient ? "text-destructive" : "text-foreground"}`}>
+                      {userBalance} 积分
+                    </span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between">
                   <span>人物策略</span>
                   <span className="font-medium text-foreground">
                     AI 自行判断
@@ -1543,7 +1633,7 @@ const DetailDesignPage = () => {
                 <Button
                   type="button"
                   onClick={handleGenerateSelectedScreens}
-                  disabled={isGeneratingScreens || !selectedScreenNumbers.length}
+                  disabled={isGeneratingScreens || !selectedScreenNumbers.length || balanceInsufficient}
                   className="h-12 w-full rounded-2xl text-sm font-semibold"
                 >
                   {isGeneratingScreens ? (
@@ -1558,6 +1648,17 @@ const DetailDesignPage = () => {
                     </span>
                   )}
                 </Button>
+                {selectedScreenNumbers.length > 0 && !isGeneratingScreens && (
+                  <div className="text-center text-xs text-muted-foreground">
+                    预计消耗{" "}
+                    <span className="font-semibold text-foreground">{batchTotalCost} 积分</span>
+                    <span className="mx-1">·</span>
+                    {perScreenCost} 积分/屏
+                    {balanceInsufficient && (
+                      <span className="ml-2 text-destructive">（余额不足，请先充值）</span>
+                    )}
+                  </div>
+                )}
                 {isGeneratingScreens && detailJobId && (
                   <Button
                     type="button"
@@ -1943,13 +2044,13 @@ const DetailDesignPage = () => {
                             />
                           </div>
 
-                          <div className="flex gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
                             <Button
                               type="button"
                               variant="outline"
                               size="sm"
                               className="rounded-xl"
-                              disabled={generated?.status === "running" || isGeneratingScreens}
+                              disabled={generated?.status === "running" || isGeneratingScreens || singleScreenInsufficient}
                               onClick={() => void handleRegenerateScreen(screen)}
                             >
                               <span className="inline-flex items-center">
@@ -1975,6 +2076,13 @@ const DetailDesignPage = () => {
                                 </span>
                               </Button>
                             )}
+                            <span className="text-xs text-muted-foreground">
+                              {generated?.imageUrl ? "重生" : "生成"}本屏：
+                              <span className="font-semibold text-foreground">{perScreenCost} 积分</span>
+                              {singleScreenInsufficient && (
+                                <span className="ml-1 text-destructive">（余额不足）</span>
+                              )}
+                            </span>
                           </div>
                         </div>
 

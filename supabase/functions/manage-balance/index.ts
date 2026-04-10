@@ -43,8 +43,13 @@ interface PricingDefaults {
     detail: {
       planning: number;
       nanoBanana: number;
-      nanoBanana2: number;
-      nanoBananaPro: number;
+      nanoBanana2_05k: number;
+      nanoBanana2_1k: number;
+      nanoBanana2_2k: number;
+      nanoBanana2_4k: number;
+      nanoBananaPro_1k: number;
+      nanoBananaPro_2k: number;
+      nanoBananaPro_4k: number;
     };
     translation: {
       basic: number;
@@ -78,10 +83,15 @@ function getDefaultPricing(): PricingDefaults {
         nanoBananaPro: 12,
       },
       detail: {
-        planning: 2,
-        nanoBanana: 6,
-        nanoBanana2: 8,
-        nanoBananaPro: 14,
+        planning: 1,
+        nanoBanana: 7,
+        nanoBanana2_05k: 7,
+        nanoBanana2_1k: 9,
+        nanoBanana2_2k: 14,
+        nanoBanana2_4k: 18,
+        nanoBananaPro_1k: 14,
+        nanoBananaPro_2k: 16,
+        nanoBananaPro_4k: 30,
       },
       translation: {
         basic: 4,
