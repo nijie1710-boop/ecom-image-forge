@@ -47,9 +47,11 @@ export interface GenerateImageResult {
 
 type InvokeLikeError = {
   message?: string;
+  name?: string;
   context?: {
     json?: () => Promise<unknown>;
     text?: () => Promise<string>;
+    status?: number;
   };
 };
 
@@ -87,6 +89,20 @@ async function extractInvokeErrorPayload(error: unknown) {
   return null;
 }
 
+async function getInvokeHeaders() {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  if (!session?.access_token) {
+    throw new Error("UNAUTHORIZED");
+  }
+
+  return {
+    Authorization: `Bearer ${session.access_token}`,
+  };
+}
+
 async function extractInvokeErrorMessage(error: unknown): Promise<string> {
   const payload = await extractInvokeErrorPayload(error);
   const detailed = payload?.error || payload?.message || payload?.detail;
@@ -103,6 +119,24 @@ async function extractInvokeErrorMessage(error: unknown): Promise<string> {
       }
     } catch {
       // ignore text extraction failures
+    }
+  }
+
+  if (
+    maybeError?.message?.includes("non-2xx") &&
+    typeof maybeError?.context?.status === "number"
+  ) {
+    if (maybeError.context.status === 401) {
+      return normalizeUserErrorMessage("UNAUTHORIZED", GENERATE_FAIL_ERROR);
+    }
+    if (maybeError.context.status === 402) {
+      return normalizeUserErrorMessage("INSUFFICIENT_BALANCE", GENERATE_FAIL_ERROR);
+    }
+    if (maybeError.context.status === 429) {
+      return normalizeUserErrorMessage("UPSTREAM_429", GENERATE_FAIL_ERROR);
+    }
+    if ([500, 502, 503, 504].includes(maybeError.context.status)) {
+      return normalizeUserErrorMessage(`UPSTREAM_${maybeError.context.status}`, GENERATE_FAIL_ERROR);
     }
   }
 
@@ -169,8 +203,10 @@ async function generateSingleImageRaw(
   attemptLabel: string,
 ): Promise<{ url: string | null; error: string | null; meta?: GenerateImageMeta }> {
   ensureNotAborted(params.signal);
+  const headers = await getInvokeHeaders();
 
   const { data, error } = await supabase.functions.invoke("generate-image", {
+    headers,
     body: {
       prompt: params.prompt,
       imageBase64: params.imageBase64 || undefined,
