@@ -37,6 +37,7 @@ export function normalizeUserErrorMessage(input: unknown, fallback = GENERATION_
       "auth session missing",
       "jwt",
       "token",
+      "missing authorization header",
       "unauthorized",
       "401",
       "login required",

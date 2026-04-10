@@ -223,6 +223,12 @@ function typographyRule(language: string): string {
   return "新增文字请使用清晰、标准、现代的无衬线字体风格，字形必须完整可读，不要出现乱码、伪文字或错误字符。";
 }
 
+function compactPromptText(value: string | undefined, maxLength: number) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (!text) return "无";
+  return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
+}
+
 function buildScreenPrompt(args: {
   plan: DetailPlanOption;
   screen: DetailPlanScreen;
@@ -252,46 +258,46 @@ function buildScreenPrompt(args: {
 允许变化的内容只有：背景、场景、灯光、构图、辅材和镜头语言。
 
 商品识别：
-${productSummary || "请优先依据上传商品图识别商品。"}
+${compactPromptText(productSummary, 120)}
 
 商品图中可见文字：
-${visibleText || "NONE"}
+${compactPromptText(visibleText, 80)}
 
 用户补充要求：
-${productInfo || "无额外补充"}
+${compactPromptText(productInfo, 220)}
 
 目标平台：
 ${targetPlatform}
 
 详情页整体方案：
-- 方案名称：${plan.planName}
-- 风格调性：${plan.tone}
-- 目标人群：${plan.audience}
-- 方案摘要：${plan.summary}
+- 方案名称：${compactPromptText(plan.planName, 40)}
+- 风格调性：${compactPromptText(plan.tone, 60)}
+- 目标人群：${compactPromptText(plan.audience, 80)}
+- 方案摘要：${compactPromptText(plan.summary, 120)}
 
 整版设计规范：
-- 主色：${plan.designSpec.mainColors.join("、")}
-- 辅助色：${plan.designSpec.accentColors.join("、")}
-- 版式氛围：${plan.designSpec.layoutTone}
-- 画面风格：${plan.designSpec.imageStyle}
-- 文案规范：${plan.designSpec.languageGuidelines}
+- 主色：${compactPromptText(plan.designSpec.mainColors.join("、"), 60)}
+- 辅助色：${compactPromptText(plan.designSpec.accentColors.join("、"), 60)}
+- 版式氛围：${compactPromptText(plan.designSpec.layoutTone, 80)}
+- 画面风格：${compactPromptText(plan.designSpec.imageStyle, 80)}
+- 文案规范：${compactPromptText(plan.designSpec.languageGuidelines, 80)}
 
 当前要生成的分屏：
-- 标题：${screen.title}
-- 目标：${screen.goal}
-- 视觉方向：${screen.visualDirection}
-- 重点卖点：${screen.copyPoints.join("；")}
-- 画面内主标题：${screen.overlayTitle || screen.title}
-- 画面内卖点短句：${screen.overlayBodyLines?.join("；") || screen.copyPoints.join("；")}
+- 标题：${compactPromptText(screen.title, 40)}
+- 目标：${compactPromptText(screen.goal, 80)}
+- 视觉方向：${compactPromptText(screen.visualDirection, 160)}
+- 重点卖点：${compactPromptText(screen.copyPoints.join("；"), 120)}
+- 建议画面标题：${compactPromptText(screen.overlayTitle || screen.title, 32)}
+- 建议短句：${compactPromptText(screen.overlayBodyLines?.join("；") || screen.copyPoints.join("；"), 60)}
 - 人物建议：${screen.humanModelSuggested ? "建议人物出镜" : "建议纯商品展示"}${screen.humanModelReason ? `；原因：${screen.humanModelReason}` : ""}
-- 用户补充的分屏构思：${screenIdea?.trim() || "无"}
+- 用户补充的分屏构思：${compactPromptText(screenIdea?.trim(), 120)}
 
 生成要求：
 1. 这是电商详情页分屏，不要回退成单纯主图白底棚拍。
 2. 画面必须明显体现当前分屏的目标和视觉方向。
 3. 如果用户提供了分屏构思，必须优先吸收并融入当前这一屏，而不是忽略它。
-4. 如果当前语言不是 pure，请把“画面内主标题”和“画面内卖点短句”直接生成在图片里，不要省略，不要留到后期再贴字。
-5. 画面中的文字必须层级清晰、字形正确、拼写正确、排版整洁，并与电商详情页视觉一致。
+4. 如果当前语言不是 pure，可以生成极少量必要文字，但优先保证商品正确、构图正确、场景正确，不要为了塞字破坏商品表现。
+5. 如果需要新增文字，文字必须层级清晰、字形正确、拼写正确、排版整洁，并与电商详情页视觉一致。
 6. ${typographyRule(targetLanguage)}
 7. ${languageRule(targetLanguage)}
 8. 如果当前分屏建议人物出镜，可以自然加入真人模特、手部交互或使用动作，但人物只能辅助解释卖点，不能盖住商品主体。

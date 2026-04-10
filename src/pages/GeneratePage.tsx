@@ -33,6 +33,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { GenerationContext } from "@/contexts/GenerationContext";
 import type { GenerationModel, ModelMode, OutputResolution } from "@/lib/ai-generator";
 import { errorHintFromMessage, normalizeUserErrorMessage } from "@/lib/error-messages";
+import { suggestScenes } from "@/lib/suggest-scenes";
 import {
   findCuratedImage,
   markCuratedBest,
@@ -152,49 +153,6 @@ const SelectField = ({
     </select>
   </div>
 );
-
-type InvokeLikeError = {
-  message?: string;
-  context?: {
-    json?: () => Promise<unknown>;
-    text?: () => Promise<string>;
-  };
-};
-
-async function extractInvokeErrorMessage(error: unknown, fallback: string) {
-  if (!error || typeof error !== "object") {
-    return fallback;
-  }
-
-  const invokeError = error as InvokeLikeError;
-
-  if (invokeError.context?.json) {
-    try {
-      const payload = (await invokeError.context.json()) as
-        | { error?: string; message?: string; detail?: string }
-        | undefined;
-      const detailed = payload?.error || payload?.message || payload?.detail;
-      if (detailed) {
-        return normalizeUserErrorMessage(detailed, fallback);
-      }
-    } catch {
-      // ignore
-    }
-  }
-
-  if (invokeError.context?.text) {
-    try {
-      const text = await invokeError.context.text();
-      if (text) {
-        return normalizeUserErrorMessage(text, fallback);
-      }
-    } catch {
-      // ignore
-    }
-  }
-
-  return normalizeUserErrorMessage(invokeError.message, fallback);
-}
 
 const GeneratePage = () => {
   const navigate = useNavigate();
@@ -439,19 +397,7 @@ const GeneratePage = () => {
     setShowSuggestionDialog(false);
 
     try {
-      const { data, error } = await supabase.functions.invoke("suggest-scenes", {
-        body: { imageBase64: imageDataUrl, imageType },
-      });
-
-      if (error) {
-        throw new Error(await extractInvokeErrorMessage(error, "场景识别失败，请稍后重试。"));
-      }
-      if (data?.error) {
-        throw new Error(data.error);
-      }
-      if (!data?.suggestions || !Array.isArray(data.suggestions)) {
-        throw new Error("AI 返回格式错误");
-      }
+      const data = await suggestScenes(imageDataUrl, imageType);
 
       setSceneSuggestions(data.suggestions);
       setProductSummary(data.product_summary || "");

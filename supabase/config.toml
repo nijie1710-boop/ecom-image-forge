@@ -10,7 +10,7 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.suggest-scenes]
-verify_jwt = true
+verify_jwt = false
 
 [functions.detail-plan]
 verify_jwt = false
