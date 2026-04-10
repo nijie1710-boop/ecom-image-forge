@@ -1,9 +1,13 @@
 const LOGIN_REQUIRED_MESSAGE = "未登录，请先登录";
 const UNSUPPORTED_IMAGE_MESSAGE = "图片格式不支持";
-const IMAGE_PARSE_FAILED_MESSAGE = "商品图解析失败";
+const IMAGE_PARSE_FAILED_MESSAGE = "商品图片解析失败";
 const AI_QUOTA_MESSAGE = "AI 额度不足";
 const GENERATION_FAILED_MESSAGE = "当前生成失败，请重试";
 const SYSTEM_BUSY_MESSAGE = "系统繁忙，请稍后再试";
+const MODEL_CONFIG_MESSAGE = "模型配置错误，请联系管理员";
+const GEMINI_ENV_MESSAGE = "AI 服务未配置，请联系管理员";
+const SUPABASE_ENV_MESSAGE = "后端环境变量缺失，请联系管理员";
+const UPSTREAM_UNAVAILABLE_MESSAGE = "上游 AI 服务暂时不可用";
 
 function toText(input: unknown): string {
   if (!input) return "";
@@ -36,6 +40,7 @@ export function normalizeUserErrorMessage(input: unknown, fallback = GENERATION_
       "unauthorized",
       "401",
       "login required",
+      "unAUTHORIZED".toLowerCase(),
       "未登录",
       "请先登录",
     ])
@@ -54,6 +59,7 @@ export function normalizeUserErrorMessage(input: unknown, fallback = GENERATION_
       ".png",
       ".webp",
       "图片格式",
+      "image_required",
     ])
   ) {
     return UNSUPPORTED_IMAGE_MESSAGE;
@@ -66,12 +72,11 @@ export function normalizeUserErrorMessage(input: unknown, fallback = GENERATION_
       "base64",
       "ocr",
       "product_image_required",
-      "image_required",
       "empty_image_result",
-      "商品图解析",
-      "解析失败",
       "no valid image",
       "no image returned",
+      "商品图片解析失败",
+      "图片解析失败",
     ])
   ) {
     return IMAGE_PARSE_FAILED_MESSAGE;
@@ -96,23 +101,67 @@ export function normalizeUserErrorMessage(input: unknown, fallback = GENERATION_
 
   if (
     includesAny(normalized, [
-      "timeout",
-      "timed out",
-      "busy",
+      "gemini_api_key_missing",
+      "gemini_api_key is not configured",
+      "ai 服务未配置",
+    ])
+  ) {
+    return GEMINI_ENV_MESSAGE;
+  }
+
+  if (
+    includesAny(normalized, [
+      "supabase_url_missing",
+      "supabase_service_role_key_missing",
+      "supabase_env_missing",
+      "后端环境变量缺失",
+    ])
+  ) {
+    return SUPABASE_ENV_MESSAGE;
+  }
+
+  if (
+    includesAny(normalized, [
+      "model_not_supported",
+      "unsupported image model selection",
+      "not found for api version",
+      "call listmodels",
+      "模型配置错误",
+      "模型名无效",
+    ])
+  ) {
+    return MODEL_CONFIG_MESSAGE;
+  }
+
+  if (
+    includesAny(normalized, [
+      "upstream_429",
+      "upstream_500",
+      "upstream_502",
+      "upstream_503",
+      "upstream_504",
+      "fallback_chain_failed",
       "temporarily unavailable",
-      "upstream",
-      "network",
-      "502",
-      "503",
-      "504",
-      "429",
-      "too many requests",
-      "email rate limit exceeded",
-      "over_email_send_rate_limit",
       "failed to send a request to the edge function",
       "fetch failed",
       "load failed",
       "cloudflare",
+      "503",
+      "504",
+      "502",
+      "429",
+      "上游 ai 服务暂时不可用",
+    ])
+  ) {
+    return UPSTREAM_UNAVAILABLE_MESSAGE;
+  }
+
+  if (
+    includesAny(normalized, [
+      "timeout",
+      "timed out",
+      "busy",
+      "network",
       "系统繁忙",
       "稍后再试",
     ])
@@ -120,11 +169,11 @@ export function normalizeUserErrorMessage(input: unknown, fallback = GENERATION_
     return SYSTEM_BUSY_MESSAGE;
   }
 
-  if (includesAny(normalized, ["invalid login credentials", "invalid_credentials", "邮箱或密码不正确"])) {
+  if (includesAny(normalized, ["invalid login credentials", "invalid_credentials"])) {
     return "邮箱或密码不正确";
   }
 
-  if (includesAny(normalized, ["invalid otp", "otp expired", "otp_expired", "token has expired", "验证码"])) {
+  if (includesAny(normalized, ["invalid otp", "otp expired", "otp_expired", "token has expired"])) {
     return "验证码有误或已过期，请重新发送";
   }
 
@@ -133,7 +182,7 @@ export function normalizeUserErrorMessage(input: unknown, fallback = GENERATION_
   }
 
   if (includesAny(normalized, ["email not confirmed"])) {
-    return "账号尚未完成验证，请先完成注册或验证";
+    return "账号尚未完成验证，请先完成邮箱验证";
   }
 
   return fallback;
@@ -142,11 +191,15 @@ export function normalizeUserErrorMessage(input: unknown, fallback = GENERATION_
 export function errorHintFromMessage(message: string | null | undefined) {
   if (!message) return null;
   if (message === LOGIN_REQUIRED_MESSAGE) return "请重新登录后再试。";
-  if (message === UNSUPPORTED_IMAGE_MESSAGE) return "请上传 JPG、PNG 或 WEBP 格式的图片。";
-  if (message === IMAGE_PARSE_FAILED_MESSAGE) return "请更换更清晰的商品图，或重新上传后再试。";
-  if (message === AI_QUOTA_MESSAGE) return "请先充值积分，或稍后再试。";
+  if (message === UNSUPPORTED_IMAGE_MESSAGE) return "请上传 JPG、PNG 或 WEBP 格式图片。";
+  if (message === IMAGE_PARSE_FAILED_MESSAGE) return "建议更换更清晰的商品图，或重新上传后再试。";
+  if (message === AI_QUOTA_MESSAGE) return "请先充值积分，或降低批量生成数量后再试。";
+  if (message === GEMINI_ENV_MESSAGE) return "需要检查服务器的 GEMINI_API_KEY 配置。";
+  if (message === SUPABASE_ENV_MESSAGE) return "需要检查服务器的 SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY 配置。";
+  if (message === MODEL_CONFIG_MESSAGE) return "需要核查当前功能配置的 Gemini 模型名是否仍然可用。";
+  if (message === UPSTREAM_UNAVAILABLE_MESSAGE) return "建议稍后再试，或改用同类其他模型。";
   if (message === SYSTEM_BUSY_MESSAGE) return "建议稍后再试，或减少图片数量与规格。";
-  if (message === GENERATION_FAILED_MESSAGE) return "建议保留当前识别结果，稍后重新生成一次。";
+  if (message === GENERATION_FAILED_MESSAGE) return "建议保留当前输入内容，稍后重新生成一次。";
   if (message === "邮箱或密码不正确") return "请检查邮箱和密码是否输入正确。";
   if (message === "验证码有误或已过期，请重新发送") return "请使用最新一封邮件中的验证码。";
   return null;
@@ -159,4 +212,8 @@ export const ERROR_MESSAGES = {
   aiQuota: AI_QUOTA_MESSAGE,
   generationFailed: GENERATION_FAILED_MESSAGE,
   systemBusy: SYSTEM_BUSY_MESSAGE,
+  modelConfig: MODEL_CONFIG_MESSAGE,
+  geminiEnv: GEMINI_ENV_MESSAGE,
+  supabaseEnv: SUPABASE_ENV_MESSAGE,
+  upstreamUnavailable: UPSTREAM_UNAVAILABLE_MESSAGE,
 };

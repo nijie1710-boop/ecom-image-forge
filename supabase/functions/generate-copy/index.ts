@@ -1,213 +1,238 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { getCopyCreditCost, loadPricingSettings } from "../_shared/credit-pricing.ts";
+import {
+  callGeminiTextWithFallback,
+  errorResponse,
+  FunctionError,
+  jsonResponse,
+  requireEnv,
+} from "../_shared/gemini.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-// Google Gemini 直连
-const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+type CopyResponse = {
+  productName: string;
+  title: string;
+  desc: string;
+  sellingPoints: string[];
+  tags: string[];
+  targetAudience: string;
+  priceRange: string;
+};
+
+function stripDataPrefix(imageUrl: string) {
+  return imageUrl.replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/, "");
+}
+
+function detectMimeType(imageUrl: string) {
+  const match = imageUrl.match(/^data:([^;]+);base64,/i);
+  return match?.[1] || "image/jpeg";
+}
+
+function safeString(value: unknown, fallback = "") {
+  const text = String(value ?? fallback).trim();
+  return text || fallback;
+}
+
+function safeStringArray(value: unknown, fallback: string[]) {
+  if (!Array.isArray(value)) return fallback;
+  const items = value.map((item) => safeString(item)).filter(Boolean);
+  return items.length ? items : fallback;
+}
+
+function normalizeCopyResponse(value: unknown): CopyResponse {
+  const source = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  return {
+    productName: safeString(source.productName, "商品"),
+    title: safeString(source.title, "优质商品推荐"),
+    desc: safeString(source.desc, "请围绕商品卖点补充更完整的电商文案。"),
+    sellingPoints: safeStringArray(source.sellingPoints, ["优质商品", "清晰卖点", "适合电商展示"]).slice(0, 5),
+    tags: safeStringArray(source.tags, ["电商", "推荐"]).slice(0, 5),
+    targetAudience: safeString(source.targetAudience, "电商平台购买用户"),
+    priceRange: safeString(source.priceRange, "根据市场定价"),
+  };
+}
+
+async function refundCredits(
+  supabase: ReturnType<typeof createClient>,
+  userId: string,
+  amount: number,
+  reason: string,
+) {
+  try {
+    await supabase.rpc("add_balance", {
+      p_user_id: userId,
+      p_amount: amount,
+      p_payment_method: "refund",
+      p_notes: reason,
+    });
+  } catch (error) {
+    console.error("generate-copy refund failed:", error);
+  }
+}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
-  try {
-    // ========== 1. 用户认证（支持 DISABLE_AUTH 绕过） ==========
-    const DISABLE_AUTH = Deno.env.get("DISABLE_AUTH") === "true";
-    const authHeader = req.headers.get("Authorization");
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  let deducted = false;
+  let deductedAmount = 0;
+  let authedUserId: string | null = null;
+  let supabase: ReturnType<typeof createClient> | null = null;
 
-    let userId: string | null = null;
+  try {
+    const DISABLE_AUTH = Deno.env.get("DISABLE_AUTH") === "true";
+    const supabaseUrl = requireEnv("SUPABASE_URL", Deno.env.get("SUPABASE_URL"));
+    const supabaseServiceKey = requireEnv(
+      "SUPABASE_SERVICE_ROLE_KEY",
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"),
+    );
+    const geminiApiKey = requireEnv("GEMINI_API_KEY", Deno.env.get("GEMINI_API_KEY"));
+
+    supabase = createClient(supabaseUrl, supabaseServiceKey);
+    const authHeader = req.headers.get("Authorization");
 
     if (!DISABLE_AUTH) {
-      if (!authHeader || !authHeader.startsWith("Bearer ")) {
-        return new Response(JSON.stringify({ error: "未授权，请先登录" }), {
-          status: 401,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+      if (!authHeader?.startsWith("Bearer ")) {
+        return jsonResponse(
+          { error: "UNAUTHORIZED", message: "User must be logged in before generating copy" },
+          401,
+          corsHeaders,
+        );
       }
       const token = authHeader.replace("Bearer ", "");
-      const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser(token);
       if (authError || !user) {
-        return new Response(JSON.stringify({ error: "认证失败，请重新登录" }), {
-          status: 401,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        return jsonResponse(
+          { error: "UNAUTHORIZED", message: "Supabase auth validation failed" },
+          401,
+          corsHeaders,
+        );
       }
-      userId = user.id;
+      authedUserId = user.id;
     } else {
-      // DISABLE_AUTH 模式：从 JWT payload 直接拿 userId
-      if (authHeader && authHeader.startsWith("Bearer ")) {
-        const token = authHeader.replace("Bearer ", "");
-        try {
-          const payload = JSON.parse(atob(token.split('.')[1]));
-          userId = payload.sub || payload.user_id || null;
-        } catch {}
-      }
+      authedUserId = "disable-auth-user";
     }
 
-    const { imageBase64, platform, language } = await req.json();
-    const cost = 1; // 文案生成扣1积分
+    const body = await req.json();
+    const imageBase64 = safeString(body.imageBase64);
+    const platform = safeString(body.platform, "淘宝/天猫");
+    const language = safeString(body.language, "zh");
 
-    // ========== 2. 余额预校验 ==========
+    if (!imageBase64) {
+      return jsonResponse(
+        { error: "PRODUCT_IMAGE_REQUIRED", message: "Image is required for copy generation" },
+        400,
+        corsHeaders,
+      );
+    }
+
+    const pricing = await loadPricingSettings(supabase);
+    const cost = getCopyCreditCost(pricing.creditRules);
+    deductedAmount = cost;
+
     const { data: balanceData, error: balanceError } = await supabase.rpc("get_user_balance", {
-      p_user_id: userId,
+      p_user_id: authedUserId,
     });
     if (balanceError) {
-      return new Response(JSON.stringify({ error: "余额查询失败" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-    const currentBalance = balanceData?.[0]?.balance ?? 0;
-    if (currentBalance < cost) {
-      return new Response(JSON.stringify({
-        error: `余额不足，需要${cost}积分，当前余额${currentBalance}积分，请先充值`,
-        code: "INSUFFICIENT_BALANCE",
-      }), {
-        status: 402,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      throw new FunctionError("BALANCE_LOOKUP_FAILED", 500, "Failed to query user balance");
     }
 
-    // 预扣费
+    const currentBalance = balanceData?.[0]?.balance ?? 0;
+    if (currentBalance < cost) {
+      return jsonResponse(
+        {
+          error: "INSUFFICIENT_BALANCE",
+          message: `Copy generation requires ${cost} credits but current balance is ${currentBalance}`,
+        },
+        402,
+        corsHeaders,
+      );
+    }
+
     const { data: deductResult, error: deductError } = await supabase.rpc("deduct_balance", {
-      p_user_id: userId,
+      p_user_id: authedUserId,
       p_amount: cost,
       p_operation_type: "generate_copy",
       p_description: "生成电商文案",
     });
     if (deductError || !deductResult?.[0]?.success) {
-      return new Response(JSON.stringify({ error: "扣费失败，请稍后重试" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      throw new FunctionError("BALANCE_DEDUCT_FAILED", 500, "Failed to deduct credits for copy generation");
     }
+    deducted = true;
 
     const platformPrompts: Record<string, string> = {
-      '淘宝/天猫': `淘宝/天猫风格，突出"正品保证"、"限时特惠"、"包邮"。标题带【天猫】前缀。`,
-      '京东': `京东风格，突出"京东自营"、"次日达"、"品质保障"。标题带【京东】前缀。`,
-      '拼多多': `拼多多风格，突出"工厂价"、"百亿补贴"、"拼团优惠"。标题带【拼多多特惠】前缀。`,
-      '抖音': `抖音电商风格，突出"网红同款"、"直播间秒杀"、"限时福利"。标题带【抖音爆款】前缀。`,
-      '小红书': `小红书种草风格，语气亲切活泼，多用emoji。标题带emoji和感叹号。`,
-      '快手': `快手电商风格，突出"老铁推荐"、"厂家直供"、"性价比之王"。标题带【快手严选】前缀。`,
+      "淘宝/天猫": "淘宝/天猫风格，强调正品保障、限时优惠、包邮和电商转化效率。",
+      "京东": "京东风格，强调自营、次日达、品质保障和理性购买理由。",
+      "拼多多": "拼多多风格，强调实惠、补贴、拼团和性价比。",
+      "抖音": "抖音电商风格，强调爆款、直播间氛围、限时福利和种草转化。",
+      "小红书": "小红书种草风格，语气真实、亲切、有分享感。",
+      "快手": "快手电商风格，强调厂家直供、老铁推荐和真实好货。",
     };
 
-    const platformStyle = platformPrompts[platform] || platformPrompts['淘宝/天猫'];
-    const langInstruction = language === 'en'
-      ? 'Output ALL fields in English. Use professional e-commerce marketing English, not literal translation.'
-      : '所有字段使用中文输出。';
+    const langInstruction = language === "en"
+      ? "Output every field in English. Use natural e-commerce marketing English."
+      : "所有字段使用中文输出。";
 
-    const systemPrompt = `你是专业电商产品分析师和文案专家。分析产品图片，识别产品类型、材质、颜色、设计特点，深度挖掘卖点，生成文案。
-${platformStyle}
-${langInstruction}
+    const prompt = [
+      "You are a senior e-commerce copywriter and product analyst.",
+      platformPrompts[platform] || platformPrompts["淘宝/天猫"],
+      langInstruction,
+      "Analyze the uploaded product image carefully, identify the product category, material, color, construction, visible text, and practical selling points.",
+      "Return JSON only with this schema:",
+      '{"productName":"产品名称","title":"标题","desc":"描述文案","sellingPoints":["卖点1","卖点2","卖点3","卖点4","卖点5"],"tags":["标签1","标签2","标签3","标签4","标签5"],"targetAudience":"目标人群","priceRange":"建议价格区间"}',
+      "Avoid fabricated specifications that cannot be reasonably inferred from the image.",
+      "Keep the tone suitable for real e-commerce listing copy, not poetry.",
+    ].join(" ");
 
-严格按以下JSON格式返回（不要包含markdown代码块标记）：
-{
-  "productName": "产品名称",
-  "title": "标题（30字以内）",
-  "desc": "描述文案（100-200字）",
-  "sellingPoints": ["卖点1", "卖点2", "卖点3", "卖点4", "卖点5"],
-  "tags": ["标签1", "标签2", "标签3", "标签4", "标签5"],
-  "targetAudience": "目标人群",
-  "priceRange": "建议定价区间"
-}`;
-
-    let content = "";
-    let generationFailed = false;
-    let failureReason = "";
-
-    // ========== 使用 Google Gemini ==========
-    if (!GEMINI_API_KEY) {
-      await supabase.rpc("add_balance", {
-        p_user_id: userId, p_amount: cost, p_payment_method: "refund", p_notes: "文案生成失败：无可用AI密钥",
-      });
-      return new Response(JSON.stringify({ error: "AI 服务未配置，请联系管理员" }), {
-        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-    try {
-      const apiResp = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/nano-banana-pro-preview:generateContent?key=${GEMINI_API_KEY}`,
+    const { text, meta } = await callGeminiTextWithFallback({
+      apiKey: geminiApiKey,
+      functionName: "generate-copy",
+      parts: [
+        { text: prompt },
         {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [{
-              parts: [
-                { text: systemPrompt },
-                { inlineData: { mimeType: "image/jpeg", data: imageBase64.replace("data:image/jpeg;base64,", "").replace("data:image/png;base64,", "") } },
-                { text: `分析这张产品图片，生成适合${platform}平台的电商文案。` },
-              ]
-            }],
-            generationConfig: { responseMimeType: "application/json" },
-          }),
-        }
-      );
-      if (!apiResp.ok) {
-        const errText = await apiResp.text();
-        console.error("Gemini API error:", apiResp.status, errText);
-        generationFailed = true;
-        failureReason = "AI 服务暂时不可用";
-      } else {
-        const apiData = await apiResp.json();
-        content = apiData.candidates?.[0]?.content?.parts?.[0]?.text || "";
-        if (!content) {
-          generationFailed = true;
-          failureReason = "AI 未返回有效内容";
-        }
-      }
-    } catch (e: any) {
-      generationFailed = true;
-      failureReason = e.message || "调用 AI 失败";
-    }
+          inlineData: {
+            mimeType: detectMimeType(imageBase64),
+            data: stripDataPrefix(imageBase64),
+          },
+        },
+      ],
+      generationConfig: {
+        temperature: 0.5,
+        topP: 0.9,
+        maxOutputTokens: 2048,
+      },
+    });
 
-    // ========== 解析结果 ==========
-    if (generationFailed) {
-      // 退还积分
-      await supabase.rpc("add_balance", {
-        p_user_id: userId, p_amount: cost, p_payment_method: "refund", p_notes: `文案生成失败退款：${failureReason}`,
-      });
-      return new Response(JSON.stringify({ error: failureReason }), {
-        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
+    let parsed: CopyResponse;
     try {
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
-        return new Response(JSON.stringify(parsed), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-    } catch (parseError) {
-      console.error("JSON parse error:", parseError);
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      parsed = normalizeCopyResponse(JSON.parse(jsonMatch ? jsonMatch[0] : text));
+    } catch (error) {
+      console.error("generate-copy parse failed:", error);
+      throw new FunctionError("COPY_PARSE_FAILED", 502, "Failed to parse structured copy response");
     }
 
-    // Fallback
-    return new Response(JSON.stringify({
-      productName: "产品",
-      title: "优质产品推荐",
-      desc: content.substring(0, 500),
-      sellingPoints: ["优质产品"],
-      tags: ["电商", "推荐"],
-      targetAudience: "广大消费者",
-      priceRange: "根据市场定价",
-    }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-
+    return jsonResponse({ ...parsed, meta }, 200, corsHeaders);
   } catch (error) {
-    console.error("Error:", error);
-    return new Response(JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    if (deducted && supabase && authedUserId && deductedAmount > 0) {
+      await refundCredits(
+        supabase,
+        authedUserId,
+        deductedAmount,
+        `文案生成失败退款：${error instanceof Error ? error.message : "unknown error"}`,
+      );
+    }
+    console.error("generate-copy error:", error);
+    return errorResponse(error, corsHeaders);
   }
 });

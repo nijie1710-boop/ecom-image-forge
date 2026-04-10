@@ -1,5 +1,13 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  callGeminiImageWithFallback,
+  callGeminiTextWithFallback,
+  errorResponse,
+  jsonResponse,
+  requireEnv,
+  type ImageModelInput,
+} from "../_shared/gemini.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -36,17 +44,6 @@ const TARGET_LANGUAGE_LABELS: Record<string, string> = {
   th: "Thai",
   vi: "Vietnamese",
 };
-
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function jsonResponse(payload: unknown, status = 200) {
-  return new Response(JSON.stringify(payload), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
-}
 
 function stripDataPrefix(imageUrl: string) {
   return imageUrl.replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/, "");
@@ -90,145 +87,6 @@ function parseJsonArray(text: string): TranslationItem[] {
   }
 }
 
-function extractImageResult(parsed: any): string {
-  const candidates = Array.isArray(parsed?.candidates) ? parsed.candidates : [];
-
-  for (const candidate of candidates) {
-    const parts = Array.isArray(candidate?.content?.parts) ? candidate.content.parts : [];
-
-    for (const part of parts) {
-      if (part?.inlineData?.data) {
-        return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
-      }
-
-      if (typeof part?.text === "string" && part.text.trim()) {
-        try {
-          const maybeJson = JSON.parse(part.text);
-          if (typeof maybeJson?.image_url === "string" && maybeJson.image_url) {
-            return maybeJson.image_url;
-          }
-        } catch {
-          if (part.text.startsWith("data:") || part.text.startsWith("http")) {
-            return part.text;
-          }
-        }
-      }
-    }
-  }
-
-  return "";
-}
-
-async function callModel(
-  apiKey: string,
-  model: string,
-  parts: unknown[],
-  options?: { expectImage?: boolean },
-) {
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts }],
-        generationConfig: options?.expectImage
-          ? {
-              responseModalities: ["text", "image"],
-              maxOutputTokens: 512,
-            }
-          : undefined,
-        safetySettings: options?.expectImage
-          ? [
-              { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
-              { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
-              { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
-              { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
-            ]
-          : undefined,
-      }),
-    },
-  );
-
-  const rawText = await response.text();
-  let parsed: any = {};
-  try {
-    parsed = JSON.parse(rawText);
-  } catch {
-    parsed = {};
-  }
-
-  return { response, parsed, rawText };
-}
-
-async function callReplaceModel(apiKey: string, mimeType: string, imageBase64: string, instruction: string) {
-  return callReplaceModelWithPreference(apiKey, mimeType, imageBase64, instruction);
-}
-
-async function callReplaceModelWithPreference(
-  apiKey: string,
-  mimeType: string,
-  imageBase64: string,
-  instruction: string,
-  preferredModel?: string,
-) {
-  const fallbackModels = [
-    "gemini-3.1-flash-image-preview",
-    "gemini-3-pro-image-preview",
-    "gemini-2.5-flash-image",
-  ];
-  const models = preferredModel
-    ? [preferredModel, ...fallbackModels.filter((item) => item !== preferredModel)]
-    : fallbackModels;
-
-  let lastFailure = "";
-
-  for (const model of models) {
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      const result = await callModel(
-        apiKey,
-        model,
-        [
-          { text: instruction },
-          { inlineData: { mimeType, data: imageBase64 } },
-        ],
-        { expectImage: true },
-      );
-
-      if (result.response.ok) {
-        const imageResult = extractImageResult(result.parsed);
-        if (imageResult) {
-          return { ...result, model, imageResult };
-        }
-
-        const responsePreview =
-          JSON.stringify(result.parsed).slice(0, 300) || result.rawText.slice(0, 300);
-        lastFailure = `${model}:200:EMPTY_IMAGE_RESULT:${responsePreview}`;
-        if (attempt < 1) {
-          await sleep(900);
-          continue;
-        }
-        break;
-      }
-
-      lastFailure = `${model}:${result.response.status}:${result.rawText.slice(0, 300)}`;
-      if (attempt < 1 && [408, 429, 500, 502, 503, 504].includes(result.response.status)) {
-        await sleep(900);
-        continue;
-      }
-      break;
-    }
-  }
-
-  return {
-    response: new Response(null, { status: 500 }),
-    parsed: {},
-    rawText: lastFailure,
-    model: models[models.length - 1],
-    imageResult: "",
-  };
-}
-
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -236,27 +94,32 @@ serve(async (req: Request) => {
 
   try {
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return jsonResponse({ error: "UNAUTHORIZED" }, 401);
+    if (!authHeader?.startsWith("Bearer ")) {
+      return jsonResponse({ error: "UNAUTHORIZED", message: "User must be logged in" }, 401, corsHeaders);
     }
 
+    const supabaseUrl = requireEnv("SUPABASE_URL", Deno.env.get("SUPABASE_URL"));
+    const supabaseServiceKey = requireEnv(
+      "SUPABASE_SERVICE_ROLE_KEY",
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"),
+    );
+    const geminiApiKey = requireEnv("GEMINI_API_KEY", Deno.env.get("GEMINI_API_KEY"));
+
     const token = authHeader.replace("Bearer ", "");
-    const body = await req.json().catch(() => null);
-    if (!body) return jsonResponse({ error: "INVALID_JSON" }, 400);
-
-    const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
-    if (!supabaseUrl || !supabaseServiceKey) return jsonResponse({ error: "SUPABASE_ENV_MISSING" }, 500);
-    if (!geminiApiKey) return jsonResponse({ error: "GEMINI_API_KEY_MISSING" }, 500);
-
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
     const {
       data: { user },
       error: authError,
     } = await supabase.auth.getUser(token);
 
-    if (authError || !user) return jsonResponse({ error: "UNAUTHORIZED" }, 401);
+    if (authError || !user) {
+      return jsonResponse({ error: "UNAUTHORIZED", message: "Supabase auth validation failed" }, 401, corsHeaders);
+    }
+
+    const body = await req.json().catch(() => null);
+    if (!body) {
+      return jsonResponse({ error: "INVALID_JSON", message: "Request body must be valid JSON" }, 400, corsHeaders);
+    }
 
     const { imageUrl, step, translations = [], targetLanguage = "en", preferredModel } = body as {
       imageUrl?: string;
@@ -266,7 +129,9 @@ serve(async (req: Request) => {
       preferredModel?: string;
     };
 
-    if (!imageUrl) return jsonResponse({ error: "IMAGE_REQUIRED" }, 400);
+    if (!imageUrl) {
+      return jsonResponse({ error: "IMAGE_REQUIRED", message: "Image is required" }, 400, corsHeaders);
+    }
 
     const imageBase64 = stripDataPrefix(imageUrl);
     const mimeType = detectMimeType(imageUrl);
@@ -280,28 +145,32 @@ serve(async (req: Request) => {
         "Return only a JSON array.",
         '[{"original":"source text","translated":"target text","position":"short position description","x":12.5,"y":8.3,"width":40.0,"height":10.0,"align":"center","textColor":"#ffffff","backgroundColor":"#000000"}]',
         "x, y, width, height must be estimated percentages based on the full image canvas, using a 0-100 scale.",
-        "align must be one of left, center, right.",
-        "textColor and backgroundColor should be helpful estimates when visible.",
-        "Keep translated text concise for image layout.",
         "If there is no useful text, return [] only.",
       ].join("\n");
 
-      const { response, parsed } = await callModel(geminiApiKey, "gemini-2.5-flash", [
-        { text: instruction },
-        { inlineData: { mimeType, data: imageBase64 } },
-      ]);
+      const { text, meta } = await callGeminiTextWithFallback({
+        apiKey: geminiApiKey,
+        functionName: "translate-image-ocr",
+        parts: [
+          { text: instruction },
+          { inlineData: { mimeType, data: imageBase64 } },
+        ],
+        generationConfig: {
+          temperature: 0.2,
+          maxOutputTokens: 2048,
+        },
+      });
 
-      if (!response.ok) {
-        return jsonResponse({ error: "OCR_UPSTREAM_FAILED", status: response.status }, 500);
-      }
-
-      const content = parsed?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-      return jsonResponse({ translations: parseJsonArray(content) });
+      return jsonResponse({ translations: parseJsonArray(text), meta }, 200, corsHeaders);
     }
 
     if (step === "replace") {
       if (!Array.isArray(translations) || !translations.length) {
-        return jsonResponse({ error: "TRANSLATIONS_REQUIRED" }, 400);
+        return jsonResponse(
+          { error: "TRANSLATIONS_REQUIRED", message: "At least one translation item is required" },
+          400,
+          corsHeaders,
+        );
       }
 
       const replacementInstructions = translations
@@ -317,45 +186,26 @@ serve(async (req: Request) => {
         `Target language: ${targetLanguageLabel}.`,
         replacementInstructions,
         "Keep the original poster composition, product, shadows, lighting, spacing, icon placement, and typography hierarchy as close as possible.",
-        "Preserve the original background texture and color transitions. Preserve labels, badges, arrows, and callout boxes.",
+        "Preserve the original background texture and color transitions.",
         "Do not redesign the poster. Do not move the product. Do not add new layout blocks.",
+        "Do not add phone UI chrome, screenshot frame, browser frame, or unrelated decorative interface elements.",
         "The final result must look like the original image was directly rewritten in the target language, not pasted over.",
       ].join("\n");
 
-      const { response, parsed, rawText, model, imageResult } = await callReplaceModelWithPreference(
-        geminiApiKey,
-        mimeType,
-        imageBase64,
-        instruction,
-        preferredModel,
-      );
+      const { imageUrl: translatedImageUrl, meta } = await callGeminiImageWithFallback({
+        apiKey: geminiApiKey,
+        functionName: "translate-image-replace",
+        selectedModel: String(preferredModel || "gemini-3.1-flash-image-preview") as ImageModelInput,
+        parts: [
+          { text: instruction },
+          { inlineData: { mimeType, data: imageBase64 } },
+        ],
+      });
 
-      if (!response.ok) {
-        return jsonResponse(
-          {
-            error: "REPLACE_UPSTREAM_FAILED",
-            status: response.status,
-            model,
-            detail: rawText.slice(0, 500),
-          },
-          500,
-        );
-      }
-
-      if (!imageResult) {
-        return jsonResponse(
-          {
-            error: "EMPTY_IMAGE_RESULT",
-            detail: JSON.stringify(parsed).slice(0, 500),
-          },
-          500,
-        );
-      }
-
-      let finalImageUrl = imageResult;
-      if (imageResult.startsWith("data:")) {
+      let finalImageUrl = translatedImageUrl;
+      if (translatedImageUrl.startsWith("data:")) {
         try {
-          const base64Part = imageResult.split(",")[1];
+          const base64Part = translatedImageUrl.split(",")[1];
           const binaryStr = atob(base64Part);
           const bytes = new Uint8Array(binaryStr.length);
           for (let i = 0; i < binaryStr.length; i += 1) {
@@ -378,19 +228,23 @@ serve(async (req: Request) => {
             finalImageUrl = `${supabaseUrl}/storage/v1/object/public/generated-images/${fileName}`;
           }
         } catch (error) {
-          console.error("upload translated image failed", error);
+          console.error("translate-image upload translated image failed", error);
         }
       }
 
-      return jsonResponse({ imageUrl: finalImageUrl, model });
+      return jsonResponse(
+        {
+          imageUrl: finalImageUrl,
+          meta,
+        },
+        200,
+        corsHeaders,
+      );
     }
 
-    return jsonResponse({ error: "UNKNOWN_STEP" }, 400);
+    return jsonResponse({ error: "UNKNOWN_STEP", message: "Unknown translate-image step" }, 400, corsHeaders);
   } catch (error) {
     console.error("translate-image error:", error);
-    return jsonResponse(
-      { error: error instanceof Error ? error.message : "UNKNOWN_ERROR" },
-      500,
-    );
+    return errorResponse(error, corsHeaders);
   }
 });

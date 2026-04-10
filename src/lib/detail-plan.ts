@@ -3,20 +3,32 @@ import { normalizeUserErrorMessage } from "@/lib/error-messages";
 
 async function extractInvokeError(error: unknown, fallback: string): Promise<string> {
   if (!error || typeof error !== "object") return fallback;
-  const e = error as { context?: { json?: () => Promise<unknown>; text?: () => Promise<string> }; message?: string };
+  const e = error as {
+    context?: { json?: () => Promise<unknown>; text?: () => Promise<string> };
+    message?: string;
+  };
+
   if (e.context?.json) {
     try {
-      const payload = (await e.context.json()) as { error?: string; message?: string } | undefined;
-      const msg = payload?.error || payload?.message;
+      const payload = (await e.context.json()) as
+        | { error?: string; message?: string; detail?: string }
+        | undefined;
+      const msg = payload?.error || payload?.message || payload?.detail;
       if (msg) return normalizeUserErrorMessage(msg, fallback);
-    } catch { /* ignore */ }
+    } catch {
+      // ignore
+    }
   }
+
   if (e.context?.text) {
     try {
       const text = await e.context.text();
       if (text) return normalizeUserErrorMessage(text, fallback);
-    } catch { /* ignore */ }
+    } catch {
+      // ignore
+    }
   }
+
   return normalizeUserErrorMessage(e.message, fallback);
 }
 
@@ -52,6 +64,12 @@ export type DetailPlanResponse = {
   productSummary: string;
   visibleText: string;
   planOptions: DetailPlanOption[];
+  meta?: {
+    modelRequested: string;
+    modelUsed: string;
+    fallbackUsed?: boolean;
+    modelsTried?: string[];
+  };
 };
 
 export type DetailPlanParams = {
@@ -69,39 +87,21 @@ export type OptimizeProductInfoParams = {
   targetPlatform?: string;
 };
 
-function isMissingFunctionError(raw: unknown) {
-  const text = String(raw || "").toLowerCase();
-  return (
-    text.includes("requested function was not found") ||
-    text.includes("function not found") ||
-    text.includes("not_found") ||
-    text.includes("404") ||
-    text.includes("edge function returned a non-2xx status code")
-  );
-}
-
-function buildFallbackProductInfo(params: OptimizeProductInfoParams) {
-  return (
-    params.productInfo?.trim() ||
-    "请基于上传商品图整理商品类型、核心卖点、材质、尺寸、适用人群和需要保留的关键信息。"
-  );
-}
-
 export async function generateDetailPlan(params: DetailPlanParams): Promise<DetailPlanResponse> {
   const { data, error } = await supabase.functions.invoke("detail-plan", {
     body: params,
   });
 
   if (error) {
-    const msg = await extractInvokeError(error, "详情页策划失败，请稍后重试。");
-    if (isMissingFunctionError(msg) || isMissingFunctionError(error.message)) {
-      throw new Error("详情页策划功能暂未部署或不可用，请联系管理员确认 detail-plan 函数已正确部署。");
-    }
-    throw new Error(msg);
+    throw new Error(await extractInvokeError(error, "详情页策划失败，请稍后重试。"));
   }
 
   if (!data) {
     throw new Error("详情页策划没有返回有效结果，请稍后重试。");
+  }
+
+  if (data?.meta) {
+    console.info("detail-plan meta:", data.meta);
   }
 
   return data as DetailPlanResponse;
@@ -113,17 +113,16 @@ export async function optimizeProductInfo(params: OptimizeProductInfoParams): Pr
   });
 
   if (error) {
-    const msg = await extractInvokeError(error, "");
-    if (isMissingFunctionError(msg) || isMissingFunctionError(error.message)) {
-      return buildFallbackProductInfo(params);
-    }
-    console.warn("optimize-product-info failed, fallback to manual content:", msg);
-    return buildFallbackProductInfo(params);
+    throw new Error(await extractInvokeError(error, "产品信息优化失败，请稍后重试。"));
   }
 
   const optimized = data?.optimizedText;
   if (!optimized || typeof optimized !== "string") {
-    return buildFallbackProductInfo(params);
+    throw new Error("产品信息优化没有返回有效结果，请稍后重试。");
+  }
+
+  if (data?.meta) {
+    console.info("optimize-product-info meta:", data.meta);
   }
 
   return optimized;

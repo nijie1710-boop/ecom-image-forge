@@ -1,5 +1,13 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  callGeminiImageWithFallback,
+  errorResponse,
+  jsonResponse,
+  requireEnv,
+  resolveImageModelSelection,
+  type ImageModelInput,
+} from "../_shared/gemini.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -7,28 +15,7 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-type SupportedModel =
-  | "gemini-3.1-flash-image-preview"
-  | "nano-banana-pro-preview"
-  | "gemini-2.5-flash-image";
-
 type SupportedResolution = "0.5k" | "1k" | "2k" | "4k";
-
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function parseJwtPayload(token: string): Record<string, unknown> | null {
-  try {
-    const parts = token.split(".");
-    if (parts.length !== 3) return null;
-    const payload = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-    const padded = payload + "=".repeat((4 - (payload.length % 4)) % 4);
-    return JSON.parse(atob(padded));
-  } catch {
-    return null;
-  }
-}
 
 function parseDataUrl(url: string): { mimeType: string; base64: string } | null {
   if (!url.startsWith("data:")) return null;
@@ -52,28 +39,24 @@ function coerceImageInput(value: unknown): string {
 
 function coerceImageList(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => coerceImageInput(item))
-    .filter(Boolean);
+  return value.map((item) => coerceImageInput(item)).filter(Boolean);
 }
 
-async function resolveImageToBase64(
-  source: string,
-): Promise<{ mimeType: string; base64: string } | null> {
+async function resolveImageToBase64(source: string): Promise<{ mimeType: string; base64: string } | null> {
   const parsed = parseDataUrl(source);
   if (parsed) return parsed;
 
   try {
     const response = await fetch(source);
     if (!response.ok) {
-      console.error("fetch image failed:", response.status, source);
+      console.error("generate-image fetch image failed:", response.status, source);
       return null;
     }
 
     const buffer = await response.arrayBuffer();
     const bytes = new Uint8Array(buffer);
     let binary = "";
-    for (let i = 0; i < bytes.length; i++) {
+    for (let i = 0; i < bytes.length; i += 1) {
       binary += String.fromCharCode(bytes[i]);
     }
 
@@ -82,7 +65,7 @@ async function resolveImageToBase64(
       base64: btoa(binary),
     };
   } catch (error) {
-    console.error("fetch image error:", error);
+    console.error("generate-image fetch image error:", error);
     return null;
   }
 }
@@ -103,15 +86,8 @@ function normalizeModelMode(value: string | undefined): "none" | "with_model" {
   return value === "with_model" ? "with_model" : "none";
 }
 
-function normalizeModel(value: string | undefined): SupportedModel {
-  const normalized = (value || "").toLowerCase();
-  if (normalized.includes("3.1") || normalized.includes("banana 2")) {
-    return "gemini-3.1-flash-image-preview";
-  }
-  if (normalized.includes("2.5") || normalized.includes("nano banana")) {
-    return "gemini-2.5-flash-image";
-  }
-  return "nano-banana-pro-preview";
+function normalizeModel(value: unknown): ImageModelInput {
+  return String(value || "gemini-2.5-flash-image") as ImageModelInput;
 }
 
 function normalizeResolution(value: string | undefined): SupportedResolution {
@@ -209,141 +185,6 @@ function extractPromptSections(prompt: string) {
   };
 }
 
-function buildModelFallbacks(model: SupportedModel): string[] {
-  if (model === "gemini-3.1-flash-image-preview") {
-    return [
-      "gemini-3.1-flash-image-preview",
-      "gemini-2.5-flash-image",
-      "gemini-3-pro-image-preview",
-    ];
-  }
-  if (model === "gemini-2.5-flash-image") {
-    return [
-      "gemini-2.5-flash-image",
-      "gemini-3.1-flash-image-preview",
-      "gemini-3-pro-image-preview",
-    ];
-  }
-  return [
-    "gemini-3-pro-image-preview",
-    "gemini-2.5-flash-image",
-    "gemini-3.1-flash-image-preview",
-  ];
-}
-
-function isRetryableModelFailure(status: number, detail: string): boolean {
-  const normalized = detail.toLowerCase();
-  if ([408, 429, 500, 502, 503, 504].includes(status)) return true;
-  return [
-    "timeout",
-    "temporarily unavailable",
-    "try again",
-    "internal",
-    "rate limit",
-    "resource exhausted",
-    "quota",
-    "no image returned",
-    "empty",
-  ].some((keyword) => normalized.includes(keyword));
-}
-
-async function callImageModel(
-  apiKey: string,
-  model: SupportedModel,
-  parts: Array<Record<string, unknown>>,
-): Promise<{ imageUrl: string; modelUsed: string }> {
-  const fallbacks = buildModelFallbacks(model);
-  let lastError = "Unknown model error";
-
-  for (const modelName of fallbacks) {
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      const apiUrl =
-        `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
-
-      const response = await fetch(apiUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts }],
-          generationConfig: {
-            responseModalities: ["text", "image"],
-            maxOutputTokens: 512,
-          },
-          safetySettings: [
-            { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
-            { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
-            { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
-            { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
-          ],
-        }),
-      });
-
-      const rawResponse = await response.text();
-      console.error(
-        "generate-image model response:",
-        modelName,
-        `attempt-${attempt + 1}`,
-        response.status,
-        rawResponse.substring(0, 280),
-      );
-
-      if (!response.ok) {
-        let detail = rawResponse.substring(0, 240);
-        try {
-          const parsed = JSON.parse(rawResponse);
-          detail = parsed?.error?.message || detail;
-        } catch {
-          // ignore
-        }
-        lastError = `${modelName}: ${detail}`;
-        if (attempt < 1 && isRetryableModelFailure(response.status, detail)) {
-          await sleep(1000 * (attempt + 1));
-          continue;
-        }
-        break;
-      }
-
-      let data: Record<string, unknown>;
-      try {
-        data = JSON.parse(rawResponse);
-      } catch {
-        lastError = `${modelName}: invalid JSON response`;
-        if (attempt < 1) {
-          await sleep(800);
-          continue;
-        }
-        break;
-      }
-
-      const candidates = (data as {
-        candidates?: Array<{
-          content?: {
-            parts?: Array<{ inlineData?: { mimeType: string; data: string } }>;
-          };
-        }>;
-      }).candidates;
-      const partsOut = candidates?.[0]?.content?.parts || [];
-      const imagePart = partsOut.find((part) => part.inlineData?.data);
-
-      if (imagePart?.inlineData?.data) {
-        return {
-          imageUrl: `data:${imagePart.inlineData.mimeType};base64,${imagePart.inlineData.data}`,
-          modelUsed: modelName,
-        };
-      }
-
-      lastError = `${modelName}: no image returned`;
-      if (attempt < 1) {
-        await sleep(800);
-        continue;
-      }
-      break;
-    }
-  }
-
-  throw new Error(lastError);
-}
-
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -351,33 +192,37 @@ serve(async (req: Request) => {
 
   try {
     const authHeader = req.headers.get("Authorization");
-    let userId: string | null = null;
-
-    if (authHeader && authHeader.startsWith("Bearer ")) {
-      const token = authHeader.replace("Bearer ", "");
-      const payload = parseJwtPayload(token);
-      if (payload) {
-        const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-        const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-        const supabase = createClient(supabaseUrl, supabaseServiceKey);
-        const {
-          data: { user },
-          error: authError,
-        } = await supabase.auth.getUser(token);
-
-        if (!authError && user) {
-          userId = user.id;
-        }
-      }
+    if (!authHeader?.startsWith("Bearer ")) {
+      return jsonResponse(
+        { error: "UNAUTHORIZED", message: "User must be logged in before generating images" },
+        401,
+        corsHeaders,
+      );
     }
 
-    if (!userId) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    const supabaseUrl = requireEnv("SUPABASE_URL", Deno.env.get("SUPABASE_URL"));
+    const supabaseServiceKey = requireEnv(
+      "SUPABASE_SERVICE_ROLE_KEY",
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"),
+    );
+    const geminiApiKey = requireEnv("GEMINI_API_KEY", Deno.env.get("GEMINI_API_KEY"));
+
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    const token = authHeader.replace("Bearer ", "");
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser(token);
+
+    if (authError || !user) {
+      return jsonResponse(
+        { error: "UNAUTHORIZED", message: "Supabase auth validation failed" },
+        401,
+        corsHeaders,
+      );
     }
 
+    const body = await req.json();
     const {
       prompt,
       imageBase64,
@@ -392,21 +237,18 @@ serve(async (req: Request) => {
       textLanguage,
       model,
       resolution,
-    } = await req.json();
-
-    const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
-    if (!geminiApiKey) {
-      throw new Error("GEMINI_API_KEY is not configured");
-    }
+    } = body;
 
     const productSource = coerceImageInput(imageBase64) || coerceImageInput(referenceImageUrl);
     const productImage = productSource ? await resolveImageToBase64(productSource) : null;
     if (!productImage) {
-      return new Response(JSON.stringify({ error: "PRODUCT_IMAGE_REQUIRED" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonResponse(
+        { error: "PRODUCT_IMAGE_REQUIRED", message: "Primary product image is required" },
+        400,
+        corsHeaders,
+      );
     }
+
     const modelSource = coerceImageInput(modelImage);
     const modelReferenceImage = modelSource ? await resolveImageToBase64(modelSource) : null;
     const galleryLimit = modelReferenceImage ? 1 : 2;
@@ -423,13 +265,14 @@ serve(async (req: Request) => {
     const normalizedResolution = normalizeResolution(resolution);
     const normalizedAspectRatio = normalizeAspectRatio(aspectRatio);
     const normalizedModelMode = normalizeModelMode(modelMode);
+    const modelSelection = resolveImageModelSelection(normalizedModel);
 
     const absoluteRules = [
       "=== ABSOLUTE RULES ===",
       "This is a product-preserving image generation task, not a redesign.",
       "The first image contains the exact product that must remain the same product in the output.",
-      "The reference image may already include props, background, scenery, text overlays, or decorative layout. Ignore those distractions and preserve only the main sellable product.",
-      "Never replace the product with another category. A garment must stay a garment. A speaker must stay a speaker. A bag must stay a bag. A phone case must stay a phone case.",
+      "Ignore browser chrome, editor UI, phone status bar, webpage containers, and poster frames if they are not part of the physical product.",
+      "Never replace the product with another category.",
       "Copy the exact silhouette, structure, proportions, color palette, material appearance, and surface texture.",
       "Preserve logos, printed artwork, letters, graphics, seams, collar shape, sleeves, hems, ports, buttons, zippers, stitching, and distinctive details exactly as they appear on the original product.",
       "The only acceptable changes are lighting, shadows, background, composition, camera distance, and supporting scene elements.",
@@ -441,45 +284,28 @@ serve(async (req: Request) => {
     const roleInstructions = [
       "ROLE ASSIGNMENT:",
       "Image 1 is the primary product reference and must be preserved exactly.",
-    ];
-    if (galleryImages.length) {
-      roleInstructions.push(
-        `Images 2 to ${galleryImages.length + 1} are additional product angle references of the same item. Use them to lock structure, ports, seams, print, texture, and color consistency.`,
-      );
-    } else {
-      roleInstructions.push(
-        "There are no additional product-angle references. Re-photograph the same product in a better e-commerce setup.",
-      );
-    }
-    if (normalizedModelMode === "with_model" && modelReferenceImage) {
-      roleInstructions.push(
-        "One reference image is a model/person reference. A visible human model is mandatory in the final image. Use it to guide pose, hand placement, body presence, and natural wearing context. Do not let the model hide the product.",
-      );
-    } else {
-      roleInstructions.push(
-        "There is no dedicated model reference image. Only add a natural human presence or hands when the screen plan clearly benefits from wearing effect, size reference, or real usage context.",
-      );
-    }
-    if (styleImage) {
-      roleInstructions.push(
-        "One reference image is style reference only for lighting, atmosphere, composition rhythm, and color mood. Do not copy the style image's product.",
-      );
-    }
-    roleInstructions.push(
+      galleryImages.length
+        ? `Images 2 to ${galleryImages.length + 1} are additional product angle references of the same item. Use them to lock structure, ports, seams, print, texture, and color consistency.`
+        : "There are no additional product-angle references. Re-photograph the same product in a better e-commerce setup.",
+      normalizedModelMode === "with_model" && modelReferenceImage
+        ? "One reference image is a model/person reference. A visible human model is mandatory in the final image. Use it to guide pose, hand placement, body presence, and natural wearing context. Do not let the model hide the product."
+        : "There is no dedicated model reference image. Only add a natural human presence or hands when the screen plan clearly benefits from wearing effect, size reference, or real usage context.",
+      styleImage
+        ? "One reference image is style reference only for lighting, atmosphere, composition rhythm, and color mood. Do not copy the style image's product."
+        : "",
       "If the source image is a poster, banner, lifestyle shot, or already contains scene props, extract the core product and rebuild a clean product-focused composition around it.",
-    );
-    const roleInstruction = roleInstructions.join(". ");
+    ]
+      .filter(Boolean)
+      .join(". ");
 
-    const promptSections = extractPromptSections(String(prompt || ""));
-    const promptSuggestsHuman = /建议人物出镜|需要人物|真人模特|上身|手持|手部|使用动作|生活场景/i.test(
-      String(prompt || ""),
-    );
+    const promptText = String(prompt || "");
+    const promptSections = extractPromptSections(promptText);
+    const promptSuggestsHuman =
+      /建议人物出镜|需要人物|真人模特|上身|手持|手部|使用动作|生活场景/i.test(promptText);
     const hasExplicitScene = Boolean(
       promptSections.sceneKeywords ||
         promptSections.composition ||
-        /咖啡馆|办公室|办公桌|客厅|卧室|阳台|海边|沙滩|花园|户外|书店|餐厅|工作室|桌面|自然光|场景|背景|室内|室外/i.test(
-          String(prompt || ""),
-        ),
+        /咖啡|办公室|办公桌|客厅|卧室|阳台|海边|沙滩|花园|户外|书店|餐厅|工作室|桌面|自然光|场景|背景|室内|室外/i.test(promptText),
     );
 
     const sceneExecutionInstruction = [
@@ -504,10 +330,6 @@ serve(async (req: Request) => {
         "Only use white background or neutral studio background when the USER REQUEST explicitly asks for it or when no scene is provided at all.",
       ].join(". ");
 
-    const textInstruction = buildTextInstruction(normalizedTextLanguage);
-    const resolutionInstruction = buildResolutionInstruction(normalizedResolution);
-    const aspectRatioInstruction = buildAspectRatioInstruction(normalizedAspectRatio);
-    const modelInstruction = `MODEL TARGET: Prefer visual behavior suitable for ${normalizedModel}.`;
     const modelPresenceInstruction =
       normalizedModelMode === "with_model"
         ? [
@@ -525,9 +347,16 @@ serve(async (req: Request) => {
               ? "The current screen plan suggests that a visible person or hands can help explain the product. Add a natural human presence only as supporting context, and keep the product as the primary visual hero."
               : "Prefer pure product composition. Do not add a human model, hands, or mannequin unless the screen plan clearly calls for wearing effect, hand-held usage, or human scale reference.",
           ].join(". ");
-    const styleReferenceInstruction = styleReferenceText
-      ? `STYLE NOTES FROM USER: ${String(styleReferenceText).trim()}.`
+
+    const sceneLockInstruction = hasExplicitScene
+      ? [
+        "SCENE LOCK:",
+        "A concrete scene is explicitly requested.",
+        "White background, empty studio background, or plain cutout output is forbidden unless the prompt explicitly says white background.",
+        "The final image must visibly include the requested environment and scene mood.",
+      ].join(". ")
       : "";
+
     const structuredPromptInstruction = [
       promptSections.styleName ? `STYLE NAME: ${promptSections.styleName}.` : "",
       promptSections.visualStyle ? `VISUAL STYLE: ${promptSections.visualStyle}.` : "",
@@ -538,42 +367,36 @@ serve(async (req: Request) => {
     ]
       .filter(Boolean)
       .join(" ");
-    const sceneLockInstruction = hasExplicitScene
-      ? [
-        "SCENE LOCK:",
-        "A concrete scene is explicitly requested.",
-        "White background, empty studio background, or plain cutout output is forbidden unless the prompt explicitly says white background.",
-        "The final image must visibly include the requested environment and scene mood.",
-      ].join(". ")
-      : "";
-    const userRequest = `USER REQUEST RAW: ${prompt || ""}`;
 
     const systemInstruction = [
       absoluteRules,
-      roleInstruction,
+      roleInstructions,
       sceneExecutionInstruction,
       typeInstruction,
-      textInstruction,
-      resolutionInstruction,
-      aspectRatioInstruction,
-      modelInstruction,
+      buildTextInstruction(normalizedTextLanguage),
+      buildResolutionInstruction(normalizedResolution),
+      buildAspectRatioInstruction(normalizedAspectRatio),
+      `MODEL TARGET: Prefer visual behavior suitable for ${modelSelection.label}.`,
       modelPresenceInstruction,
-      styleReferenceInstruction,
+      styleReferenceText ? `STYLE NOTES FROM USER: ${String(styleReferenceText).trim()}.` : "",
       structuredPromptInstruction,
       sceneLockInstruction,
-      userRequest,
-    ].join(". ");
+      `USER REQUEST RAW: ${promptText}`,
+    ]
+      .filter(Boolean)
+      .join(". ");
 
-    const parts: Array<Record<string, unknown>> = [{ text: systemInstruction }];
-    if (productImage) {
-      parts.push({ text: "REFERENCE IMAGE 1: PRIMARY PRODUCT. Preserve this exact product." });
-      parts.push({
+    const parts: Array<Record<string, unknown>> = [
+      { text: systemInstruction },
+      { text: "REFERENCE IMAGE 1: PRIMARY PRODUCT. Preserve this exact product." },
+      {
         inlineData: {
           mimeType: productImage.mimeType,
           data: productImage.base64,
         },
-      });
-    }
+      },
+    ];
+
     galleryImages.forEach((image, index) => {
       parts.push({
         text: `REFERENCE IMAGE ${index + 2}: ADDITIONAL PRODUCT ANGLE. Use only to lock product details and consistency.`,
@@ -585,9 +408,10 @@ serve(async (req: Request) => {
         },
       });
     });
+
     if (modelReferenceImage) {
       parts.push({
-        text: "MODEL REFERENCE IMAGE: A real human model must appear in the final image. Use this for pose, body presence, and styling only.",
+        text: "MODEL REFERENCE IMAGE: Use this only for body presence, pose, and interaction. Do not let it replace the product.",
       });
       parts.push({
         inlineData: {
@@ -596,9 +420,10 @@ serve(async (req: Request) => {
         },
       });
     }
+
     if (styleImage) {
       parts.push({
-        text: "STYLE REFERENCE IMAGE: Use this only for lighting, mood, composition rhythm, and color atmosphere. Do not copy its product.",
+        text: "STYLE REFERENCE IMAGE: Use only for mood, lighting, and composition rhythm. Do not copy its product.",
       });
       parts.push({
         inlineData: {
@@ -608,40 +433,43 @@ serve(async (req: Request) => {
       });
     }
 
-    console.error("generate-image request:", {
-      hasProduct: !!productImage,
-      galleryCount: galleryImages.length,
-      hasModel: !!modelReferenceImage,
-      hasStyle: !!styleImage,
+    console.info("generate-image request meta:", {
+      userId: user.id,
       imageType: normalizedImageType,
       textLanguage: normalizedTextLanguage,
-      model: normalizedModel,
+      modelRequested: modelSelection.requestedModel,
+      modelSelection: normalizedModel,
       resolution: normalizedResolution,
       aspectRatio: normalizedAspectRatio,
       modelMode: normalizedModelMode,
-      parts: parts.length,
+      galleryCount: galleryImages.length,
+      hasModelReference: Boolean(modelReferenceImage),
+      hasStyleReference: Boolean(styleImage),
     });
 
-    const { imageUrl, modelUsed } = await callImageModel(geminiApiKey, normalizedModel, parts);
+    const { imageUrl, meta } = await callGeminiImageWithFallback({
+      apiKey: geminiApiKey,
+      functionName: "generate-image",
+      selectedModel: normalizedModel,
+      parts,
+      resolution: normalizedResolution,
+    });
 
-    return new Response(JSON.stringify({
-      images: [imageUrl],
-      meta: {
-        modelRequested: normalizedModel,
-        modelUsed,
-        resolution: normalizedResolution,
-        aspectRatio: normalizedAspectRatio,
+    return jsonResponse(
+      {
+        images: [imageUrl],
+        meta: {
+          ...meta,
+          modelSelection: normalizedModel,
+          modelLabel: modelSelection.label,
+          aspectRatio: normalizedAspectRatio,
+        },
       },
-    }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+      200,
+      corsHeaders,
+    );
   } catch (error) {
     console.error("generate-image error:", error);
-    return new Response(JSON.stringify({
-      error: error instanceof Error ? error.message : "Unknown error",
-    }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return errorResponse(error, corsHeaders);
   }
 });
