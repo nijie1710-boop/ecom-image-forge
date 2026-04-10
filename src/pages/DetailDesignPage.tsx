@@ -402,7 +402,7 @@ const DetailDesignPage = () => {
   const [detailJobId, setDetailJobId] = useState<string | null>(null);
   const [hasRestoredDraft, setHasRestoredDraft] = useState(false);
   const [showScreenIdeas, setShowScreenIdeas] = useState(false);
-  const [showGenerationSettings, setShowGenerationSettings] = useState(false);
+  const [showGenerationSettings, setShowGenerationSettings] = useState(true);
   const [selectedScreenNumbers, setSelectedScreenNumbers] = useState<number[]>([]);
   const [userBalance, setUserBalance] = useState<number | null>(null);
   const resultsSectionRef = useRef<HTMLElement | null>(null);
@@ -1258,23 +1258,6 @@ const DetailDesignPage = () => {
                 <p className="text-xs leading-5 text-muted-foreground">
                   AI 会把商品信息整理成更适合详情页策划和画面内文案生成的结构化文本，你再微调即可。
                 </p>
-              </div>
-
-              <div className="rounded-2xl border border-border bg-background p-4">
-                <div className="flex items-start gap-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                    <Images className="h-4.5 w-4.5" />
-                  </div>
-                  <div className="space-y-1">
-                    <div className="text-sm font-semibold text-foreground">人物出镜交给 AI 判断</div>
-                    <p className="text-xs leading-5 text-muted-foreground">
-                      这里不再手动上传模特图。系统会根据商品品类和每一屏的目标，自动判断是否需要真人模特、手部交互或纯商品展示。
-                    </p>
-                    <p className="text-xs leading-5 text-muted-foreground">
-                      例如服饰上身效果、手持产品演示、尺寸对比场景会更容易触发人物出镜；结构细节和参数屏则优先保持纯商品表达。
-                    </p>
-                  </div>
-                </div>
               </div>
 
               <div className="rounded-2xl border border-border bg-background p-4">
