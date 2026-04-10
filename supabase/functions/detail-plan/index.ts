@@ -119,6 +119,34 @@ function safeStringArray(value: unknown, fallback: string[]): string[] {
   return items.length ? items : fallback;
 }
 
+function resolveLanguageInstruction(value: string) {
+  const normalized = value.trim().toLowerCase();
+  if (["zh", "zh-cn", "cn", "中文", "简体中文", "chinese", "simplified chinese"].includes(normalized)) {
+    return {
+      code: "zh",
+      display: "Simplified Chinese",
+      jsonRule:
+        "Every human-readable field in the JSON must be written in Simplified Chinese. Do not output English plan names, tones, summaries, screen titles, audiences, or copy points.",
+    };
+  }
+
+  if (["en", "english", "英文"].includes(normalized)) {
+    return {
+      code: "en",
+      display: "English",
+      jsonRule:
+        "Every human-readable field in the JSON must be written in English.",
+    };
+  }
+
+  return {
+    code: normalized || "zh",
+    display: value || "Simplified Chinese",
+    jsonRule:
+      "Every human-readable field in the JSON must follow the requested target language consistently.",
+  };
+}
+
 function overlayBodyFromCopyPoints(copyPoints: string[]) {
   return copyPoints.slice(0, 3).map((item) => item.trim()).filter(Boolean);
 }
@@ -267,6 +295,7 @@ serve(async (req: Request) => {
     const productInfo = safeString(body.productInfo);
     const targetPlatform = safeString(body.targetPlatform, "淘宝/天猫");
     const targetLanguage = safeString(body.targetLanguage, "zh");
+    const languageInstruction = resolveLanguageInstruction(targetLanguage);
     const screenCount = clampScreenCount(body.screenCount);
     const screenIdeas = normalizeScreenIdeas(body.screenIdeas, screenCount);
 
@@ -288,7 +317,7 @@ serve(async (req: Request) => {
       "Plan 2 should feel real-life, warm, and scenario-driven.",
       "Plan 3 should feel rational, feature-focused, and conversion-oriented.",
       `Target platform: ${targetPlatform}.`,
-      `Target language for copy: ${targetLanguage}.`,
+      `Target language for copy: ${languageInstruction.display}.`,
       `Requested screen count per plan: ${screenCount}.`,
       productInfo ? `User notes: ${productInfo}.` : "No extra user notes were provided.",
       screenIdeas.length
@@ -299,6 +328,10 @@ serve(async (req: Request) => {
       "Focus on the actual sellable product only.",
       "Ignore browser frame, editor chrome, UI panel, example mockups, or demo screenshots if they are not part of the real product.",
       "For each plan, provide exact screen structure and short usable copy.",
+      languageInstruction.jsonRule,
+      languageInstruction.code === "zh"
+        ? "If the uploaded product itself contains English branding or English printed words, keep that only inside visibleText when it truly exists on the product; all generated plan content must still be Simplified Chinese."
+        : "",
       "Return JSON only with this schema:",
       '{"productSummary":"中文商品总结","visibleText":"图片中可见文字，没有则写 NONE","planOptions":[{"planName":"方案名","tone":"整体调性","audience":"目标人群","summary":"整版总结","designSpec":{"mainColors":["主色 1","主色 2"],"accentColors":["辅助色 1","辅助色 2"],"typography":"字体建议","layoutTone":"版式风格","imageStyle":"画面风格","languageGuidelines":"文案规范"},"screens":[{"screen":1,"title":"分屏标题","goal":"该屏目标","visualDirection":"该屏视觉方向","copyPoints":["文案点 1","文案点 2","文案点 3"],"overlayTitle":"短标题","overlayBodyLines":["短句 1","短句 2","短句 3"],"humanModelSuggested":false,"humanModelReason":"是否需要人物的简短理由"}]}]}',
     ].join(" ");

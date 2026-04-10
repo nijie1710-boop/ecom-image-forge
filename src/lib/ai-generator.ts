@@ -174,6 +174,25 @@ function normalizeHttpError(status: number, payload: Record<string, unknown> | n
       ? payload.detail
       : rawText || `HTTP_${status}`;
 
+  if (
+    !detailed ||
+    detailed === `HTTP_${status}` ||
+    detailed.toLowerCase().includes("edge function returned a non-2xx status code")
+  ) {
+    if (status === 401) {
+      return normalizeUserErrorMessage("UNAUTHORIZED", GENERATE_FAIL_ERROR);
+    }
+    if (status === 402) {
+      return normalizeUserErrorMessage("INSUFFICIENT_BALANCE", GENERATE_FAIL_ERROR);
+    }
+    if (status === 404 || status === 422) {
+      return normalizeUserErrorMessage("MODEL_NOT_SUPPORTED", GENERATE_FAIL_ERROR);
+    }
+    if ([429, 500, 502, 503, 504].includes(status)) {
+      return normalizeUserErrorMessage(`UPSTREAM_${status}`, GENERATE_FAIL_ERROR);
+    }
+  }
+
   return normalizeUserErrorMessage(detailed, GENERATE_FAIL_ERROR);
 }
 

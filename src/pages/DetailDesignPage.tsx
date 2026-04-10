@@ -691,6 +691,21 @@ const DetailDesignPage = () => {
     setGenerationError(null);
   };
 
+  const handleTargetPlatformChange = (value: string) => {
+    setTargetPlatform(value);
+    resetPlan();
+  };
+
+  const handleTargetLanguageChange = (value: string) => {
+    setTargetLanguage(value);
+    resetPlan();
+  };
+
+  const handleScreenCountChange = (value: string) => {
+    setScreenCount(value);
+    resetPlan();
+  };
+
   const updateScreenIdea = (index: number, value: string) => {
     setScreenIdeas((current) => {
       const next = [...current];
@@ -752,6 +767,7 @@ const DetailDesignPage = () => {
 
     setIsLoading(true);
     setError(null);
+    resetPlan();
 
     try {
       // 方案策划扣费
@@ -1353,19 +1369,19 @@ const DetailDesignPage = () => {
               <SelectField
                 label="目标平台"
                 value={targetPlatform}
-                onChange={setTargetPlatform}
+                onChange={handleTargetPlatformChange}
                 options={platformOptions}
               />
               <SelectField
                 label="策划语言"
                 value={targetLanguage}
-                onChange={setTargetLanguage}
+                onChange={handleTargetLanguageChange}
                 options={planningLanguageOptions}
               />
               <SelectField
                 label="详情页屏数"
                 value={screenCount}
-                onChange={setScreenCount}
+                onChange={handleScreenCountChange}
                 options={screenCountOptions.map((count) => ({
                   value: String(count),
                   label: `${count} 屏`,
