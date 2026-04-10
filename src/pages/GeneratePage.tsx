@@ -1,4 +1,4 @@
-﻿import { useCallback, useContext, useEffect, useState } from "react";
+﻿import { useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -45,6 +45,12 @@ import {
   WorkspaceSection,
   WorkspaceStatGrid,
 } from "@/components/workspace/WorkspaceBlocks";
+import {
+  deductCredits,
+  getGenerateImageUnitCost,
+  getGenerateImageTotalCost,
+  getUserBalance,
+} from "@/lib/detail-credits";
 
 const ADMIN_GENERATE_RETRY_DRAFT_KEY = "admin-generate-retry-draft";
 const imageTypes = ["主图", "详情图"];
@@ -79,18 +85,30 @@ const languageOptions = [
   { value: "pure", label: "纯图片（无新增文字）" },
 ];
 
-const modelOptions: { value: GenerationModel; label: string }[] = [
-  { value: "gemini-3.1-flash-image-preview", label: "Nano Banana 2" },
-  { value: "nano-banana-pro-preview", label: "Nano Banana Pro" },
-  { value: "gemini-2.5-flash-image", label: "Nano Banana" },
+const modelOptions: { value: GenerationModel; label: string; hint: string }[] = [
+  { value: "gemini-3.1-flash-image-preview", label: "Nano Banana 2", hint: "性价比高，新手推荐" },
+  { value: "nano-banana-pro-preview", label: "Nano Banana Pro", hint: "画面质量更高，适合精品图" },
+  { value: "gemini-2.5-flash-image", label: "Nano Banana", hint: "最快速度，适合快速试方案" },
 ];
 
-const resolutionOptions: { value: OutputResolution; label: string }[] = [
+const allResolutionOptions: { value: OutputResolution; label: string }[] = [
   { value: "0.5k", label: "0.5K 快速" },
   { value: "1k", label: "1K 标准" },
   { value: "2k", label: "2K 高清" },
   { value: "4k", label: "4K 超清" },
 ];
+
+/** 每个模型可用的分辨率 */
+const genModelResolutionMap: Record<GenerationModel, OutputResolution[]> = {
+  "gemini-2.5-flash-image": ["1k"],
+  "gemini-3.1-flash-image-preview": ["0.5k", "1k", "2k", "4k"],
+  "nano-banana-pro-preview": ["1k", "2k", "4k"],
+};
+
+function getGenResolutionOptions(model: GenerationModel) {
+  const allowed = genModelResolutionMap[model] || ["1k"];
+  return allResolutionOptions.filter((o) => allowed.includes(o.value));
+}
 
 const imageCountOptions = Array.from({ length: 9 }, (_, index) => ({
   value: String(index + 1),
@@ -200,9 +218,9 @@ const GeneratePage = () => {
   const [selectedRatio, setSelectedRatio] = useState("3:4");
   const [textLanguage, setTextLanguage] = useState("zh");
   const [selectedModel, setSelectedModel] =
-    useState<GenerationModel>("nano-banana-pro-preview");
+    useState<GenerationModel>("gemini-3.1-flash-image-preview");
   const [selectedResolution, setSelectedResolution] =
-    useState<OutputResolution>("2k");
+    useState<OutputResolution>("1k");
   const [selectedCount, setSelectedCount] = useState("1");
   const [sceneSuggestions, setSceneSuggestions] = useState<
     { scene: string; description: string }[]
@@ -227,8 +245,38 @@ const GeneratePage = () => {
   const [savedUrls, setSavedUrls] = useState<string[]>([]);
   const [favoriteUrls, setFavoriteUrls] = useState<string[]>([]);
   const [bestImageUrl, setBestImageUrl] = useState<string | null>(null);
+  const [userBalance, setUserBalance] = useState<number | null>(null);
   const errorHint = errorMessage ? errorHintFromMessage(errorMessage) : null;
   const suggestionHint = suggestionError ? errorHintFromMessage(suggestionError) : null;
+
+  // ---- 积分计算 ----
+  const imageCount = Math.min(Math.max(Number(selectedCount), 1), 9);
+  const unitCost = getGenerateImageUnitCost(selectedModel, selectedResolution);
+  const totalCost = getGenerateImageTotalCost(selectedModel, selectedResolution, imageCount);
+  const balanceInsufficient = userBalance !== null && totalCost > 0 && userBalance < totalCost;
+
+  const currentResOptions = useMemo(
+    () => getGenResolutionOptions(selectedModel),
+    [selectedModel],
+  );
+
+  // 获取余额
+  useEffect(() => {
+    if (!user?.id) return;
+    void getUserBalance(user.id).then(setUserBalance);
+  }, [user?.id]);
+
+  const refreshBalance = () => {
+    if (user?.id) void getUserBalance(user.id).then(setUserBalance);
+  };
+
+  // 切换模型后修正不合法的分辨率
+  useEffect(() => {
+    const allowed = genModelResolutionMap[selectedModel] || ["1k"];
+    if (!allowed.includes(selectedResolution)) {
+      setSelectedResolution(allowed[0]);
+    }
+  }, [selectedModel, selectedResolution]);
 
   useEffect(() => {
     if (templateId && !appliedTemplate) {
@@ -474,7 +522,7 @@ const GeneratePage = () => {
     [isBatchMode, uploadedImages.length],
   );
 
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
     if (!startImageGeneration) {
       setErrorMessage("系统初始化中，请刷新页面后重试");
       return;
@@ -483,17 +531,33 @@ const GeneratePage = () => {
       return;
     }
 
-    setIsGenerating(true);
-    setResults([]);
-    setErrorMessage(null);
-
     if (modelMode === "with_model" && !modelImage) {
-      setIsGenerating(false);
       setErrorMessage("已选择有模特模式，请先上传模特图");
       return;
     }
 
     const totalImages = Math.min(Math.max(Number(selectedCount), 1), 9);
+    const cost = getGenerateImageTotalCost(selectedModel, selectedResolution, totalImages);
+    const modelLabel =
+      modelOptions.find((o) => o.value === selectedModel)?.label || selectedModel;
+
+    // 扣费
+    setIsGenerating(true);
+    setResults([]);
+    setErrorMessage(null);
+
+    const deductResult = await deductCredits(
+      cost,
+      "generate_image",
+      `AI 生图 ${totalImages} 张（${modelLabel} ${selectedResolution}，${unitCost} 积分/张）`,
+    );
+    if (!deductResult.success) {
+      setIsGenerating(false);
+      setErrorMessage(deductResult.error || "积分不足，请先充值");
+      return;
+    }
+    refreshBalance();
+
     const batchId = crypto.randomUUID();
     const finalPrompt = [productBrief.trim() ? `产品信息：${productBrief.trim()}` : "", textPrompt.trim()]
       .filter(Boolean)
@@ -526,7 +590,7 @@ const GeneratePage = () => {
     startImageGeneration(params);
   };
 
-  const handleRegenerate = () => {
+  const handleRegenerate = async () => {
     if (!startImageGeneration) {
       setErrorMessage("系统初始化中，请刷新页面后重试");
       return;
@@ -535,17 +599,81 @@ const GeneratePage = () => {
       return;
     }
 
-    const batchId = crypto.randomUUID();
-    setCurrentBatchId(batchId);
+    const regenCount = lastParams.n || 1;
+    const regenModel = lastParams.model || selectedModel;
+    const regenRes = lastParams.resolution || selectedResolution;
+    const cost = getGenerateImageTotalCost(regenModel, regenRes, regenCount);
+    const modelLabel =
+      modelOptions.find((o) => o.value === regenModel)?.label || regenModel;
+
     setIsGenerating(true);
     setResults([]);
     setErrorMessage(null);
-    setProgress({ current: 1, total: lastParams.n });
+
+    const deductResult = await deductCredits(
+      cost,
+      "generate_image",
+      `AI 生图整批重生 ${regenCount} 张（${modelLabel} ${regenRes}，${getGenerateImageUnitCost(regenModel, regenRes)} 积分/张）`,
+    );
+    if (!deductResult.success) {
+      setIsGenerating(false);
+      setErrorMessage(deductResult.error || "积分不足，请先充值");
+      return;
+    }
+    refreshBalance();
+
+    const batchId = crypto.randomUUID();
+    setCurrentBatchId(batchId);
+    setProgress({ current: 1, total: regenCount });
     startImageGeneration({
       ...lastParams,
       _groupId: batchId,
       onComplete: (images: string[]) => {
         setResults(images);
+        setIsGenerating(false);
+        setProgress(null);
+      },
+    });
+  };
+
+  const handleRegenerateSingle = async () => {
+    if (!startImageGeneration || !lastParams) {
+      setErrorMessage("系统初始化中，请刷新页面后重试");
+      return;
+    }
+
+    const singleModel = lastParams.model || selectedModel;
+    const singleRes = lastParams.resolution || selectedResolution;
+    const cost = getGenerateImageUnitCost(singleModel, singleRes);
+    const modelLabel =
+      modelOptions.find((o) => o.value === singleModel)?.label || singleModel;
+
+    setIsGenerating(true);
+    setErrorMessage(null);
+
+    const deductResult = await deductCredits(
+      cost,
+      "generate_image",
+      `AI 生图单张重生（${modelLabel} ${singleRes}，${cost} 积分）`,
+    );
+    if (!deductResult.success) {
+      setIsGenerating(false);
+      setErrorMessage(deductResult.error || "积分不足，请先充值");
+      return;
+    }
+    refreshBalance();
+
+    const batchId = crypto.randomUUID();
+    setCurrentBatchId(batchId);
+    setProgress({ current: 1, total: 1 });
+    startImageGeneration({
+      ...lastParams,
+      n: 1,
+      _groupId: batchId,
+      onComplete: (images: string[]) => {
+        if (images.length > 0) {
+          setResults((prev) => [...prev, ...images]);
+        }
         setIsGenerating(false);
         setProgress(null);
       },
@@ -585,7 +713,7 @@ const GeneratePage = () => {
   const selectedModelLabel =
     modelOptions.find((option) => option.value === selectedModel)?.label || selectedModel;
   const selectedResolutionLabel =
-    resolutionOptions.find((option) => option.value === selectedResolution)?.label ||
+    allResolutionOptions.find((option) => option.value === selectedResolution)?.label ||
     selectedResolution;
   const selectedLanguageLabel =
     languageOptions.find((option) => option.value === textLanguage)?.label || textLanguage;
@@ -668,7 +796,7 @@ const GeneratePage = () => {
                   : "border-border text-muted-foreground"
               }`}
             >
-              批量
+              多参考图
             </button>
           </div>
 
@@ -723,7 +851,11 @@ const GeneratePage = () => {
             ) : (
               <label className="block cursor-pointer py-4">
                 <Upload className="mx-auto mb-2 h-6 w-6 text-muted-foreground" />
-                <p className="text-xs text-muted-foreground">拖拽或点击上传产品图</p>
+                <p className="text-xs text-muted-foreground">
+                  {isBatchMode
+                    ? "第 1 张为主商品图，其余为补充角度参考"
+                    : "拖拽或点击上传产品图"}
+                </p>
                 <input
                   type="file"
                   accept="image/jpeg,image/png,image/webp"
@@ -740,6 +872,11 @@ const GeneratePage = () => {
               </label>
             )}
           </div>
+          {isBatchMode && uploadedImages.length > 0 && (
+            <p className="text-[10px] text-muted-foreground">
+              第 1 张用于主体识别，其余 {uploadedImages.length - 1} 张用于补充角度和细节参考，不是分别批量生成。
+            </p>
+          )}
         </div>
 
         <div className="space-y-2">
@@ -873,6 +1010,33 @@ const GeneratePage = () => {
           />
         </div>
 
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <div className="space-y-1">
+            <SelectField
+              label="模型"
+              options={modelOptions.map((o) => ({ value: o.value, label: o.label }))}
+              value={selectedModel}
+              onChange={(value) => setSelectedModel(value as GenerationModel)}
+            />
+            <div className="text-[10px] text-muted-foreground">
+              {modelOptions.find((o) => o.value === selectedModel)?.hint || ""}
+            </div>
+          </div>
+          <SelectField
+            label="清晰度"
+            options={currentResOptions}
+            value={selectedResolution}
+            onChange={(value) => setSelectedResolution(value as OutputResolution)}
+          />
+        </div>
+
+        {sceneSuggestions.length > 0 && sceneSuggestions[selectedSuggestionIndex] && (
+          <div className="flex items-center gap-2 rounded-lg bg-primary/5 px-3 py-2 text-xs text-primary">
+            <Check className="h-3.5 w-3.5 shrink-0" />
+            <span>已应用方案：{sceneSuggestions[selectedSuggestionIndex].scene}</span>
+          </div>
+        )}
+
         <div className="rounded-2xl border border-border bg-background/60 p-3">
           <button
             type="button"
@@ -882,7 +1046,7 @@ const GeneratePage = () => {
             <div>
               <div className="text-sm font-semibold text-foreground">补充素材与高级设置</div>
               <div className="text-xs text-muted-foreground">
-                模特图、风格图、模型与清晰度都收在这里
+                模特图、风格图、产品信息补充
               </div>
             </div>
             {showAdvancedOptions ? (
@@ -1024,21 +1188,6 @@ const GeneratePage = () => {
                   className="min-h-20 rounded-xl"
                 />
               </div>
-
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                <SelectField
-                  label="模型"
-                  options={modelOptions}
-                  value={selectedModel}
-                  onChange={(value) => setSelectedModel(value as GenerationModel)}
-                />
-                <SelectField
-                  label="清晰度"
-                  options={resolutionOptions}
-                  value={selectedResolution}
-                  onChange={(value) => setSelectedResolution(value as OutputResolution)}
-                />
-              </div>
             </div>
           )}
         </div>
@@ -1047,7 +1196,7 @@ const GeneratePage = () => {
           variant="hero"
           className="w-full"
           onClick={handleGenerate}
-          disabled={(uploadedImages.length === 0 && !textPrompt.trim()) || isGenerating}
+          disabled={(uploadedImages.length === 0 && !textPrompt.trim()) || isGenerating || balanceInsufficient}
         >
           {isGenerating ? (
             <>
@@ -1061,6 +1210,24 @@ const GeneratePage = () => {
             </>
           )}
         </Button>
+        <div className="text-center text-xs text-muted-foreground">
+          预计消耗{" "}
+          <span className="font-semibold text-foreground">{totalCost} 积分</span>
+          <span className="mx-1">·</span>
+          {unitCost} 积分/张
+          {userBalance !== null && (
+            <>
+              <span className="mx-1">·</span>
+              余额{" "}
+              <span className={balanceInsufficient ? "font-semibold text-destructive" : "text-foreground"}>
+                {userBalance}
+              </span>
+            </>
+          )}
+          {balanceInsufficient && (
+            <span className="ml-1 text-destructive">（余额不足）</span>
+          )}
+        </div>
           </div>
         }
         content={
@@ -1108,7 +1275,7 @@ const GeneratePage = () => {
           <>
             <WorkspaceSection
               title="结果已经准备好了"
-              description="先挑一张满意的结果预览或编辑，不满意再整体重生。"
+              description="先挑一张满意的结果预览或编辑，不满意可整批重生。"
               actions={
                 <>
                   <div className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-[11px] font-medium text-primary">
@@ -1117,7 +1284,7 @@ const GeneratePage = () => {
                   </div>
                   <Button variant="outline" size="sm" className="h-9 text-xs" onClick={handleRegenerate}>
                     <RefreshCw className="mr-1 h-3.5 w-3.5" />
-                    重新生成
+                    整批重生（{results.length} 张）
                   </Button>
                   <Button variant="default" size="sm" className="h-9 text-xs" onClick={downloadAll}>
                     <Download className="mr-1 h-3.5 w-3.5" />
@@ -1164,7 +1331,7 @@ const GeneratePage = () => {
                         预览
                       </button>
                     </div>
-                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                       <button
                         onClick={() => setPreviewImage(src)}
                         className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-medium text-foreground transition hover:border-primary/40 hover:text-primary"
@@ -1182,6 +1349,14 @@ const GeneratePage = () => {
                         className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-medium text-foreground transition hover:border-primary/40 hover:text-primary"
                       >
                         下载
+                      </button>
+                      <button
+                        onClick={handleRegenerateSingle}
+                        disabled={isGenerating}
+                        className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-medium text-foreground transition hover:border-primary/40 hover:text-primary disabled:opacity-50"
+                      >
+                        <RefreshCw className="mr-1 inline h-3 w-3" />
+                        单张重生
                       </button>
                     </div>
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">

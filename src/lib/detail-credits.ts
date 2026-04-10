@@ -1,7 +1,7 @@
 /**
- * 详情页统一计费模块
+ * 统一计费模块
  *
- * 所有详情页相关的积分计算都集中在这里，前端展示和实际扣费共用同一套规则。
+ * 所有积分计算（详情页 + 主生图页）都集中在这里，前端展示和实际扣费共用同一套规则。
  * 修改价格时只改这一个文件即可。
  */
 
@@ -67,6 +67,54 @@ export function getDetailTotalCost(
 ): number {
   if (selectedScreenCount <= 0) return 0;
   return getDetailScreenCost(model, resolution) * selectedScreenCount;
+}
+
+// ===========================================================================
+// 主生图页价格表 —— model + resolution => 单张积分
+// ===========================================================================
+
+const GENERATE_IMAGE_COST_TABLE: Record<string, Record<string, number>> = {
+  // Nano Banana (gemini-2.5-flash-image)
+  "gemini-2.5-flash-image": {
+    "0.5k": 5,
+    "1k": 5,
+    "2k": 5,
+    "4k": 5,
+  },
+  // Nano Banana 2 (gemini-3.1-flash-image-preview)
+  "gemini-3.1-flash-image-preview": {
+    "0.5k": 5,
+    "1k": 7,
+    "2k": 9,
+    "4k": 14,
+  },
+  // Nano Banana Pro (nano-banana-pro-preview)
+  "nano-banana-pro-preview": {
+    "0.5k": 9,
+    "1k": 12,
+    "2k": 14,
+    "4k": 24,
+  },
+};
+
+/** 根据模型 + 分辨率获取单张积分（主生图页） */
+export function getGenerateImageUnitCost(
+  model: GenerationModel,
+  resolution: OutputResolution,
+): number {
+  const modelTable = GENERATE_IMAGE_COST_TABLE[model];
+  if (!modelTable) return 5;
+  return modelTable[resolution] ?? 5;
+}
+
+/** 主生图页总积分 = 单张积分 × 生成数量 */
+export function getGenerateImageTotalCost(
+  model: GenerationModel,
+  resolution: OutputResolution,
+  count: number,
+): number {
+  if (count <= 0) return 0;
+  return getGenerateImageUnitCost(model, resolution) * count;
 }
 
 // ---------------------------------------------------------------------------
