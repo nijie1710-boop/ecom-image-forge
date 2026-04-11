@@ -279,7 +279,7 @@ export default function AdminConfigPage() {
         <TabsContent value="defaults" className="space-y-6">
           <div className="grid gap-6 xl:grid-cols-2">
             <SectionCard
-              title="AI 生图默认值"
+              title="AI 主图默认值"
               description="控制普通生图页首次进入时的模型、比例、清晰度和张数。"
               icon={<Sparkles className="h-4 w-4" />}
             >
@@ -347,7 +347,7 @@ export default function AdminConfigPage() {
             </SectionCard>
 
             <SectionCard
-              title="AI 详情页默认值"
+              title="AI 详情图默认值"
               description="控制策划页首次进入时的模型、比例、清晰度和默认屏数。"
               icon={<Sparkles className="h-4 w-4" />}
             >
@@ -558,7 +558,7 @@ export default function AdminConfigPage() {
           >
             <div className="grid gap-6 xl:grid-cols-3">
               <div className="rounded-2xl border border-border p-4">
-                <h4 className="text-sm font-semibold text-foreground">AI 生图</h4>
+                <h4 className="text-sm font-semibold text-foreground">AI 主图</h4>
                 <div className="mt-4 space-y-4">
                   <SettingField label="Nano Banana">
                     <NumberField
@@ -585,7 +585,7 @@ export default function AdminConfigPage() {
               </div>
 
               <div className="rounded-2xl border border-border p-4">
-                <h4 className="text-sm font-semibold text-foreground">AI 详情页</h4>
+                <h4 className="text-sm font-semibold text-foreground">AI 详情图</h4>
                 <div className="mt-4 space-y-4">
                   <SettingField label="方案策划 / 次">
                     <NumberField
@@ -695,8 +695,8 @@ export default function AdminConfigPage() {
               </label>
               <label className="flex items-center justify-between rounded-2xl border border-border px-4 py-3 text-sm">
                 <div>
-                  <div className="font-medium text-foreground">AI 详情页</div>
-                  <div className="mt-1 text-xs text-muted-foreground">是否向普通用户开放 AI 详情页功能。</div>
+                  <div className="font-medium text-foreground">AI 详情图</div>
+                  <div className="mt-1 text-xs text-muted-foreground">是否向普通用户开放 AI 详情图功能。</div>
                 </div>
                 <Switch
                   checked={settings.feature_flags.enableDetailDesign}

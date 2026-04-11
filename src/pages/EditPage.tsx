@@ -174,7 +174,7 @@ const EditPage = () => {
         <div className="text-center">
           <p className="text-sm text-muted-foreground">没有可编辑的图片</p>
           <Button onClick={() => navigate("/dashboard/detail-design")} className="mt-4">
-            返回 AI 详情页
+            返回 AI 详情图
           </Button>
         </div>
       </div>
