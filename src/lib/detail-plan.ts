@@ -39,14 +39,13 @@ async function invokeEdgeJson<T>(functionName: string, body: Record<string, unkn
   }
 
   if (!response.ok) {
-    const detail =
-      typeof payload?.message === "string"
-        ? payload.message
-        : typeof payload?.detail === "string"
-        ? payload.detail
-        : typeof payload?.error === "string"
-        ? payload.error
-        : rawText || `HTTP_${response.status}`;
+    const detail = [
+      typeof payload?.error === "string" ? payload.error : "",
+      typeof payload?.message === "string" ? payload.message : "",
+      typeof payload?.detail === "string" ? payload.detail : "",
+    ]
+      .filter(Boolean)
+      .join(": ") || rawText || `HTTP_${response.status}`;
     throw new Error(normalizeUserErrorMessage(detail, fallback));
   }
 

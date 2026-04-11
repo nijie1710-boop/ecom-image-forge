@@ -227,6 +227,67 @@ function fallbackPlans(productSummary: string, screenCount: number): DetailPlanO
   ];
 }
 
+function errorCode(error: unknown) {
+  if (error instanceof FunctionError) return error.code;
+  return error instanceof Error ? error.name : "UNKNOWN_ERROR";
+}
+
+function errorDetail(error: unknown) {
+  if (error instanceof FunctionError) return error.detail || error.message;
+  return error instanceof Error ? error.message : String(error);
+}
+
+function shouldUseFallbackPlan(error: unknown) {
+  if (!(error instanceof FunctionError)) return true;
+  return [
+    "FALLBACK_CHAIN_FAILED",
+    "UPSTREAM_429",
+    "UPSTREAM_500",
+    "UPSTREAM_502",
+    "UPSTREAM_503",
+    "UPSTREAM_504",
+    "UPSTREAM_REQUEST_FAILED",
+    "EMPTY_TEXT_RESULT",
+    "DETAIL_PLAN_PARSE_FAILED",
+    "DETAIL_PLAN_EMPTY_RESULT",
+  ].includes(error.code);
+}
+
+function fallbackProductSummary(productInfo: string) {
+  const summary = productInfo.replace(/\s+/g, " ").trim().slice(0, 120);
+  return summary || "该商品";
+}
+
+function detailPlanFallbackResponse(
+  error: unknown,
+  productInfo: string,
+  screenCount: number,
+  meta?: Record<string, unknown>,
+) {
+  const productSummary = fallbackProductSummary(productInfo);
+  const code = errorCode(error);
+  const detail = errorDetail(error);
+  const fallbackMeta = {
+    ...(meta || {}),
+    fallbackPlanUsed: true,
+    fallbackReason: code,
+    upstreamError: detail.slice(0, 500),
+  };
+
+  console.warn("detail-plan using fallback plan", fallbackMeta);
+
+  return jsonResponse(
+    {
+      productSummary,
+      visibleText: "NONE",
+      planOptions: fallbackPlans(productSummary, screenCount),
+      meta: fallbackMeta,
+    },
+    200,
+    corsHeaders,
+  );
+}
+
 function normalizePlanOption(value: unknown, index: number, screenCount: number, productSummary: string): DetailPlanOption {
   const option = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
   const designSpecRaw =
@@ -336,25 +397,42 @@ serve(async (req: Request) => {
       '{"productSummary":"中文商品总结","visibleText":"图片中可见文字，没有则写 NONE","planOptions":[{"planName":"方案名","tone":"整体调性","audience":"目标人群","summary":"整版总结","designSpec":{"mainColors":["主色 1","主色 2"],"accentColors":["辅助色 1","辅助色 2"],"typography":"字体建议","layoutTone":"版式风格","imageStyle":"画面风格","languageGuidelines":"文案规范"},"screens":[{"screen":1,"title":"分屏标题","goal":"该屏目标","visualDirection":"该屏视觉方向","copyPoints":["文案点 1","文案点 2","文案点 3"],"overlayTitle":"短标题","overlayBodyLines":["短句 1","短句 2","短句 3"],"humanModelSuggested":false,"humanModelReason":"是否需要人物的简短理由"}]}]}',
     ].join(" ");
 
-    const { text, meta } = await callGeminiTextWithFallback({
-      apiKey: geminiApiKey,
-      functionName: "detail-plan",
-      parts: [
-        { text: promptText },
-        ...productImages.map((image) => ({
-          inlineData: {
-            mimeType: getMimeType(image),
-            data: getBase64Data(image),
-          },
-        })),
-      ],
-      generationConfig: {
-        temperature: 0.75,
-        topP: 0.92,
-        maxOutputTokens: 4096,
-        thinkingConfig: { thinkingBudget: 0 },
-      },
-    });
+    let text = "";
+    let meta: Record<string, unknown> | undefined;
+
+    try {
+      const result = await callGeminiTextWithFallback({
+        apiKey: geminiApiKey,
+        functionName: "detail-plan",
+        parts: [
+          { text: promptText },
+          ...productImages.map((image) => ({
+            inlineData: {
+              mimeType: getMimeType(image),
+              data: getBase64Data(image),
+            },
+          })),
+        ],
+        generationConfig: {
+          temperature: 0.75,
+          topP: 0.92,
+          maxOutputTokens: 4096,
+          thinkingConfig: { thinkingBudget: 0 },
+        },
+      });
+      text = result.text;
+      meta = result.meta;
+    } catch (error) {
+      console.error("detail-plan Gemini failed:", error);
+      if (shouldUseFallbackPlan(error)) {
+        const fallbackMeta =
+          error instanceof FunctionError && error.meta
+            ? (error.meta as Record<string, unknown>)
+            : meta;
+        return detailPlanFallbackResponse(error, productInfo, screenCount, fallbackMeta);
+      }
+      throw error;
+    }
 
     let parsed: {
       productSummary?: string;
@@ -367,14 +445,24 @@ serve(async (req: Request) => {
       parsed = JSON.parse(jsonMatch ? jsonMatch[0] : text);
     } catch (error) {
       console.warn("detail-plan parse failed:", error);
-      throw new FunctionError("DETAIL_PLAN_PARSE_FAILED", 502, "Failed to parse detail plan JSON");
+      return detailPlanFallbackResponse(
+        new FunctionError("DETAIL_PLAN_PARSE_FAILED", 502, "Failed to parse detail plan JSON"),
+        productInfo,
+        screenCount,
+        meta,
+      );
     }
 
     const productSummary = safeString(parsed.productSummary, "该商品");
     const visibleText = safeString(parsed.visibleText, "NONE");
     const rawPlanOptions = Array.isArray(parsed.planOptions) ? parsed.planOptions.slice(0, 3) : [];
     if (!rawPlanOptions.length) {
-      throw new FunctionError("DETAIL_PLAN_EMPTY_RESULT", 502, "Detail plan returned no plan options");
+      return detailPlanFallbackResponse(
+        new FunctionError("DETAIL_PLAN_EMPTY_RESULT", 502, "Detail plan returned no plan options"),
+        productInfo,
+        screenCount,
+        meta,
+      );
     }
 
     const planOptions = rawPlanOptions.map((option, index) =>
