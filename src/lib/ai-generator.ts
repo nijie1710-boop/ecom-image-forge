@@ -166,6 +166,12 @@ function isRetryableError(message: string | undefined): boolean {
   return [
     "timeout",
     "timed out",
+    "failed to fetch",
+    "networkerror",
+    "network request failed",
+    "edge_function_fetch_failed",
+    "生成接口请求失败",
+    "浏览器未能连接",
     "try again",
     "temporarily unavailable",
     "empty_image_result",
@@ -337,7 +343,8 @@ async function generateSingleImageStable(
 ): Promise<{ url: string | null; error: string | null; meta?: GenerateImageMeta }> {
   let lastError: string | null = null;
   let lastMeta: GenerateImageMeta | undefined;
-  const retryCount = 2;
+  const isDetailScreen = params.debugContext?.source === "detail";
+  const retryCount = isDetailScreen ? 3 : 2;
 
   for (let attempt = 0; attempt < retryCount; attempt += 1) {
     ensureNotAborted(params.signal);
@@ -358,7 +365,7 @@ async function generateSingleImageStable(
       break;
     }
 
-    await sleep(1200 * (attempt + 1));
+    await sleep((isDetailScreen ? 1600 : 1200) * (attempt + 1));
   }
 
   return {

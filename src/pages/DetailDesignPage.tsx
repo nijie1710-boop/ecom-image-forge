@@ -438,6 +438,10 @@ const DetailDesignPage = () => {
       .map((screen) => generatedScreens.find((item) => item.screen === screen.screen))
       .filter(Boolean) as GeneratedScreenState[];
   }, [activePlan, generatedScreens]);
+  const failedGeneratedScreens = useMemo(
+    () => generatedScreens.filter((screen) => screen.status === "error"),
+    [generatedScreens],
+  );
   const activeDetailJob = useMemo(
     () => (detailJobId ? getJob(detailJobId) : null),
     [detailJobId, getJob, jobs],
@@ -1068,6 +1072,26 @@ const DetailDesignPage = () => {
     await launchDetailGeneration([screen], { [screen.screen]: currentPrompt });
   };
 
+  const handleRegenerateFailedScreens = async () => {
+    if (!activePlan) return;
+    const failedScreenNumbers = new Set(failedGeneratedScreens.map((screen) => screen.screen));
+    const screens = activePlan.screens.filter((screen) => failedScreenNumbers.has(screen.screen));
+
+    if (!screens.length) {
+      setGenerationError("当前没有失败分屏需要重试");
+      return;
+    }
+
+    const promptOverrides = failedGeneratedScreens.reduce<Record<number, string>>((acc, screen) => {
+      if (screen.prompt?.trim()) {
+        acc[screen.screen] = screen.prompt;
+      }
+      return acc;
+    }, {});
+
+    await launchDetailGeneration(screens, promptOverrides);
+  };
+
   const toggleScreenSelection = (screenNumber: number) => {
     setSelectedScreenNumbers((current) =>
       current.includes(screenNumber)
@@ -1662,6 +1686,18 @@ const DetailDesignPage = () => {
                   >
                     仅选人物屏
                   </Button>
+                  {failedGeneratedScreens.length > 0 && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="rounded-xl border-destructive/30 text-destructive hover:text-destructive"
+                      onClick={() => void handleRegenerateFailedScreens()}
+                      disabled={isGeneratingScreens || balanceInsufficient}
+                    >
+                      只重试失败屏（{failedGeneratedScreens.length}）
+                    </Button>
+                  )}
                 </div>
                 <Button
                   type="button"
