@@ -2,19 +2,37 @@ import crypto from "node:crypto";
 
 import { createClient } from "@supabase/supabase-js";
 
-// ============================================================
-// 常量配置：避免多处硬编码
-// ============================================================
-const DEFAULT_SUPABASE_URL = "https://rqgrovumfgjwuhkthqxe.supabase.co";
-const DEFAULT_APP_URL = "https://www.picspark.cn";
-const DEFAULT_SUPABASE_PUBLISHABLE_KEY = "sb_publishable_kR5Qt951QycXiDjppFSquQ_XODYlvpq";
+function requireEnv(name) {
+  const value = String(process.env[name] || "").trim();
+  if (!value) {
+    const error = new Error(`Missing required environment variable: ${name}`);
+    error.status = 500;
+    throw error;
+  }
+  return value;
+}
 
-// 允许的业务域名（CORS + URL 规范化共用）
-const ALLOWED_HOSTS = new Set(["picspark.cn", "www.picspark.cn"]);
-const ALLOWED_ORIGINS = [
-  "https://picspark.cn",
-  "https://www.picspark.cn",
-];
+function normalizeOriginValue(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  try {
+    const url = new URL(raw);
+    return `${url.protocol}//${url.host}`;
+  } catch {
+    return "";
+  }
+}
+
+function readOriginList(name) {
+  return String(process.env[name] || "")
+    .split(",")
+    .map((value) => normalizeOriginValue(value))
+    .filter(Boolean);
+}
+
+const ALLOWED_ORIGINS = Array.from(
+  new Set([...readOriginList("ALLOWED_ORIGINS"), normalizeOriginValue(process.env.APP_URL)].filter(Boolean)),
+);
 
 function resolveAllowedOrigin(req) {
   const origin = String(req?.headers?.origin || "").trim();
@@ -22,13 +40,12 @@ function resolveAllowedOrigin(req) {
   // 本地开发 / Vercel Preview：放行常见的开发源
   if (origin && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) return origin;
   if (origin && /\.vercel\.app$/i.test(new URL(origin).hostname)) return origin;
-  // 默认回退到主站
-  return ALLOWED_ORIGINS[0];
+  return ALLOWED_ORIGINS[0] || "";
 }
 
 export function applyCors(res, req) {
   const allowOrigin = req ? resolveAllowedOrigin(req) : ALLOWED_ORIGINS[0];
-  res.setHeader("Access-Control-Allow-Origin", allowOrigin);
+  if (allowOrigin) res.setHeader("Access-Control-Allow-Origin", allowOrigin);
   res.setHeader("Vary", "Origin");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
@@ -88,9 +105,6 @@ export function normalizeAppUrl(value) {
 
   try {
     const url = new URL(raw);
-    if (ALLOWED_HOSTS.has(url.hostname)) {
-      return DEFAULT_APP_URL;
-    }
     return `${url.protocol}//${url.host}`;
   } catch {
     return "";
@@ -184,9 +198,14 @@ export function createOrderNo(userId) {
 }
 
 export function getSupabaseConfig() {
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+  if (!String(supabaseUrl).trim()) requireEnv("SUPABASE_URL");
+  if (!String(serviceRoleKey).trim()) requireEnv("SUPABASE_SERVICE_ROLE_KEY");
+
   return {
-    supabaseUrl: process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL,
-    serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || "",
+    supabaseUrl,
+    serviceRoleKey,
   };
 }
 
@@ -202,7 +221,7 @@ export function createUserClient(accessToken) {
   const publishableKey =
     process.env.SUPABASE_PUBLISHABLE_KEY ||
     process.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
-    DEFAULT_SUPABASE_PUBLISHABLE_KEY;
+    requireEnv("SUPABASE_PUBLISHABLE_KEY");
   return createClient(supabaseUrl, publishableKey, {
     auth: { autoRefreshToken: false, persistSession: false },
     global: { headers: { Authorization: `Bearer ${accessToken}` } },

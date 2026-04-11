@@ -1,9 +1,15 @@
-const NEW_SUPABASE_URL = "https://rqgrovumfgjwuhkthqxe.supabase.co";
-const NEW_SUPABASE_PUBLISHABLE_KEY =
-  "sb_publishable_kR5Qt951QycXiDjppFSquQ_XODYlvpq";
+function requireEnv(name) {
+  const value = String(process.env[name] || "").trim();
+  if (!value) {
+    const error = new Error(`Missing required environment variable: ${name}`);
+    error.status = 500;
+    throw error;
+  }
+  return value;
+}
 
-const SUPABASE_URL = NEW_SUPABASE_URL;
-const SUPABASE_PUBLISHABLE_KEY = NEW_SUPABASE_PUBLISHABLE_KEY;
+const SUPABASE_URL = requireEnv("SUPABASE_URL");
+const SUPABASE_PUBLISHABLE_KEY = requireEnv("SUPABASE_PUBLISHABLE_KEY");
 
 export function applyCors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");

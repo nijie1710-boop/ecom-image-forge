@@ -24,8 +24,6 @@ interface RechargePackage {
   highlight?: boolean;
 }
 
-const DEFAULT_APP_URL = "https://www.picspark.cn";
-
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
@@ -102,9 +100,6 @@ function normalizeOrigin(origin?: string | null) {
 
   try {
     const url = new URL(raw);
-    if (url.hostname === "picspark.cn" || url.hostname === "www.picspark.cn") {
-      return DEFAULT_APP_URL;
-    }
     return `${url.protocol}//${url.host}`;
   } catch {
     return "";
@@ -192,12 +187,15 @@ Deno.serve(async (req) => {
     const appId = Deno.env.get("ALIPAY_APP_ID");
     const privateKey = Deno.env.get("ALIPAY_PRIVATE_KEY");
     const gateway = Deno.env.get("ALIPAY_GATEWAY_URL") || "https://openapi.alipay.com/gateway.do";
-    const configuredAppUrl = normalizeOrigin(Deno.env.get("APP_URL")) || DEFAULT_APP_URL;
+    const configuredAppUrl = normalizeOrigin(Deno.env.get("APP_URL"));
     const configuredNotifyUrl = Deno.env.get("ALIPAY_NOTIFY_URL");
     const configuredReturnUrl = normalizeOrigin(Deno.env.get("ALIPAY_RETURN_URL"));
 
     if (!appId || !privateKey) {
       return json({ error: "支付宝商户配置未完成，请先配置 APP_ID 和私钥。" }, 500);
+    }
+    if (!configuredAppUrl) {
+      return json({ error: "支付系统 APP_URL 未配置，请联系管理员。" }, 500);
     }
 
     const packages = await getPackages(supabase);
