@@ -19,6 +19,9 @@ export interface DetailScreenJobResult {
   status: "idle" | "running" | "done" | "error" | "canceled";
   imageUrl?: string;
   error?: string;
+  chargeStatus?: "not_charged" | "charged" | "charge_failed";
+  chargeAmount?: number;
+  chargeError?: string;
   overlayTitle: string;
   overlayBody: string;
   overlayEnabled: boolean;
@@ -725,7 +728,11 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
           const completedImages: string[] = [];
           const completedScreenNumbers: number[] = [];
-          const failedScreens: Array<{ screen: number; error: string }> = [];
+          const chargedScreens: number[] = [];
+          const renderFailedScreens: Array<{ screen: number; error: string }> = [];
+          const chargeFailedScreens: Array<{ screen: number; error: string }> = [];
+          const highVolumeBatch = params.screens.length >= 5;
+          let consecutiveRenderFailures = 0;
 
           for (let index = 0; index < params.screens.length; index += 1) {
             const screen = params.screens[index];
@@ -736,6 +743,9 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
               ...current,
               status: "running",
               error: undefined,
+              chargeStatus: "not_charged",
+              chargeAmount: undefined,
+              chargeError: undefined,
             }));
 
             const result = await generateImage({
@@ -760,17 +770,28 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
             if (result.error || !result.images[0]) {
               const screenError = result.error || "本屏生成失败";
-              failedScreens.push({ screen: screen.screen, error: screenError });
+              consecutiveRenderFailures += 1;
+              renderFailedScreens.push({ screen: screen.screen, error: screenError });
               updateDetailScreen(jobId, screen.screen, (current) => ({
                 ...current,
                 status: "error",
-                error: screenError,
+                error: `本屏生成失败，未扣费：${screenError}`,
+                chargeStatus: "not_charged",
+                chargeAmount: 0,
+                chargeError: undefined,
               }));
               if (index < params.screens.length - 1) {
-                await wait(1200, controller.signal);
+                const failureDelay = highVolumeBatch
+                  ? 3200 + Math.min(consecutiveRenderFailures - 1, 3) * 800
+                  : 1600;
+                await wait(failureDelay, controller.signal);
               }
               continue;
             }
+
+            let chargeStatus: DetailScreenJobResult["chargeStatus"] = "charged";
+            let chargeAmount = params.screenCost && params.screenCost > 0 ? params.screenCost : 0;
+            let chargeError: string | undefined;
 
             if (params.screenCost && params.screenCost > 0) {
               const deductResult = await deductCredits(
@@ -780,28 +801,37 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
               );
 
               if (!deductResult.success) {
+                chargeStatus = "charge_failed";
+                chargeAmount = 0;
+                chargeError = deductResult.error || "未知错误";
                 console.warn("detail screen generated but charge failed:", {
                   screen: screen.screen,
-                  error: deductResult.error,
+                  error: chargeError,
                 });
-                failedScreens.push({
-                  screen: screen.screen,
-                  error: `第 ${screen.screen} 屏已生成，但扣费失败：${deductResult.error || "未知错误"}`,
-                });
+                chargeFailedScreens.push({ screen: screen.screen, error: chargeError });
+              } else {
+                chargedScreens.push(screen.screen);
               }
             }
 
+            consecutiveRenderFailures = 0;
             completedImages.push(result.images[0]);
             completedScreenNumbers.push(screen.screen);
             updateDetailScreen(jobId, screen.screen, (current) => ({
               ...current,
               status: "done",
               imageUrl: result.images[0],
-              error: undefined,
+              error:
+                chargeStatus === "charge_failed"
+                  ? `本屏已生成，但扣费失败：${chargeError || "未知错误"}。请稍后同步积分状态。`
+                  : undefined,
+              chargeStatus,
+              chargeAmount,
+              chargeError,
             }));
 
             if (index < params.screens.length - 1) {
-              await wait(1800, controller.signal);
+              await wait(highVolumeBatch ? 2600 : 1800, controller.signal);
             }
           }
 
@@ -812,7 +842,7 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
               current: params.screens.length,
               results: [],
               error:
-                failedScreens[0]?.error || "当前生成失败，请重试。建议保留当前识别结果，稍后重新生成一次。",
+                renderFailedScreens[0]?.error || "当前生成失败，请重试。建议保留当前识别结果，稍后重新生成一次。",
             });
             return;
           }
@@ -841,12 +871,27 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
           updateJob(jobId, {
             status: "done",
-            step: failedScreens.length ? "部分完成" : "完成",
+            step: renderFailedScreens.length || chargeFailedScreens.length ? "部分完成" : "完成",
             current: params.screens.length,
             results: persistedUrls,
-            error: failedScreens.length
-              ? `已完成 ${completedImages.length} 屏，${failedScreens.length} 屏失败，可单独重生失败分屏。`
-              : undefined,
+            error:
+              renderFailedScreens.length || chargeFailedScreens.length
+                ? [
+                    `已成功生成 ${completedImages.length} 屏，已扣 ${chargedScreens.length * (params.screenCost || 0)} 积分。`,
+                    renderFailedScreens.length
+                      ? `生成失败 ${renderFailedScreens.length} 屏，未扣费：${renderFailedScreens
+                          .map((item) => `第 ${item.screen} 屏`)
+                          .join("、")}。`
+                      : "",
+                    chargeFailedScreens.length
+                      ? `另有 ${chargeFailedScreens.length} 屏已生成但扣费失败，请稍后同步积分状态：${chargeFailedScreens
+                          .map((item) => `第 ${item.screen} 屏`)
+                          .join("、")}。`
+                      : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")
+                : undefined,
           });
           params.onComplete?.(finalScreens);
         } catch (error) {
