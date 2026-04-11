@@ -64,10 +64,10 @@ function sourceLabel(source: SourceType) {
 }
 
 function taskGroupLabel(taskKind?: string) {
-  if (taskKind === "detail") return "AI 详情图";
+  if (taskKind === "detail") return "AI 详情页";
   if (taskKind === "copy") return "文案联动";
   if (taskKind === "translate") return "图文翻译";
-  return "AI 主图";
+  return "AI 生图";
 }
 
 function resolveTaskKind(item: Pick<ImageRecord, "task_kind" | "scene">) {
@@ -647,7 +647,7 @@ const MyImagesPage = () => {
             先去生成几张图片，或者把你满意的结果加入精选图库。
           </p>
           <Link to="/dashboard/generate">
-            <Button variant="hero">去 AI 主图</Button>
+            <Button variant="hero">去 AI 生图</Button>
           </Link>
         </div>
       )}

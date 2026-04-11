@@ -23,16 +23,16 @@ export const creationNavItems: DashboardNavItem[] = [
   {
     path: "/dashboard/generate",
     icon: Wand2,
-    label: "AI 主图",
-    shortLabel: "主图",
-    description: "快速生成主图、场景图、单张详情图。",
+    label: "AI 生图",
+    shortLabel: "生图",
+    description: "单图商品图生成、场景分析与结果挑选。",
   },
   {
     path: "/dashboard/detail-design",
     icon: LayoutPanelTop,
-    label: "AI 详情图",
-    shortLabel: "详情图",
-    description: "先策划整版结构，再逐屏生成详情页。",
+    label: "AI 详情页",
+    shortLabel: "详情页",
+    description: "先策划再逐屏生成，输出整套详情长图。",
   },
   {
     path: "/dashboard/translate",

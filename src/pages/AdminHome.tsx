@@ -159,7 +159,7 @@ const AdminHome = () => {
             </div>
             <h2 className="mt-4 text-lg font-semibold text-foreground">任务管理</h2>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              查看最近的 AI 主图、AI 详情图和图文翻译任务，快速判断用户最近做了什么。
+              查看最近的 AI 生图、AI 详情页和图文翻译任务，快速判断用户最近做了什么。
             </p>
           </div>
         </Link>

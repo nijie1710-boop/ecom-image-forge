@@ -107,10 +107,10 @@ function formatDate(dateStr?: string | null) {
 
 function getOperationLabel(type: string) {
   const labels: Record<string, string> = {
-    generate_image: "AI 主图",
-    image_generation: "AI 主图",
-    detail_generation: "AI 详情图逐屏生成",
-    detail_planning: "AI 详情图方案策划",
+    generate_image: "AI 生图",
+    image_generation: "AI 生图",
+    detail_generation: "AI 详情页逐屏生成",
+    detail_planning: "AI 详情页方案策划",
     generate_copy: "AI 文案",
     translate_image: "图文翻译",
     manual_adjustment: "手动调整",
@@ -501,7 +501,7 @@ export default function RechargePage() {
             </CardHeader>
             <CardContent className="grid gap-4 lg:grid-cols-3">
               <div className="rounded-2xl border border-border bg-muted/20 p-4">
-                <div className="mb-3 font-medium text-foreground">AI 主图</div>
+                <div className="mb-3 font-medium text-foreground">AI 生图</div>
                 <div className="space-y-2 text-sm text-muted-foreground">
                   <div> Nano Banana：{creditRules.generation.nanoBanana} 积分/张</div>
                   <div> Nano Banana 2：{creditRules.generation.nanoBanana2} 积分/张</div>
@@ -509,7 +509,7 @@ export default function RechargePage() {
                 </div>
               </div>
               <div className="rounded-2xl border border-border bg-muted/20 p-4">
-                <div className="mb-3 font-medium text-foreground">AI 详情图</div>
+                <div className="mb-3 font-medium text-foreground">AI 详情页</div>
                 <div className="space-y-2 text-sm text-muted-foreground">
                   <div> 方案策划：{creditRules.detail.planning} 积分/次</div>
                   <div> Nano Banana：{creditRules.detail.nanoBanana} 积分/屏</div>

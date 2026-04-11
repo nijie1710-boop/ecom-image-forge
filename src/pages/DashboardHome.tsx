@@ -38,37 +38,29 @@ const steps = [
 const quickActions = [
   {
     icon: Wand2,
-    title: "AI 主图",
-    subtitle: "快速生成主图、场景图、单张详情图",
-    desc: "上传商品图后，快速生成多张电商图片结果，适合高频出图、快速试风格和挑图。",
-    cta: "立即进入",
+    title: "AI 生图",
+    desc: "上传商品图，快速生成主图、详情图和场景图。",
     path: "/dashboard/generate",
     color: "from-primary to-purple-500",
   },
   {
     icon: LayoutPanelTop,
-    title: "AI 详情图",
-    subtitle: "先策划整版结构，再逐屏生成详情页",
-    desc: "先生成多套详情页方案，再按屏输出完整详情图，适合制作统一风格的商品详情长图。",
-    cta: "开始制作",
+    title: "AI 详情页",
+    desc: "先做整版策划，再逐屏生成整套电商详情页长图。",
     path: "/dashboard/detail-design",
     color: "from-fuchsia-500 to-rose-500",
   },
   {
     icon: Image,
     title: "图文翻译",
-    subtitle: "识别图片文字并生成多语言版本",
     desc: "识别图片文字并生成多语言版本，适合出海和跨境素材。",
-    cta: "立即进入",
     path: "/dashboard/translate",
     color: "from-cyan-500 to-sky-500",
   },
   {
     icon: FolderOpen,
     title: "图片库",
-    subtitle: "管理和复用已生成图片",
     desc: "查看、收藏、下载和管理已经生成过的图片结果。",
-    cta: "查看图片库",
     path: "/dashboard/images",
     color: "from-amber-500 to-orange-500",
   },
@@ -88,7 +80,7 @@ const DashboardHome = () => {
         icon={Zap}
         badge="工作台首页"
         title="开始今天的电商创作"
-        description="从 AI 主图、AI 详情图、图文翻译和图片库快速进入，把商品图生成、整版详情策划和结果管理放在一个工作台里完成。"
+        description="从 AI 生图、AI 详情页、图文翻译和图片库快速进入，把商品图生成、方案策划和结果管理放在一个工作台里完成。"
         steps={["上传素材", "生成方案", "下载或继续编辑"]}
       />
 
@@ -101,9 +93,9 @@ const DashboardHome = () => {
                   <Sparkles className="h-3.5 w-3.5" />
                   推荐从这里开始
                 </div>
-                <h2 className="mt-4 text-xl font-bold sm:text-2xl md:text-3xl">先从 AI 主图快速试一版</h2>
+                <h2 className="mt-4 text-xl font-bold sm:text-2xl md:text-3xl">开始 AI 创作</h2>
                 <p className="mt-2 text-sm leading-6 text-primary-foreground/80 md:text-base">
-                  想快速出一张或几张商品图，先用 AI 主图试风格；需要整套详情页和长图时，再进入 AI 详情图做完整策划。
+                  用一张商品图快速生成电商主图和场景图，或者继续进入 AI 详情页做整套长图方案。
                 </p>
               </div>
               <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-white/20 transition-transform group-hover:scale-110 sm:h-14 sm:w-14">
@@ -160,23 +152,12 @@ const DashboardHome = () => {
                   </div>
                   <div className="min-w-0">
                     <p className="text-sm font-semibold text-foreground sm:text-base">{action.title}</p>
-                    <p className="mt-0.5 text-xs font-medium text-primary">{action.subtitle}</p>
                     <p className="mt-1 text-sm leading-6 text-muted-foreground">{action.desc}</p>
-                    <p className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-primary">
-                      {action.cta}
-                      <ArrowRight className="h-3.5 w-3.5" />
-                    </p>
                   </div>
                 </div>
               </Link>
             );
           })}
-        </div>
-        <div className="mt-4 rounded-2xl border border-primary/15 bg-primary/5 p-4 text-sm leading-6">
-          <div className="font-semibold text-foreground">不知道选哪个？</div>
-          <div className="mt-1 text-muted-foreground">
-            想快速出一张或几张商品图，选 AI 主图；想做整套详情页和长图，选 AI 详情图。
-          </div>
         </div>
       </WorkspaceSection>
 

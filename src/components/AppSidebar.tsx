@@ -152,7 +152,7 @@ export function AppSidebar() {
               <div>
                 <div className="text-sm font-medium text-sidebar-foreground">创作建议</div>
                 <div className="mt-1 text-xs leading-5 text-sidebar-foreground/65">
-                  快速出几张独立商品图用 AI 主图；做整套详情长图再进入 AI 详情图。
+                  先在 AI 生图里快速试风格，再把满意的方向带进 AI 详情页做整套输出，效率会更高。
                 </div>
               </div>
             </div>

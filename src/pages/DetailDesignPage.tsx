@@ -195,8 +195,8 @@ const SelectField = ({
 const EmptyState = () => (
   <WorkspaceEmptyState
     icon={LayoutPanelTop}
-    title="先生成方案，再逐屏出图"
-    description="上传商品图并补充商品信息后，先生成详情页方案，再继续逐屏制作。"
+    title="先生成一套详情页方案"
+    description="上传商品图、补充卖点后，AI 会先输出 3 套完整详情页方案，包含整版调性、配色规范和每一屏的结构建议。"
     className="min-h-[520px]"
   />
 );
@@ -780,7 +780,7 @@ const DetailDesignPage = () => {
       const deductResult = await deductCredits(
         planCost,
         "detail_planning",
-        `AI 详情图方案策划（${planCost} 积分）`,
+        `AI 详情页方案策划（${planCost} 积分）`,
       );
       if (!deductResult.success) {
         setError(deductResult.error || "积分不足，请先充值");
@@ -1049,7 +1049,7 @@ const DetailDesignPage = () => {
       styleReferenceText: styleReferenceText.trim() || undefined,
       screens: nextScreens,
       screenCost,
-      chargeDescription: `AI 详情图逐屏生成（${modelLabel} ${selectedResolution}，${screenCost} 积分/屏）`,
+      chargeDescription: `AI 详情页逐屏生成（${modelLabel} ${selectedResolution}，${screenCost} 积分/屏）`,
       userId: user?.id,
       onComplete: () => refreshBalance(),
     });
@@ -1175,9 +1175,9 @@ const DetailDesignPage = () => {
     <div className="mx-auto max-w-[1480px] space-y-5 px-3 py-4 sm:px-4 sm:py-5 md:space-y-6 md:px-6 md:py-6">
       <WorkspaceHeader
         icon={LayoutPanelTop}
-        badge="AI 详情图"
-        title="AI 电商详情图生成"
-        description="先生成整套详情页策划方案，再逐屏输出详情图。适合制作统一风格的商品详情长图。"
+        badge="AI 详情页"
+        title="先策划，再逐屏生成"
+        description="先整理商品信息和风格方向，再从 3 套方案里挑一套，逐屏生成整套详情页。"
         steps={["1. 上传商品", "2. 选方案", "3. 逐屏生成"]}
       />
 
@@ -1365,7 +1365,7 @@ const DetailDesignPage = () => {
           <section className="rounded-2xl border border-border bg-background/70 p-4">
             <div className="mb-4">
               <h2 className="text-base font-semibold text-foreground">策划参数</h2>
-              <p className="text-xs text-muted-foreground">AI 会先根据商品信息生成整套详情页方案，再按屏生成完整内容。</p>
+              <p className="text-xs text-muted-foreground">先生成 3 套整版方案，再选一套往下走</p>
             </div>
 
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-1">
@@ -1410,12 +1410,12 @@ const DetailDesignPage = () => {
               {isLoading ? (
                 <span className="inline-flex items-center">
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  <span>正在生成详情页方案</span>
+                  <span>AI 正在策划详情页</span>
                 </span>
               ) : (
                 <span className="inline-flex items-center">
                   <Sparkles className="mr-2 h-4 w-4" />
-                  <span>生成详情页方案</span>
+                  <span>生成 3 套详情页方案</span>
                 </span>
               )}
             </Button>
@@ -1496,7 +1496,7 @@ const DetailDesignPage = () => {
                 <div>
                   <h2 className="text-base font-semibold text-foreground">逐屏生成设置</h2>
                   <p className="text-xs text-muted-foreground">
-                    适合整套详情页制作，不只是出图，还会先帮你规划每一屏的内容结构。
+                    默认参数已经能直接生成，需要时再展开调整。
                   </p>
                 </div>
                 <button
@@ -1677,7 +1677,7 @@ const DetailDesignPage = () => {
                   ) : (
                     <span className="inline-flex items-center">
                       <ImagePlus className="mr-2 h-4 w-4" />
-                      <span>生成已选屏</span>
+                      <span>生成已选 {selectedScreenNumbers.length || 0} 屏</span>
                     </span>
                   )}
                 </Button>
@@ -1715,8 +1715,8 @@ const DetailDesignPage = () => {
           ) : (
             <>
               <WorkspaceSection
-                title="AI 详情图方案"
-                description="AI 会先根据商品信息生成整套详情页方案，再按屏生成完整内容。选中的方案会作为下面逐屏生成的执行蓝本。"
+                title="AI 详情页方案"
+                description="先从 3 套整体方向里选一套。选中的方案会直接作为下面逐屏生成的执行蓝本。"
                 actions={
                   <>
                     <span className="rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground">
@@ -1970,7 +1970,7 @@ const DetailDesignPage = () => {
                   <div>
                     <h3 className="text-lg font-semibold text-foreground">逐屏生成结果</h3>
                     <p className="text-sm text-muted-foreground">
-                      已按当前顺序拼接为完整详情页长图，可预览或下载。
+                      先看每屏结果，不满意就单独重生；全部满意后再预览或下载长图。
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">

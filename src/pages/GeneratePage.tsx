@@ -495,7 +495,7 @@ const GeneratePage = () => {
     const deductResult = await deductCredits(
       cost,
       "generate_image",
-      `AI 主图 ${totalImages} 张（${modelLabel} ${selectedResolution}，${unitCost} 积分/张）`,
+      `AI 生图 ${totalImages} 张（${modelLabel} ${selectedResolution}，${unitCost} 积分/张）`,
     );
     if (!deductResult.success) {
       setIsGenerating(false);
@@ -559,7 +559,7 @@ const GeneratePage = () => {
     const deductResult = await deductCredits(
       cost,
       "generate_image",
-      `AI 主图整批重生 ${regenCount} 张（${modelLabel} ${regenRes}，${getGenerateImageUnitCost(regenModel, regenRes)} 积分/张）`,
+      `AI 生图整批重生 ${regenCount} 张（${modelLabel} ${regenRes}，${getGenerateImageUnitCost(regenModel, regenRes)} 积分/张）`,
     );
     if (!deductResult.success) {
       setIsGenerating(false);
@@ -600,7 +600,7 @@ const GeneratePage = () => {
     const deductResult = await deductCredits(
       cost,
       "generate_image",
-      `AI 主图基于此图再生成（${modelLabel} ${singleRes}，${cost} 积分）`,
+      `AI 生图单张重生（${modelLabel} ${singleRes}，${cost} 积分）`,
     );
     if (!deductResult.success) {
       setIsGenerating(false);
@@ -715,18 +715,15 @@ const GeneratePage = () => {
     <div className="mx-auto max-w-[1480px] space-y-6 px-4 py-6 md:px-6">
       <WorkspaceHeader
         icon={Sparkles}
-        badge="AI 主图"
-        title="AI 电商主图生成"
-        description="上传商品图，快速生成主图、场景图或单张详情图。适合快速出图、试风格、试场景。"
+        badge="AI 生图"
+        title="AI 电商图片生成"
+        description="上传商品图，先分析场景方案，再快速生成多张电商图结果。"
         steps={["1. 上传商品", "2. 分析场景", "3. 生成图片"]}
       />
 
       <WorkspaceShell
         sidebar={
           <div className="space-y-5 rounded-3xl border border-border bg-card p-5 pb-24 shadow-sm xl:max-h-[calc(100vh-7rem)] xl:overflow-y-auto xl:pb-6">
-        <div className="rounded-2xl border border-primary/15 bg-primary/5 p-3 text-xs leading-5 text-muted-foreground">
-          适合单张或多张独立图片生成，不负责整套详情页结构策划。
-        </div>
 
         <div className="space-y-2">
           <div className="flex items-center justify-between">
@@ -1224,7 +1221,7 @@ const GeneratePage = () => {
           <>
             <WorkspaceSection
               title="结果已经准备好了"
-              description="已生成多张独立图片结果，可继续挑选、下载、编辑或重生。"
+              description="先挑一张满意的结果预览或编辑，不满意可整批重生。"
               actions={
                 <>
                   <div className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-[11px] font-medium text-primary">
@@ -1233,11 +1230,11 @@ const GeneratePage = () => {
                   </div>
                   <Button variant="outline" size="sm" className="h-9 text-xs" onClick={handleRegenerate}>
                     <RefreshCw className="mr-1 h-3.5 w-3.5" />
-                    整批重生
+                    整批重生（{results.length} 张）
                   </Button>
                   <Button variant="default" size="sm" className="h-9 text-xs" onClick={downloadAll}>
                     <Download className="mr-1 h-3.5 w-3.5" />
-                    全部下载图片
+                    全部下载
                   </Button>
                 </>
               }
@@ -1291,13 +1288,13 @@ const GeneratePage = () => {
                         onClick={() => navigate(`/dashboard/edit?url=${encodeURIComponent(src)}`)}
                         className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-medium text-foreground transition hover:border-primary/40 hover:text-primary"
                       >
-                        编辑图片
+                        编辑
                       </button>
                       <button
                         onClick={() => downloadImage(src, `picspark-${Date.now()}-${index + 1}.jpg`)}
                         className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-medium text-foreground transition hover:border-primary/40 hover:text-primary"
                       >
-                        下载图片
+                        下载
                       </button>
                       <button
                         onClick={handleRegenerateSingle}
@@ -1305,7 +1302,7 @@ const GeneratePage = () => {
                         className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-medium text-foreground transition hover:border-primary/40 hover:text-primary disabled:opacity-50"
                       >
                         <RefreshCw className="mr-1 inline h-3 w-3" />
-                        基于此图再生成
+                        单张重生
                       </button>
                     </div>
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
@@ -1360,8 +1357,8 @@ const GeneratePage = () => {
         ) : (
           <WorkspaceEmptyState
             icon={Sparkles}
-            title="准备开始生成"
-            description="上传商品图并选择场景方案后，即可快速生成电商主图。"
+            title="准备就绪"
+            description="上传商品图，先选一个场景方案，再生成电商图。"
             className="min-h-[400px]"
           />
         )}
