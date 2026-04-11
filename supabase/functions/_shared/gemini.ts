@@ -27,7 +27,6 @@ export type GeminiExecutionMeta = {
   modelsTried: string[];
   failures: GeminiAttemptFailure[];
   resolution?: string;
-  rawResponseLength?: number;
 };
 
 export class FunctionError extends Error {
@@ -355,7 +354,6 @@ async function callGeminiWithFallback(options: CallGeminiOptions) {
             modelUsed: model,
             modelsTried,
             failures,
-            rawResponseLength: rawText.length,
             imageUrl: `data:${imagePart.inlineData.mimeType};base64,${imagePart.inlineData.data}`,
           };
         }
@@ -389,7 +387,6 @@ async function callGeminiWithFallback(options: CallGeminiOptions) {
           modelUsed: model,
           modelsTried,
           failures,
-          rawResponseLength: rawText.length,
           text: textPart.text,
         };
       }
@@ -451,7 +448,6 @@ export async function callGeminiTextWithFallback(options: {
       modelsTried: result.modelsTried,
       failures: result.failures,
       resolution: options.resolution,
-      rawResponseLength: result.rawResponseLength,
     } satisfies GeminiExecutionMeta,
   };
 }
@@ -488,7 +484,6 @@ export async function callGeminiImageWithFallback(options: {
       modelsTried: result.modelsTried,
       failures: result.failures,
       resolution: options.resolution,
-      rawResponseLength: result.rawResponseLength,
     } satisfies GeminiExecutionMeta,
   };
 }
