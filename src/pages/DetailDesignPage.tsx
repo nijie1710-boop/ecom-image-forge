@@ -149,9 +149,6 @@ type GeneratedScreenState = {
   prompt: string;
   imageUrl?: string;
   error?: string;
-  chargeStatus?: "not_charged" | "charged" | "charge_failed";
-  chargeAmount?: number;
-  chargeError?: string;
   overlayTitle: string;
   overlayBody: string;
   overlayEnabled: boolean;
@@ -521,9 +518,6 @@ const DetailDesignPage = () => {
           prompt: existing?.prompt || "",
           imageUrl: existing?.imageUrl,
           error: existing?.error,
-          chargeStatus: existing?.chargeStatus,
-          chargeAmount: existing?.chargeAmount,
-          chargeError: existing?.chargeError,
           overlayTitle: existing?.overlayTitle || screen.overlayTitle || screen.title,
           overlayBody:
             existing?.overlayBody ||
@@ -1007,9 +1001,6 @@ const DetailDesignPage = () => {
         prompt,
         imageUrl: current?.imageUrl,
         error: undefined,
-        chargeStatus: "not_charged",
-        chargeAmount: 0,
-        chargeError: undefined,
         overlayTitle: screen.overlayTitle || screen.title,
         overlayBody: screen.overlayBodyLines?.join("\n") || screen.copyPoints.join("\n"),
         overlayEnabled: generationLanguage !== "pure",
@@ -1193,35 +1184,6 @@ const DetailDesignPage = () => {
     userBalance !== null && perScreenCost > 0 && userBalance < perScreenCost;
   const planInsufficient =
     userBalance !== null && planCost > 0 && userBalance < planCost;
-  const generationChargeSummary = useMemo(() => {
-    const generated = generatedScreens.filter((screen) => Boolean(screen.imageUrl));
-    const charged = generatedScreens.filter((screen) => screen.chargeStatus === "charged");
-    const renderFailed = generatedScreens.filter(
-      (screen) => screen.status === "error" && screen.chargeStatus !== "charge_failed",
-    );
-    const chargeFailed = generatedScreens.filter((screen) => screen.chargeStatus === "charge_failed");
-    const chargedCredits = charged.reduce(
-      (total, screen) => total + (screen.chargeAmount ?? perScreenCost),
-      0,
-    );
-    const renderFailedLabels = renderFailed.map((screen) => `第 ${screen.screen} 屏`).join("、");
-    const chargeFailedLabels = chargeFailed.map((screen) => `第 ${screen.screen} 屏`).join("、");
-
-    return {
-      generatedCount: generated.length,
-      chargedCount: charged.length,
-      chargedCredits,
-      renderFailedCount: renderFailed.length,
-      renderFailedLabels,
-      chargeFailedCount: chargeFailed.length,
-      chargeFailedLabels,
-      shouldShow:
-        generated.length > 0 ||
-        renderFailed.length > 0 ||
-        chargeFailed.length > 0 ||
-        isGeneratingScreens,
-    };
-  }, [generatedScreens, isGeneratingScreens, perScreenCost]);
 
   // 获取余额
   useEffect(() => {
@@ -2080,49 +2042,11 @@ const DetailDesignPage = () => {
                   </div>
                 </div>
 
-                {generationChargeSummary.shouldShow && (
-                  <div className="mb-4 grid gap-3 rounded-2xl border border-border bg-muted/30 p-4 text-sm md:grid-cols-3">
-                    <div>
-                      <div className="text-xs font-semibold text-muted-foreground">生成结果</div>
-                      <div className="mt-1 font-medium text-foreground">
-                        已成功生成 {generationChargeSummary.generatedCount} 屏
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-xs font-semibold text-muted-foreground">实际扣费</div>
-                      <div className="mt-1 font-medium text-foreground">
-                        已扣 {generationChargeSummary.chargedCredits} 积分
-                        <span className="ml-1 text-xs text-muted-foreground">
-                          （{generationChargeSummary.chargedCount} 屏）
-                        </span>
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-xs font-semibold text-muted-foreground">失败与扣费状态</div>
-                      {generationChargeSummary.renderFailedCount > 0 ? (
-                        <div className="mt-1 text-destructive">
-                          生成失败 {generationChargeSummary.renderFailedCount} 屏，未扣费：
-                          {generationChargeSummary.renderFailedLabels}
-                        </div>
-                      ) : (
-                        <div className="mt-1 text-muted-foreground">暂无生成失败屏</div>
-                      )}
-                      {generationChargeSummary.chargeFailedCount > 0 && (
-                        <div className="mt-1 text-amber-700">
-                          已生成但扣费失败 {generationChargeSummary.chargeFailedCount} 屏：
-                          {generationChargeSummary.chargeFailedLabels}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
                 <div className="space-y-4">
                   {activePlan.screens.map((screen) => {
                     const generated = generatedScreens.find(
                       (item) => item.screen === screen.screen,
                     );
-                    const isChargeFailure = generated?.chargeStatus === "charge_failed";
 
                     return (
                       <div
@@ -2268,39 +2192,12 @@ const DetailDesignPage = () => {
                           </div>
 
                           {generated?.error && (
-                            <div
-                              className={
-                                isChargeFailure
-                                  ? "rounded-2xl border border-amber-300/60 bg-amber-50 px-4 py-3 text-sm text-amber-800"
-                                  : "rounded-2xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive"
-                              }
-                            >
+                            <div className="rounded-2xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
                               <div>{generated.error}</div>
-                              {!isChargeFailure && errorHintFromMessage(generated.error) && (
+                              {errorHintFromMessage(generated.error) && (
                                 <div className="mt-1 text-xs text-muted-foreground">
                                   {errorHintFromMessage(generated.error)}
                                 </div>
-                              )}
-                            </div>
-                          )}
-
-                          {generated?.imageUrl && generated.chargeStatus && (
-                            <div className="rounded-2xl border border-border bg-card px-4 py-3 text-xs text-muted-foreground">
-                              {generated.chargeStatus === "charged" && (
-                                <span>
-                                  本屏已生成并已扣费：
-                                  <span className="font-semibold text-foreground">
-                                    {generated.chargeAmount ?? perScreenCost} 积分
-                                  </span>
-                                </span>
-                              )}
-                              {generated.chargeStatus === "charge_failed" && (
-                                <span className="text-amber-700">
-                                  本屏已生成，但扣费失败，暂不计入已扣积分。请稍后同步积分状态。
-                                </span>
-                              )}
-                              {generated.chargeStatus === "not_charged" && (
-                                <span>本屏尚未完成扣费。</span>
                               )}
                             </div>
                           )}
