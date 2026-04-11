@@ -96,50 +96,13 @@ interface DeductResult {
   error?: string;
 }
 
-function normalizeManageBalanceError(
-  payload: Record<string, unknown> | null,
-  rawText: string,
-  status: number,
-  fallback: string,
-) {
-  const code = typeof payload?.error === "string" ? payload.error : "";
-  const message = typeof payload?.message === "string" ? payload.message : "";
-  const detail = typeof payload?.detail === "string" ? payload.detail : "";
-  const combined = [code, message, detail].filter(Boolean).join(": ") || rawText || `HTTP_${status}`;
-
-  switch (code) {
-    case "UNAUTHORIZED":
-      return "未登录，请先登录。";
-    case "INVALID_AMOUNT":
-      return message || "扣费积分必须大于 0。";
-    case "DATABASE_RPC_MISSING":
-      return message || "积分扣费 RPC 缺失，请同步 staging 数据库 migration。";
-    case "DATABASE_RPC_AMBIGUOUS":
-      return message || "积分扣费 RPC 存在多个重载版本，请清理 staging 数据库旧函数。";
-    case "DATABASE_TABLE_MISSING":
-      return message || "积分服务依赖的数据表缺失，请同步 staging 数据库 migration。";
-    case "DATABASE_COLUMN_MISSING":
-      return message || "积分服务依赖的数据列缺失，请同步 staging 数据库 migration。";
-    case "DATABASE_PERMISSION_DENIED":
-      return message || "积分服务数据库权限不足，请检查 service role key、RLS policy 和 RPC grant。";
-    case "SUPABASE_URL_MISSING":
-    case "SUPABASE_SERVICE_ROLE_KEY_MISSING":
-      return message || "后端 Supabase 环境变量缺失，请检查 staging Function secrets。";
-    case "DATABASE_QUERY_FAILED":
-    case "MANAGE_BALANCE_FAILED":
-      return message || fallback;
-    default:
-      return normalizeUserErrorMessage(combined, fallback);
-  }
-}
-
 async function getAuthHeaders() {
   const {
     data: { session },
   } = await supabase.auth.getSession();
 
   if (!session?.access_token) {
-    throw new Error("未登录，请先登录。");
+    throw new Error(normalizeUserErrorMessage("UNAUTHORIZED", "未登录，请先登录"));
   }
 
   return {
@@ -179,14 +142,17 @@ export async function deductCredits(
     }
 
     if (!response.ok) {
+      const detail =
+        typeof payload?.error === "string"
+          ? payload.error
+          : typeof payload?.message === "string"
+          ? payload.message
+          : typeof payload?.detail === "string"
+          ? payload.detail
+          : rawText || `HTTP_${response.status}`;
       return {
         success: false,
-        error: normalizeManageBalanceError(
-          payload,
-          rawText,
-          response.status,
-          "积分扣费失败，请稍后重试。",
-        ),
+        error: normalizeUserErrorMessage(detail, "积分扣费失败，请稍后重试"),
       };
     }
 
@@ -199,8 +165,8 @@ export async function deductCredits(
       return {
         success: false,
         error: normalizeUserErrorMessage(
-          result?.error || payload?.error || "积分不足或扣费失败，请充值后重试。",
-          "积分不足或扣费失败，请充值后重试。",
+          result?.error || payload?.error || "积分不足或扣费失败，请充值后重试",
+          "积分不足或扣费失败，请充值后重试",
         ),
       };
     }
@@ -212,7 +178,7 @@ export async function deductCredits(
   } catch (error) {
     return {
       success: false,
-      error: normalizeUserErrorMessage(error, "扣费请求异常。"),
+      error: normalizeUserErrorMessage(error, "扣费请求异常"),
     };
   }
 }
