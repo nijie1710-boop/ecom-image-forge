@@ -23,7 +23,7 @@ export function WorkspaceHeader({
   stats?: WorkspaceStat[];
 }) {
   return (
-    <div className="rounded-[26px] border border-border bg-card px-4 py-4 shadow-sm sm:px-5 sm:py-5 md:px-6">
+    <div className="rounded-[28px] border border-border bg-card px-4 py-4 shadow-sm sm:px-5 sm:py-5 md:px-6 2xl:px-7 2xl:py-6">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
         <div className="min-w-0">
           <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-[11px] font-medium text-primary sm:text-xs">
@@ -61,14 +61,14 @@ export function WorkspaceHeader({
 export function WorkspaceShell({
   sidebar,
   content,
-  sidebarWidthClassName = "xl:grid-cols-[360px_minmax(0,1fr)]",
+  sidebarWidthClassName = "xl:grid-cols-[340px_minmax(0,1fr)] 2xl:grid-cols-[360px_minmax(0,1fr)]",
 }: {
   sidebar: ReactNode;
   content: ReactNode;
   sidebarWidthClassName?: string;
 }) {
   return (
-    <div className={cn("grid gap-4 lg:gap-5 xl:gap-5", sidebarWidthClassName)}>
+    <div className={cn("grid gap-4 lg:gap-5 2xl:gap-6", sidebarWidthClassName)}>
       <aside className="xl:sticky xl:top-24 xl:self-start">{sidebar}</aside>
       <section className="min-w-0 space-y-4 lg:space-y-5">{content}</section>
     </div>
