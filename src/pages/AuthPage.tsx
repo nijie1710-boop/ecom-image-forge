@@ -17,20 +17,6 @@ type AuthMode = "login" | "signup" | "reset";
 const FEATURE_TAGS = ["AI 智能识别", "多模板排版", "一键生成", "批量导出"];
 const OTP_LENGTH = 8;
 const OTP_COOLDOWN_SECONDS = 90;
-const AUTH_REQUEST_TIMEOUT_MS = 15_000;
-
-async function withAuthTimeout<T>(operation: Promise<T>, label = "AUTH_REQUEST_TIMEOUT"): Promise<T> {
-  let timeoutId: ReturnType<typeof window.setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timeoutId = window.setTimeout(() => reject(new Error(label)), AUTH_REQUEST_TIMEOUT_MS);
-  });
-
-  try {
-    return await Promise.race([operation, timeout]);
-  } finally {
-    if (timeoutId) window.clearTimeout(timeoutId);
-  }
-}
 
 function normalizeAuthError(raw: unknown) {
   const fallback = "系统繁忙，请稍后再试";
@@ -47,14 +33,6 @@ function normalizeAuthError(raw: unknown) {
           : "";
 
   const lower = rawText.toLowerCase();
-
-  if (lower.includes("auth_request_timeout")) {
-    return "登录服务响应超时，请稍后再试；如果只在测试版出现，请检查 staging Supabase Auth 状态";
-  }
-
-  if (lower.includes("failed to fetch") || lower.includes("networkerror")) {
-    return "无法连接登录服务，请检查网络或 Supabase Auth 是否可用";
-  }
 
   if (lower.includes("over_email_send_rate_limit") || lower.includes("email rate limit exceeded")) {
     return "验证码发送过于频繁，请 60 秒后再试";
@@ -264,16 +242,14 @@ export default function AuthPage() {
     setSendingCode(true);
 
     try {
-      const { error } = await withAuthTimeout(
-        supabase.auth.signInWithOtp({
-          email: normalizedEmail,
-          options: {
-            shouldCreateUser: mode === "signup",
-            emailRedirectTo: getAuthCallbackUrl(),
-            data: mode === "signup" && displayName.trim() ? { display_name: displayName.trim() } : undefined,
-          },
-        }),
-      );
+      const { error } = await supabase.auth.signInWithOtp({
+        email: normalizedEmail,
+        options: {
+          shouldCreateUser: mode === "signup",
+          emailRedirectTo: getAuthCallbackUrl(),
+          data: mode === "signup" && displayName.trim() ? { display_name: displayName.trim() } : undefined,
+        },
+      });
 
       if (error) throw error;
 
@@ -302,12 +278,10 @@ export default function AuthPage() {
     setSubmitting(true);
 
     try {
-      const { error } = await withAuthTimeout(
-        supabase.auth.signInWithPassword({
-          email: normalizedEmail,
-          password,
-        }),
-      );
+      const { error } = await supabase.auth.signInWithPassword({
+        email: normalizedEmail,
+        password,
+      });
 
       if (error) throw error;
 
