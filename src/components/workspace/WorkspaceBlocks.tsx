@@ -15,7 +15,7 @@ export function WorkspaceSection({
   className?: string;
 }) {
   return (
-    <section className={`rounded-[28px] border border-border bg-card p-4 shadow-sm sm:p-5 2xl:p-6 ${className}`.trim()}>
+    <section className={`rounded-[26px] border border-border bg-card p-4 shadow-sm ${className}`.trim()}>
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
           <h2 className="text-base font-semibold text-foreground sm:text-lg">{title}</h2>
@@ -43,7 +43,7 @@ export function WorkspaceEmptyState({
 }) {
   return (
     <div
-      className={`flex min-h-[320px] flex-col items-center justify-center rounded-[28px] border border-dashed border-border bg-card/70 px-5 py-8 text-center shadow-sm sm:min-h-[420px] sm:px-6 2xl:min-h-[520px] ${className}`.trim()}
+      className={`flex min-h-[260px] flex-col items-center justify-center rounded-[26px] border border-dashed border-border bg-card/70 px-5 py-8 text-center sm:min-h-[320px] sm:px-6 ${className}`.trim()}
     >
       <div className="rounded-3xl bg-primary/10 p-3 text-primary sm:p-4">
         <Icon className="h-8 w-8 sm:h-10 sm:w-10" />

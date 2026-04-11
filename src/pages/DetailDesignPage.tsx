@@ -51,6 +51,7 @@ import {
 } from "@/lib/detail-credits";
 import { WorkspaceHeader, WorkspaceShell } from "@/components/workspace/WorkspaceShell";
 import {
+  WorkspaceEmptyState,
   WorkspaceSection,
   WorkspaceStatGrid,
 } from "@/components/workspace/WorkspaceBlocks";
@@ -195,80 +196,12 @@ const SelectField = ({
 );
 
 const EmptyState = () => (
-  <div className="grid min-h-[640px] gap-5 xl:grid-cols-[minmax(0,1.08fr)_minmax(360px,0.92fr)] 2xl:min-h-[720px]">
-    <section className="relative overflow-hidden rounded-[28px] border border-dashed border-border bg-card p-5 shadow-sm sm:p-6 2xl:p-8">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_15%,hsl(var(--primary)/0.12),transparent_32%),linear-gradient(135deg,hsl(var(--muted)/0.55),transparent_55%)]" />
-      <div className="relative flex h-full min-h-[360px] flex-col justify-between">
-        <div>
-          <div className="inline-flex rounded-3xl bg-primary/10 p-4 text-primary">
-            <LayoutPanelTop className="h-10 w-10" />
-          </div>
-          <h3 className="mt-5 text-xl font-semibold text-foreground sm:text-2xl">
-            先生成方案，再逐屏出图
-          </h3>
-          <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-foreground">
-            上传商品图并补充商品信息后，AI 会先产出 3 套详情页结构方案。选定方案后，右侧会按每一屏的目标、画面方向和文案结构继续生成完整详情图。
-          </p>
-        </div>
-
-        <div className="mt-8 grid gap-3 md:grid-cols-3">
-          {[
-            ["1", "方案区", "先看 3 套整版方向"],
-            ["2", "结构区", "确认每屏卖点和顺序"],
-            ["3", "结果区", "逐屏生成后拼成长图"],
-          ].map(([step, title, description]) => (
-            <div key={step} className="rounded-3xl border border-border bg-background/80 p-4">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
-                {step}
-              </div>
-              <div className="mt-3 text-sm font-semibold text-foreground">{title}</div>
-              <div className="mt-1 text-xs leading-5 text-muted-foreground">{description}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-
-    <div className="grid gap-5">
-      <section className="rounded-[28px] border border-border bg-card p-5 shadow-sm sm:p-6">
-        <div className="flex items-center gap-3">
-          <div className="rounded-2xl bg-primary/10 p-3 text-primary">
-            <FileImage className="h-6 w-6" />
-          </div>
-          <div>
-            <h4 className="text-base font-semibold text-foreground">方案预览区</h4>
-            <p className="mt-1 text-sm text-muted-foreground">生成后会在这里展示 3 套可切换的详情页方案。</p>
-          </div>
-        </div>
-        <div className="mt-5 grid gap-3">
-          {[1, 2, 3].map((item) => (
-            <div key={item} className="rounded-2xl border border-dashed border-border bg-muted/30 p-4">
-              <div className="h-4 w-32 rounded-full bg-muted" />
-              <div className="mt-3 h-3 w-full rounded-full bg-muted/80" />
-              <div className="mt-2 h-3 w-4/5 rounded-full bg-muted/70" />
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="rounded-[28px] border border-border bg-card p-5 shadow-sm sm:p-6">
-        <div className="flex items-center gap-3">
-          <div className="rounded-2xl bg-primary/10 p-3 text-primary">
-            <Images className="h-6 w-6" />
-          </div>
-          <div>
-            <h4 className="text-base font-semibold text-foreground">逐屏结果区</h4>
-            <p className="mt-1 text-sm text-muted-foreground">确认方案后，每一屏会在这里显示生成、失败和扣费状态。</p>
-          </div>
-        </div>
-        <div className="mt-5 grid gap-3 sm:grid-cols-2">
-          {[1, 2, 3, 4].map((item) => (
-            <div key={item} className="aspect-[3/4] rounded-3xl border border-dashed border-border bg-muted/30" />
-          ))}
-        </div>
-      </section>
-    </div>
-  </div>
+  <WorkspaceEmptyState
+    icon={LayoutPanelTop}
+    title="先生成方案，再逐屏出图"
+    description="上传商品图并补充商品信息后，先生成详情页方案，再继续逐屏制作。"
+    className="min-h-[520px]"
+  />
 );
 
 function languageRule(language: string): string {
@@ -1301,7 +1234,7 @@ const DetailDesignPage = () => {
   };
 
   return (
-    <div className="w-full space-y-5 px-3 py-4 sm:px-4 sm:py-5 md:space-y-6 md:px-6 md:py-6 2xl:px-8">
+    <div className="mx-auto max-w-[1480px] space-y-5 px-3 py-4 sm:px-4 sm:py-5 md:space-y-6 md:px-6 md:py-6">
       <WorkspaceHeader
         icon={LayoutPanelTop}
         badge="AI 详情图"

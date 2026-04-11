@@ -712,7 +712,7 @@ const GeneratePage = () => {
   };
 
   return (
-    <div className="w-full space-y-6 px-4 py-6 md:px-6 2xl:px-8">
+    <div className="mx-auto max-w-[1480px] space-y-6 px-4 py-6 md:px-6">
       <WorkspaceHeader
         icon={Sparkles}
         badge="AI 主图"
