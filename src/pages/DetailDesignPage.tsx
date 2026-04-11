@@ -1013,21 +1013,15 @@ const DetailDesignPage = () => {
       return;
     }
 
-    // 逐屏生成扣费
     const screenCost = getDetailScreenCost(selectedModel, selectedResolution);
     const totalCost = screenCost * screens.length;
     const modelLabel =
       modelOptions.find((o) => o.value === selectedModel)?.label || selectedModel;
-    const deductResult = await deductCredits(
-      totalCost,
-      "detail_screen_generation",
-      `AI 详情页逐屏生成 ${screens.length} 屏（${modelLabel} ${selectedResolution}，${screenCost} 积分/屏）`,
-    );
-    if (!deductResult.success) {
-      setGenerationError(deductResult.error || "积分不足，请先充值");
+
+    if (userBalance !== null && totalCost > userBalance) {
+      setGenerationError("积分不足，请先充值");
       return;
     }
-    refreshBalance();
 
     const nextScreens = createScreenJobPayload(screens, promptOverrides);
     setGeneratedScreens((current) => {
@@ -1054,7 +1048,10 @@ const DetailDesignPage = () => {
       styleReferenceImage: styleReferenceImage || undefined,
       styleReferenceText: styleReferenceText.trim() || undefined,
       screens: nextScreens,
+      screenCost,
+      chargeDescription: `AI 详情页逐屏生成（${modelLabel} ${selectedResolution}，${screenCost} 积分/屏）`,
       userId: user?.id,
+      onComplete: () => refreshBalance(),
     });
     setDetailJobId(jobId);
     sessionStorage.setItem(DETAIL_JOB_ID_KEY, jobId);

@@ -25,6 +25,10 @@ export interface GenerateImageParams {
   styleReferenceText?: string;
   modelMode?: ModelMode;
   modelImage?: string;
+  debugContext?: {
+    source?: "main" | "detail" | "copy";
+    screenNumber?: number;
+  };
   signal?: AbortSignal;
 }
 
@@ -49,8 +53,7 @@ export interface GenerateImageResult {
   meta?: GenerateImageMeta[];
 }
 
-const DEFAULT_ERROR = "系统繁忙，请稍后再试";
-const GENERATE_FAIL_ERROR = "当前生成失败，请重试";
+const GENERATE_FAIL_ERROR = "当前生成失败，请稍后重试";
 const NO_IMAGE_ERROR = "商品图片解析失败";
 
 function sleep(ms: number) {
@@ -82,20 +85,35 @@ async function invokeGenerateImage(
   body: Record<string, unknown>,
   headers: Record<string, string>,
 ) {
-  const response = await fetch(`${SUPABASE_URL}/functions/v1/generate-image`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...headers,
-    },
-    body: JSON.stringify(body),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${SUPABASE_URL}/functions/v1/generate-image`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...headers,
+      },
+      body: JSON.stringify(body),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      ok: false,
+      status: 0,
+      payload: {
+        error: "EDGE_FUNCTION_FETCH_FAILED",
+        message,
+        meta: body.debugContext,
+      },
+      rawText: message,
+    };
+  }
 
   const rawText = await response.text();
   let payload: Record<string, unknown> | null = null;
 
   try {
-    payload = rawText ? JSON.parse(rawText) as Record<string, unknown> : null;
+    payload = rawText ? (JSON.parse(rawText) as Record<string, unknown>) : null;
   } catch {
     payload = null;
   }
@@ -134,6 +152,7 @@ function isFatalError(message: string | undefined): boolean {
     "supabase_service_role_key_missing",
     "未登录",
     "余额不足",
+    "积分不足",
     "模型配置错误",
     "后端环境变量缺失",
     "product_image_required",
@@ -161,10 +180,42 @@ function isRetryableError(message: string | undefined): boolean {
     "上游 ai 服务暂时不可用",
     "ai 没有返回有效图片",
     "系统繁忙",
+    "上游模型失败",
   ].some((keyword) => normalized.includes(keyword));
 }
 
 function normalizeHttpError(status: number, payload: Record<string, unknown> | null, rawText: string) {
+  const meta = payload?.meta as
+    | {
+        failures?: Array<{ code?: string; status?: number; detail?: string; model?: string }>;
+        modelsTried?: string[];
+      }
+    | undefined;
+  const lastFailure = meta?.failures?.[meta.failures.length - 1];
+
+  if (status === 0) {
+    return `生成接口请求失败：${rawText || "浏览器未能连接到 Edge Function"}`;
+  }
+
+  if (payload?.error === "PRODUCT_IMAGE_REQUIRED") {
+    return "商品图片缺失或解析失败，请重新上传更清晰的商品图。";
+  }
+
+  if (payload?.error === "EMPTY_IMAGE_RESULT") {
+    return "AI 没有返回有效图片，请换一个方案或稍后重试。";
+  }
+
+  if (payload?.error === "MODEL_NOT_SUPPORTED") {
+    return `模型配置错误：${String(payload.detail || payload.message || "当前模型不可用")}`;
+  }
+
+  if (payload?.error === "FALLBACK_CHAIN_FAILED") {
+    const code = lastFailure?.code || "UNKNOWN";
+    const upstreamStatus = lastFailure?.status ? `/${lastFailure.status}` : "";
+    const detail = lastFailure?.detail || payload.detail || payload.message || "fallback 后仍失败";
+    return `上游模型失败（${code}${upstreamStatus}）：${String(detail).slice(0, 180)}`;
+  }
+
   const detailed =
     typeof payload?.error === "string"
       ? payload.error
@@ -189,7 +240,7 @@ function normalizeHttpError(status: number, payload: Record<string, unknown> | n
       return normalizeUserErrorMessage("MODEL_NOT_SUPPORTED", GENERATE_FAIL_ERROR);
     }
     if ([429, 500, 502, 503, 504].includes(status)) {
-      return normalizeUserErrorMessage(`UPSTREAM_${status}`, GENERATE_FAIL_ERROR);
+      return `generate-image ${status}：${rawText || "上游或 Edge Function 暂时不可用"}`;
     }
   }
 
@@ -217,6 +268,13 @@ async function generateSingleImageRaw(
       styleReferenceText: params.styleReferenceText || undefined,
       modelMode: params.modelMode || "none",
       modelImage: params.modelImage || undefined,
+      debugContext: {
+        ...params.debugContext,
+        promptLength: params.prompt.length,
+        referenceGalleryCount: params.referenceGallery?.length || 0,
+        hasStyleReference: Boolean(params.styleReferenceImage),
+        hasModelReference: Boolean(params.modelImage),
+      },
     },
     headers,
   );
@@ -305,7 +363,7 @@ async function generateSingleImageStable(
 
   return {
     url: null,
-    error: normalizeUserErrorMessage(lastError, GENERATE_FAIL_ERROR),
+    error: lastError || normalizeUserErrorMessage(lastError, GENERATE_FAIL_ERROR),
     meta: lastMeta,
   };
 }
@@ -343,7 +401,7 @@ export async function generateImage(params: GenerateImageParams): Promise<Genera
     if (!images.length) {
       return {
         images: [],
-        error: normalizeUserErrorMessage(lastError, "本次没有生成成功，请稍后重试。"),
+        error: lastError || "本次没有生成成功，请稍后重试。",
         meta,
       };
     }

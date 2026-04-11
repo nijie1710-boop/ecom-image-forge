@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   callGeminiImageWithFallback,
   errorResponse,
+  FunctionError,
   jsonResponse,
   requireEnv,
   resolveImageModelSelection,
@@ -101,6 +102,27 @@ function normalizeResolution(value: string | undefined): SupportedResolution {
 function normalizeAspectRatio(value: string | undefined): string {
   const normalized = String(value || "1:1").trim();
   return /^\d+:\d+$/.test(normalized) ? normalized : "1:1";
+}
+
+function normalizeDebugContext(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object") return {};
+  const input = value as Record<string, unknown>;
+  return {
+    source: typeof input.source === "string" ? input.source : undefined,
+    screenNumber: Number.isFinite(Number(input.screenNumber)) ? Number(input.screenNumber) : undefined,
+    promptLength: Number.isFinite(Number(input.promptLength)) ? Number(input.promptLength) : undefined,
+    referenceGalleryCount: Number.isFinite(Number(input.referenceGalleryCount))
+      ? Number(input.referenceGalleryCount)
+      : undefined,
+    hasStyleReference: Boolean(input.hasStyleReference),
+    hasModelReference: Boolean(input.hasModelReference),
+  };
+}
+
+function truncatePromptForModel(prompt: string, source: unknown): string {
+  const normalizedSource = String(source || "");
+  const limit = normalizedSource === "detail" ? 2600 : 4200;
+  return prompt.length > limit ? prompt.slice(0, limit) : prompt;
 }
 
 function buildAspectRatioInstruction(ratio: string): string {
@@ -237,7 +259,9 @@ serve(async (req: Request) => {
       textLanguage,
       model,
       resolution,
+      debugContext,
     } = body;
+    const normalizedDebugContext = normalizeDebugContext(debugContext);
 
     const productSource = coerceImageInput(imageBase64) || coerceImageInput(referenceImageUrl);
     const productImage = productSource ? await resolveImageToBase64(productSource) : null;
@@ -298,7 +322,7 @@ serve(async (req: Request) => {
       .filter(Boolean)
       .join(". ");
 
-    const promptText = String(prompt || "");
+    const promptText = truncatePromptForModel(String(prompt || ""), normalizedDebugContext.source);
     const promptSections = extractPromptSections(promptText);
     const promptSuggestsHuman =
       /建议人物出镜|需要人物|真人模特|上身|手持|手部|使用动作|生活场景/i.test(promptText);
@@ -435,6 +459,7 @@ serve(async (req: Request) => {
 
     console.info("generate-image request meta:", {
       userId: user.id,
+      debugContext: normalizedDebugContext,
       imageType: normalizedImageType,
       textLanguage: normalizedTextLanguage,
       modelRequested: modelSelection.requestedModel,
@@ -442,6 +467,7 @@ serve(async (req: Request) => {
       resolution: normalizedResolution,
       aspectRatio: normalizedAspectRatio,
       modelMode: normalizedModelMode,
+      promptLength: promptText.length,
       galleryCount: galleryImages.length,
       hasModelReference: Boolean(modelReferenceImage),
       hasStyleReference: Boolean(styleImage),
@@ -449,7 +475,9 @@ serve(async (req: Request) => {
 
     const { imageUrl, meta } = await callGeminiImageWithFallback({
       apiKey: geminiApiKey,
-      functionName: "generate-image",
+      functionName: normalizedDebugContext.screenNumber
+        ? `generate-image:detail-screen-${normalizedDebugContext.screenNumber}`
+        : "generate-image",
       selectedModel: normalizedModel,
       parts,
       resolution: normalizedResolution,
@@ -460,6 +488,7 @@ serve(async (req: Request) => {
         images: [imageUrl],
         meta: {
           ...meta,
+          debugContext: normalizedDebugContext,
           modelSelection: normalizedModel,
           modelLabel: modelSelection.label,
           aspectRatio: normalizedAspectRatio,
@@ -469,7 +498,16 @@ serve(async (req: Request) => {
       corsHeaders,
     );
   } catch (error) {
-    console.error("generate-image error:", error);
+    if (error instanceof FunctionError) {
+      console.error("generate-image function error:", {
+        code: error.code,
+        status: error.status,
+        detail: error.detail,
+        meta: error.meta,
+      });
+    } else {
+      console.error("generate-image unexpected error:", error);
+    }
     return errorResponse(error, corsHeaders);
   }
 });

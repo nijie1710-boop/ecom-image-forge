@@ -7,6 +7,7 @@ import {
 } from "@/lib/ai-generator";
 import { overlayTextOnImage, type OverlayStyle } from "@/lib/image-text-overlay";
 import { supabase } from "@/integrations/supabase/client";
+import { deductCredits } from "@/lib/detail-credits";
 
 export type GenerationJobKind = "copy" | "image" | "detail";
 export type GenerationJobStatus = "running" | "done" | "error" | "canceled";
@@ -96,6 +97,8 @@ export interface DetailGenParams {
   styleReferenceImage?: string;
   styleReferenceText?: string;
   screens: DetailScreenJobResult[];
+  screenCost?: number;
+  chargeDescription?: string;
   userId?: string;
   onComplete?: (screens: DetailScreenJobResult[]) => void;
 }
@@ -135,6 +138,24 @@ class JobCanceledError extends Error {
     super("任务已取消");
     this.name = "JobCanceledError";
   }
+}
+
+function wait(ms: number, signal?: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new JobCanceledError());
+      return;
+    }
+    const timer = window.setTimeout(() => resolve(), ms);
+    signal?.addEventListener(
+      "abort",
+      () => {
+        window.clearTimeout(timer);
+        reject(new JobCanceledError());
+      },
+      { once: true },
+    );
+  });
 }
 
 async function blobFromDataUrlOrRemote(source: string, signal?: AbortSignal): Promise<Blob> {
@@ -726,9 +747,13 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
               textLanguage: params.textLanguage,
               model: params.model,
               resolution: params.resolution,
-              referenceGallery: gallery.filter(Boolean) as string[],
+              referenceGallery: (gallery.filter(Boolean) as string[]).slice(0, 1),
               styleReferenceImage,
               styleReferenceText: params.styleReferenceText,
+              debugContext: {
+                source: "detail",
+                screenNumber: screen.screen,
+              },
               signal: controller.signal,
             });
             assertJobExecutionActive(jobId, runId);
@@ -741,7 +766,29 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                 status: "error",
                 error: screenError,
               }));
+              if (index < params.screens.length - 1) {
+                await wait(1200, controller.signal);
+              }
               continue;
+            }
+
+            if (params.screenCost && params.screenCost > 0) {
+              const deductResult = await deductCredits(
+                params.screenCost,
+                "detail_screen_generation",
+                `${params.chargeDescription || "AI 详情页逐屏生成"} - 第 ${screen.screen} 屏`,
+              );
+
+              if (!deductResult.success) {
+                console.warn("detail screen generated but charge failed:", {
+                  screen: screen.screen,
+                  error: deductResult.error,
+                });
+                failedScreens.push({
+                  screen: screen.screen,
+                  error: `第 ${screen.screen} 屏已生成，但扣费失败：${deductResult.error || "未知错误"}`,
+                });
+              }
             }
 
             completedImages.push(result.images[0]);
@@ -752,6 +799,10 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
               imageUrl: result.images[0],
               error: undefined,
             }));
+
+            if (index < params.screens.length - 1) {
+              await wait(1800, controller.signal);
+            }
           }
 
           if (!completedImages.length) {
