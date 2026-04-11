@@ -24,8 +24,6 @@ interface RechargePackage {
   highlight?: boolean;
 }
 
-const DEFAULT_APP_URL = "https://www.picspark.cn";
-
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
@@ -102,9 +100,6 @@ function normalizeOrigin(origin?: string | null) {
 
   try {
     const url = new URL(raw);
-    if (url.hostname === "picspark.cn" || url.hostname === "www.picspark.cn") {
-      return DEFAULT_APP_URL;
-    }
     return `${url.protocol}//${url.host}`;
   } catch {
     return "";
@@ -191,13 +186,19 @@ Deno.serve(async (req) => {
 
     const appId = Deno.env.get("ALIPAY_APP_ID");
     const privateKey = Deno.env.get("ALIPAY_PRIVATE_KEY");
-    const gateway = Deno.env.get("ALIPAY_GATEWAY_URL") || "https://openapi.alipay.com/gateway.do";
-    const configuredAppUrl = normalizeOrigin(Deno.env.get("APP_URL")) || DEFAULT_APP_URL;
+    const gateway = Deno.env.get("ALIPAY_GATEWAY") || Deno.env.get("ALIPAY_GATEWAY_URL");
+    const configuredAppUrl = normalizeOrigin(Deno.env.get("APP_URL"));
     const configuredNotifyUrl = Deno.env.get("ALIPAY_NOTIFY_URL");
     const configuredReturnUrl = normalizeOrigin(Deno.env.get("ALIPAY_RETURN_URL"));
 
-    if (!appId || !privateKey) {
-      return json({ error: "支付宝商户配置未完成，请先配置 APP_ID 和私钥。" }, 500);
+    if (!appId || !privateKey || !gateway || !configuredNotifyUrl || !configuredReturnUrl) {
+      return json(
+        {
+          error:
+            "支付环境变量缺失：请配置 ALIPAY_APP_ID、ALIPAY_PRIVATE_KEY、ALIPAY_GATEWAY_URL、ALIPAY_NOTIFY_URL、ALIPAY_RETURN_URL",
+        },
+        500,
+      );
     }
 
     const packages = await getPackages(supabase);
@@ -213,7 +214,7 @@ Deno.serve(async (req) => {
       configuredReturnUrl ||
       configuredAppUrl;
     const orderNo = createOrderNo(user.id);
-    const notifyUrl = configuredNotifyUrl || `${supabaseUrl}/functions/v1/alipay-notify`;
+    const notifyUrl = configuredNotifyUrl;
     const returnUrl = `${origin}/dashboard/recharge?payment_status=return&order_no=${orderNo}`;
     const method = scene === "mobile" ? "alipay.trade.wap.pay" : "alipay.trade.page.pay";
     const productCode = scene === "mobile" ? "QUICK_WAP_WAY" : "FAST_INSTANT_TRADE_PAY";

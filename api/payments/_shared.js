@@ -1,35 +1,34 @@
 import crypto from "node:crypto";
 
 import { createClient } from "@supabase/supabase-js";
+import {
+  getAllowedOrigins,
+  getServerSupabaseConfig,
+  getServerSupabasePublishableKey,
+} from "../_lib/env.js";
 
 // ============================================================
 // 常量配置：避免多处硬编码
 // ============================================================
-const DEFAULT_SUPABASE_URL = "https://rqgrovumfgjwuhkthqxe.supabase.co";
-const DEFAULT_APP_URL = "https://www.picspark.cn";
-const DEFAULT_SUPABASE_PUBLISHABLE_KEY = "sb_publishable_kR5Qt951QycXiDjppFSquQ_XODYlvpq";
 
 // 允许的业务域名（CORS + URL 规范化共用）
-const ALLOWED_HOSTS = new Set(["picspark.cn", "www.picspark.cn"]);
-const ALLOWED_ORIGINS = [
-  "https://picspark.cn",
-  "https://www.picspark.cn",
-];
-
 function resolveAllowedOrigin(req) {
   const origin = String(req?.headers?.origin || "").trim();
-  if (origin && ALLOWED_ORIGINS.includes(origin)) return origin;
+  const allowedOrigins = getAllowedOrigins();
+  if (origin && allowedOrigins.includes(origin.replace(/\/$/, ""))) return origin;
   // 本地开发 / Vercel Preview：放行常见的开发源
   if (origin && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) return origin;
   if (origin && /\.vercel\.app$/i.test(new URL(origin).hostname)) return origin;
-  // 默认回退到主站
-  return ALLOWED_ORIGINS[0];
+  // No production fallback: use configured origins only.
+  return allowedOrigins[0] || "";
 }
 
 export function applyCors(res, req) {
-  const allowOrigin = req ? resolveAllowedOrigin(req) : ALLOWED_ORIGINS[0];
-  res.setHeader("Access-Control-Allow-Origin", allowOrigin);
-  res.setHeader("Vary", "Origin");
+  const allowOrigin = req ? resolveAllowedOrigin(req) : "";
+  if (allowOrigin) {
+    res.setHeader("Access-Control-Allow-Origin", allowOrigin);
+    res.setHeader("Vary", "Origin");
+  }
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   res.setHeader("Access-Control-Allow-Credentials", "true");
@@ -88,9 +87,6 @@ export function normalizeAppUrl(value) {
 
   try {
     const url = new URL(raw);
-    if (ALLOWED_HOSTS.has(url.hostname)) {
-      return DEFAULT_APP_URL;
-    }
     return `${url.protocol}//${url.host}`;
   } catch {
     return "";
@@ -184,10 +180,7 @@ export function createOrderNo(userId) {
 }
 
 export function getSupabaseConfig() {
-  return {
-    supabaseUrl: process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL,
-    serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || "",
-  };
+  return getServerSupabaseConfig();
 }
 
 export function createAdminClient() {
@@ -199,10 +192,7 @@ export function createAdminClient() {
 
 export function createUserClient(accessToken) {
   const { supabaseUrl } = getSupabaseConfig();
-  const publishableKey =
-    process.env.SUPABASE_PUBLISHABLE_KEY ||
-    process.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
-    DEFAULT_SUPABASE_PUBLISHABLE_KEY;
+  const publishableKey = getServerSupabasePublishableKey();
   return createClient(supabaseUrl, publishableKey, {
     auth: { autoRefreshToken: false, persistSession: false },
     global: { headers: { Authorization: `Bearer ${accessToken}` } },
@@ -216,6 +206,8 @@ export function getRequiredOrderEnv() {
     ALIPAY_GATEWAY: process.env.ALIPAY_GATEWAY || "",
     ALIPAY_NOTIFY_URL: process.env.ALIPAY_NOTIFY_URL || "",
     ALIPAY_RETURN_URL: process.env.ALIPAY_RETURN_URL || "",
+    SUPABASE_URL: process.env.SUPABASE_URL || "",
+    SUPABASE_PUBLISHABLE_KEY: process.env.SUPABASE_PUBLISHABLE_KEY || "",
     SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY || "",
   };
 }
@@ -224,6 +216,7 @@ export function getRequiredNotifyEnv() {
   return {
     ALIPAY_APP_ID: process.env.ALIPAY_APP_ID || "",
     ALIPAY_PUBLIC_KEY: process.env.ALIPAY_PUBLIC_KEY || "",
+    SUPABASE_URL: process.env.SUPABASE_URL || "",
     SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY || "",
   };
 }

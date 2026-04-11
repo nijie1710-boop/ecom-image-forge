@@ -1,9 +1,4 @@
-const NEW_SUPABASE_URL = "https://rqgrovumfgjwuhkthqxe.supabase.co";
-const NEW_SUPABASE_PUBLISHABLE_KEY =
-  "sb_publishable_kR5Qt951QycXiDjppFSquQ_XODYlvpq";
-
-const SUPABASE_URL = NEW_SUPABASE_URL;
-const SUPABASE_PUBLISHABLE_KEY = NEW_SUPABASE_PUBLISHABLE_KEY;
+import { getServerSupabasePublishableKey, requireServerUrlEnv } from "../_lib/env.js";
 
 export function applyCors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -45,12 +40,14 @@ export async function parseJsonBody(req) {
 }
 
 export async function proxySupabaseAuth(res, path, body) {
-  const response = await fetch(`${SUPABASE_URL}${path}`, {
+  const supabaseUrl = requireServerUrlEnv("SUPABASE_URL");
+  const supabasePublishableKey = getServerSupabasePublishableKey();
+  const response = await fetch(`${supabaseUrl}${path}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      apikey: SUPABASE_PUBLISHABLE_KEY,
-      Authorization: `Bearer ${SUPABASE_PUBLISHABLE_KEY}`,
+      apikey: supabasePublishableKey,
+      Authorization: `Bearer ${supabasePublishableKey}`,
     },
     body: JSON.stringify(body),
   });

@@ -18,8 +18,8 @@ export default async function handler(req, res) {
       { email, password },
     );
   } catch (error) {
-    res.status(502).json({
-      error: "AUTH_PROXY_FAILED",
+    res.status(error?.status || 502).json({
+      error: error?.code || "AUTH_PROXY_FAILED",
       message: error?.message || "Login proxy request failed",
     });
   }

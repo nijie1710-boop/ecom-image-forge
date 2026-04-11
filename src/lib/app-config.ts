@@ -1,10 +1,10 @@
-const PRODUCTION_URL = "https://www.picspark.cn";
+import { requireFrontendAppUrl } from "@/lib/env";
 
 export function getAppOrigin(): string {
   if (typeof window !== "undefined") {
     return window.location.origin;
   }
-  return PRODUCTION_URL;
+  return requireFrontendAppUrl();
 }
 
 export function getAuthCallbackUrl(): string {

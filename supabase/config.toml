@@ -1,4 +1,4 @@
-project_id = "rqgrovumfgjwuhkthqxe"
+project_id = "ecom-image-forge"
 
 [functions.generate-image]
 verify_jwt = false

@@ -1,0 +1,94 @@
+name: Deploy staging-work
+
+on:
+  push:
+    branches:
+      - staging-work
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-staging-work
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy staging-work to Vercel Preview and Supabase staging
+    runs-on: ubuntu-latest
+    environment: staging
+    env:
+      DEPLOY_ENV: staging
+      VERCEL_TARGET: preview
+      VERCEL_GIT_BRANCH: staging-work
+      NODE_OPTIONS: --max-old-space-size=4096
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_REF: ${{ secrets.STAGING_SUPABASE_PROJECT_REF }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.STAGING_SUPABASE_DB_PASSWORD }}
+      SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+      SUPABASE_PUBLISHABLE_KEY: ${{ secrets.STAGING_SUPABASE_PUBLISHABLE_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+      VITE_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.STAGING_SUPABASE_PUBLISHABLE_KEY }}
+      VITE_APP_URL: ${{ secrets.STAGING_APP_URL }}
+      APP_URL: ${{ secrets.STAGING_APP_URL }}
+      ALLOWED_ORIGINS: ${{ secrets.STAGING_ALLOWED_ORIGINS }}
+      GEMINI_API_KEY: ${{ secrets.STAGING_GEMINI_API_KEY }}
+      ALIPAY_APP_ID: ${{ secrets.STAGING_ALIPAY_APP_ID }}
+      ALIPAY_PRIVATE_KEY: ${{ secrets.STAGING_ALIPAY_PRIVATE_KEY }}
+      ALIPAY_PUBLIC_KEY: ${{ secrets.STAGING_ALIPAY_PUBLIC_KEY }}
+      ALIPAY_GATEWAY: ${{ secrets.STAGING_ALIPAY_GATEWAY }}
+      ALIPAY_NOTIFY_URL: ${{ secrets.STAGING_ALIPAY_NOTIFY_URL }}
+      ALIPAY_RETURN_URL: ${{ secrets.STAGING_ALIPAY_RETURN_URL }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate deployment environment
+        run: node scripts/ci/validate-deploy-env.mjs
+
+      - name: Sync Vercel Preview env for staging-work
+        run: node scripts/ci/sync-vercel-env.mjs
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Sync Supabase Edge Function secrets
+        run: |
+          node scripts/ci/write-supabase-secrets.mjs --out "$RUNNER_TEMP/supabase-secrets.env"
+          supabase secrets set --env-file "$RUNNER_TEMP/supabase-secrets.env" --project-ref "$SUPABASE_PROJECT_REF"
+
+      - name: Push Supabase migrations and config
+        run: |
+          supabase link --project-ref "$SUPABASE_PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
+          supabase db push --linked --password "$SUPABASE_DB_PASSWORD"
+          supabase config push --project-ref "$SUPABASE_PROJECT_REF"
+
+      - name: Deploy Supabase Edge Functions
+        run: supabase functions deploy --project-ref "$SUPABASE_PROJECT_REF" --use-api
+
+      - name: Deploy Vercel Preview
+        run: |
+          npx vercel@latest pull --yes --environment=preview --token "$VERCEL_TOKEN"
+          npx vercel@latest build --token "$VERCEL_TOKEN"
+          npx vercel@latest deploy --prebuilt --token "$VERCEL_TOKEN"
