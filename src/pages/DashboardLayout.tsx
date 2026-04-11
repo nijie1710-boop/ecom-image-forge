@@ -21,7 +21,7 @@ const DashboardLayout = () => {
 
           <div className="min-w-0 flex-1 pb-20 md:pb-0">
             <header className="sticky top-0 z-30 border-b border-border/70 bg-background/90 backdrop-blur-xl">
-              <div className="flex h-16 w-full items-center justify-between px-4 md:px-6 2xl:px-8">
+              <div className="mx-auto flex h-16 max-w-[1680px] items-center justify-between px-4 md:px-6">
                 <div className="min-w-0">
                   <div className="text-xs font-medium text-muted-foreground">当前模块</div>
                   <div className="mt-0.5 flex items-center gap-2 text-sm font-semibold text-foreground md:text-base">
@@ -42,7 +42,7 @@ const DashboardLayout = () => {
               </div>
             </header>
 
-            <main className="w-full py-6">
+            <main className="mx-auto max-w-[1680px] px-4 py-6 md:px-6">
               <Outlet />
             </main>
           </div>
