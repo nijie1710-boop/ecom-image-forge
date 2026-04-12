@@ -1007,6 +1007,27 @@ const GeneratePage = () => {
           />
         </div>
 
+        <div className="rounded-2xl border border-primary/20 bg-primary/5 p-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-foreground">严格保真模式</div>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                适合手机壳、印花商品、包装类等对外形和图案一致性要求高的商品。开启后会优先锁定商品结构和图案，减少形变。
+              </p>
+            </div>
+            <Switch
+              checked={fidelityMode === "strict"}
+              onCheckedChange={handleFidelityModeChange}
+              aria-label="严格保真模式"
+            />
+          </div>
+          {fidelityMode === "strict" && (
+            <p className="mt-3 rounded-xl bg-background/80 px-3 py-2 text-xs leading-5 text-primary">
+              严格保真模式会优先保证商品外形、开孔和图案一致性，创意变化会相对保守。已优先使用 Nano Banana 2 和 1K 标准生成。
+            </p>
+          )}
+        </div>
+
         {sceneSuggestions.length > 0 && sceneSuggestions[selectedSuggestionIndex] && (
           <div className="flex items-center gap-2 rounded-lg bg-primary/5 px-3 py-2 text-xs text-primary">
             <Check className="h-3.5 w-3.5 shrink-0" />
@@ -1045,27 +1066,6 @@ const GeneratePage = () => {
                   placeholder="补充卖点、材质、尺寸或不允许改动的细节。"
                   className="min-h-24 rounded-xl"
                 />
-              </div>
-
-              <div className="rounded-2xl border border-border bg-background/60 p-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-sm font-semibold text-foreground">严格保真模式</div>
-                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                      适合手机壳、印花商品、包装类等对外形和图案一致性要求高的商品。开启后会优先锁定商品结构和图案，减少形变。
-                    </p>
-                  </div>
-                  <Switch
-                    checked={fidelityMode === "strict"}
-                    onCheckedChange={handleFidelityModeChange}
-                    aria-label="严格保真模式"
-                  />
-                </div>
-                {fidelityMode === "strict" && (
-                  <p className="mt-3 rounded-xl bg-primary/5 px-3 py-2 text-xs leading-5 text-primary">
-                    严格保真模式会优先保证商品外形、开孔和图案一致性，创意变化会相对保守。已优先使用 Nano Banana 2 和 1K 标准生成。
-                  </p>
-                )}
               </div>
 
               <div className="space-y-3 rounded-2xl border border-border bg-background/60 p-3">
