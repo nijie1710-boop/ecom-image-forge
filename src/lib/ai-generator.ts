@@ -344,7 +344,7 @@ async function generateSingleImageStable(
   let lastError: string | null = null;
   let lastMeta: GenerateImageMeta | undefined;
   const isDetailScreen = params.debugContext?.source === "detail";
-  const retryCount = isDetailScreen ? 3 : 2;
+  const retryCount = isDetailScreen ? 4 : 2;
 
   for (let attempt = 0; attempt < retryCount; attempt += 1) {
     ensureNotAborted(params.signal);
@@ -365,7 +365,7 @@ async function generateSingleImageStable(
       break;
     }
 
-    await sleep((isDetailScreen ? 1600 : 1200) * (attempt + 1));
+    await sleep((isDetailScreen ? 2200 : 1200) * (attempt + 1));
   }
 
   return {

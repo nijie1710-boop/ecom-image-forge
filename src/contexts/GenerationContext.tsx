@@ -731,7 +731,7 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           const chargedScreens: number[] = [];
           const renderFailedScreens: Array<{ screen: number; error: string }> = [];
           const chargeFailedScreens: Array<{ screen: number; error: string }> = [];
-          const highVolumeBatch = params.screens.length >= 5;
+          const highVolumeBatch = params.screens.length >= 4;
           let consecutiveRenderFailures = 0;
 
           for (let index = 0; index < params.screens.length; index += 1) {
@@ -782,7 +782,7 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
               }));
               if (index < params.screens.length - 1) {
                 const failureDelay = highVolumeBatch
-                  ? 3200 + Math.min(consecutiveRenderFailures - 1, 3) * 800
+                  ? 5200 + Math.min(consecutiveRenderFailures - 1, 3) * 1200
                   : 1600;
                 await wait(failureDelay, controller.signal);
               }
@@ -831,7 +831,7 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             }));
 
             if (index < params.screens.length - 1) {
-              await wait(highVolumeBatch ? 2600 : 1800, controller.signal);
+              await wait(highVolumeBatch ? 4200 : 1800, controller.signal);
             }
           }
 

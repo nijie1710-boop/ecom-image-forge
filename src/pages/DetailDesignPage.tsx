@@ -209,6 +209,10 @@ function languageRule(language: string): string {
     return "整张图禁止新增任何场景文字、海报字、标题字或水印。商品本身已有 logo 或印花文字可以保留。";
   }
 
+  if (language === "en") {
+    return "Any newly added poster text, headline, caption, label, badge, or decorative typography must be natural English only. Do not add Chinese, Japanese, Korean, pinyin, mixed-language text, or pseudo-CJK glyphs. If the product notes contain Chinese, translate the intent into short English or omit it; never copy Chinese notes into the image.";
+  }
+
   const current =
     generationLanguageOptions.find((option) => option.value === language)?.label || language;
   return `如果画面中需要出现新增文字，只能使用 ${current}，不要混入其他语言。`;
@@ -223,6 +227,10 @@ function typographyRule(language: string): string {
     return "新增中文文字请使用清晰、端正、现代、易读的免费商用中文无衬线字体风格，优先参考思源黑体、阿里巴巴普惠体、HarmonyOS Sans SC 的视觉气质，不要花字、手写体、书法体、伪中文或乱码。";
   }
 
+  if (language === "en") {
+    return "Use clean, modern, readable Latin sans-serif typography. Use correct English spelling only. Do not create Chinese-style glyphs, pseudo-Asian lettering, malformed letters, or unreadable filler text.";
+  }
+
   return "新增文字请使用清晰、标准、现代的无衬线字体风格，字形必须完整可读，不要出现乱码、伪文字或错误字符。";
 }
 
@@ -230,6 +238,21 @@ function compactPromptText(value: string | undefined, maxLength: number) {
   const text = String(value || "").replace(/\s+/g, " ").trim();
   if (!text) return "无";
   return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
+}
+
+function isPromptCompatibleWithLanguage(prompt: string | undefined, language: string) {
+  const text = String(prompt || "").trim();
+  if (!text) return false;
+
+  if (language === "en") {
+    return !/你正在|商品识别|商品图中可见文字|用户补充要求|详情页整体方案|当前要生成的分屏|生成要求|中文文字/.test(text);
+  }
+
+  if (language === "zh") {
+    return !/You are generating|IMPORTANT LANGUAGE LOCK|Product recognition|Generation requirements/i.test(text);
+  }
+
+  return true;
 }
 
 function buildScreenPrompt(args: {
@@ -253,6 +276,71 @@ function buildScreenPrompt(args: {
     screenIdea,
   } =
     args;
+
+  if (targetLanguage === "en") {
+    return `
+You are generating screen ${screen.screen} for an e-commerce product detail page.
+
+ABSOLUTE PRODUCT LOCK:
+- Use the exact same physical product from the uploaded product images.
+- Do not replace the product, product category, silhouette, structure, color, material, pattern, logo, artwork, ports, seams, buttons, or key details.
+- Only the background, scene, lighting, composition, supporting props, and camera language may change.
+
+IMPORTANT LANGUAGE LOCK:
+- The selected output language is English.
+- Any newly added poster text, headline, caption, label, badge, callout, or decorative typography must be English only.
+- Do not add Chinese, Japanese, Korean, pinyin, mixed-language text, pseudo-CJK glyphs, or unreadable filler characters.
+- The product/source notes below may contain Chinese. They are context only. Translate their meaning into short natural English if text is needed, or omit the text. Never copy Chinese notes onto the image.
+- Existing text physically printed on the product itself may be preserved only if it is visible in the reference product image.
+
+Product recognition:
+${compactPromptText(productSummary, 120)}
+
+Visible text on source product images:
+${compactPromptText(visibleText, 80)}
+
+User product notes:
+${compactPromptText(productInfo, 220)}
+
+Target platform:
+${targetPlatform}
+
+Overall detail-page plan:
+- Plan name: ${compactPromptText(plan.planName, 40)}
+- Tone: ${compactPromptText(plan.tone, 60)}
+- Audience: ${compactPromptText(plan.audience, 80)}
+- Summary: ${compactPromptText(plan.summary, 120)}
+
+Design system:
+- Main colors: ${compactPromptText(plan.designSpec.mainColors.join(", "), 60)}
+- Accent colors: ${compactPromptText(plan.designSpec.accentColors.join(", "), 60)}
+- Layout tone: ${compactPromptText(plan.designSpec.layoutTone, 80)}
+- Image style: ${compactPromptText(plan.designSpec.imageStyle, 80)}
+- Copy rules: ${compactPromptText(plan.designSpec.languageGuidelines, 80)}
+
+Current screen:
+- Title: ${compactPromptText(screen.title, 40)}
+- Goal: ${compactPromptText(screen.goal, 80)}
+- Visual direction: ${compactPromptText(screen.visualDirection, 160)}
+- Key selling points: ${compactPromptText(screen.copyPoints.join("; "), 120)}
+- Suggested English headline: ${compactPromptText(screen.overlayTitle || screen.title, 32)}
+- Suggested English short lines: ${compactPromptText(screen.overlayBodyLines?.join("; ") || screen.copyPoints.join("; "), 60)}
+- Human presence: ${screen.humanModelSuggested ? "A human model, hands, or natural usage action may help." : "Prefer product-only display."}${screen.humanModelReason ? ` Reason: ${screen.humanModelReason}` : ""}
+- User screen idea: ${compactPromptText(screenIdea?.trim(), 120)}
+
+Generation requirements:
+1. This is a product detail-page screen, not a plain white-background product cutout.
+2. The screen goal and visual direction must be obvious.
+3. If a user screen idea exists, integrate it into this exact screen.
+4. Use minimal text. Product accuracy, composition, and scene quality are more important than adding many words.
+5. If text appears, it must be readable English with correct spelling and clean hierarchy.
+6. ${typographyRule(targetLanguage)}
+7. ${languageRule(targetLanguage)}
+8. If human presence is suggested, add it naturally as supporting context only; the product must remain the hero.
+9. If product-only display is suggested, do not add a model unless a tiny hand interaction clearly improves the use explanation.
+10. Keep the result realistic, sellable, and suitable for an e-commerce detail page.
+`.trim();
+  }
 
   return `
 你正在为电商详情页生成第 ${screen.screen} 屏视觉。
@@ -762,14 +850,16 @@ const DetailDesignPage = () => {
     resetPlan();
   };
 
-  const appendPlanningContext = () => {
+  const appendPlanningContext = (language = targetLanguage) => {
     const chunks = [productInfo.trim()];
 
     if (styleReferenceText.trim()) {
-      chunks.push(`风格补充：${styleReferenceText.trim()}`);
+      chunks.push(language === "en" ? `Style notes: ${styleReferenceText.trim()}` : `风格补充：${styleReferenceText.trim()}`);
     }
     chunks.push(
-      "人物策略：由 AI 根据当前商品品类和每一屏的卖点表达，自行判断是否需要真人模特、手部出镜或纯商品展示。只有在上身效果、手持演示、尺寸对比或生活场景更能说明卖点时才加入人物，并且人物不能喧宾夺主。",
+      language === "en"
+        ? "Human model strategy: let AI decide per screen whether a real model, hands, or product-only composition best explains the selling point. Add people only when wearing effect, hand-held use, scale comparison, or lifestyle context helps; never let people overpower the product."
+        : "人物策略：由 AI 根据当前商品品类和每一屏的卖点表达，自行判断是否需要真人模特、手部出镜或纯商品展示。只有在上身效果、手持演示、尺寸对比或生活场景更能说明卖点时才加入人物，并且人物不能喧宾夺主。",
     );
 
     return chunks.filter(Boolean).join("\n");
@@ -801,7 +891,7 @@ const DetailDesignPage = () => {
 
       const result = await generateDetailPlan({
         productImages,
-        productInfo: appendPlanningContext(),
+        productInfo: appendPlanningContext(targetLanguage),
         targetPlatform,
         targetLanguage,
         screenCount: Number(screenCount),
@@ -995,9 +1085,10 @@ const DetailDesignPage = () => {
         targetLanguage: generationLanguage,
         screenIdea: useScreenIdeas ? screenIdeas[screen.screen - 1] : "",
       });
+      const existingPrompt = current?.prompt?.trim() || "";
       const prompt =
         promptOverrides?.[screen.screen]?.trim() ||
-        current?.prompt?.trim() ||
+        (isPromptCompatibleWithLanguage(existingPrompt, generationLanguage) ? existingPrompt : "") ||
         systemPrompt;
 
       return {
@@ -1078,7 +1169,12 @@ const DetailDesignPage = () => {
   const handleRegenerateScreen = async (screen: DetailPlanScreen) => {
     const currentPrompt =
       generatedScreens.find((item) => item.screen === screen.screen)?.prompt || "";
-    await launchDetailGeneration([screen], { [screen.screen]: currentPrompt });
+    await launchDetailGeneration(
+      [screen],
+      isPromptCompatibleWithLanguage(currentPrompt, generationLanguage)
+        ? { [screen.screen]: currentPrompt }
+        : undefined,
+    );
   };
 
   const handleRegenerateFailedScreens = async () => {
@@ -1092,7 +1188,7 @@ const DetailDesignPage = () => {
     }
 
     const promptOverrides = failedGeneratedScreens.reduce<Record<number, string>>((acc, screen) => {
-      if (screen.prompt?.trim()) {
+      if (screen.prompt?.trim() && isPromptCompatibleWithLanguage(screen.prompt, generationLanguage)) {
         acc[screen.screen] = screen.prompt;
       }
       return acc;
@@ -1141,7 +1237,7 @@ const DetailDesignPage = () => {
       screen,
       productSummary,
       visibleText,
-      productInfo: appendPlanningContext(),
+      productInfo: appendPlanningContext(generationLanguage),
       targetPlatform,
       targetLanguage: generationLanguage,
       screenIdea: useScreenIdeas ? screenIdeas[screen.screen - 1] : "",

@@ -169,15 +169,20 @@ function buildTextInstruction(language: string): string {
   const targetLanguage = languageMap[language] || "Simplified Chinese";
   const fontGuidance = language === "zh"
     ? "Use a clean, modern, highly legible Chinese sans-serif font style inspired by free commercial fonts such as Source Han Sans SC, Alibaba PuHuiTi, or HarmonyOS Sans SC. Do not use calligraphy, handwriting, decorative novelty fonts, gibberish, or malformed Chinese glyphs."
+    : language === "en"
+    ? "Use clean, modern, highly legible Latin sans-serif typography with correct English spelling. Do not generate Chinese, Japanese, Korean, pinyin, pseudo-CJK glyphs, malformed letters, or unreadable filler text."
     : "Use a clean, modern, highly legible sans-serif font style. Do not use decorative novelty fonts, gibberish, malformed glyphs, or unreadable pseudo-text.";
   return [
     `TEXT POLICY: Any newly introduced scene text must be only in ${targetLanguage}.`,
     "Do not mix multiple languages in newly added scene text.",
+    language === "en"
+      ? "If the prompt, product notes, or visible-text notes contain Chinese/CJK text, treat them as product context only. Translate the meaning into short English if text is needed, or omit it. Never copy CJK notes into newly generated poster text."
+      : "",
     fontGuidance,
     "All newly generated text must use correct spelling, correct glyphs, and readable layout hierarchy.",
     "Preserve any existing logo, printed words, numbers, or graphics that are already part of the physical product exactly as-is.",
     "Do not translate or redesign text that is physically printed on the product.",
-  ].join(". ");
+  ].filter(Boolean).join(". ");
 }
 
 function buildResolutionInstruction(resolution: SupportedResolution): string {
@@ -381,6 +386,15 @@ serve(async (req: Request) => {
       ].join(". ")
       : "";
 
+    const finalLanguageLock = normalizedTextLanguage === "en"
+      ? [
+          "FINAL TEXT LANGUAGE LOCK:",
+          "Newly generated poster or scene text must be English only.",
+          "Do not generate Chinese/CJK characters anywhere except text already physically printed on the product reference.",
+          "If uncertain about text, use fewer English words rather than inventing non-English or pseudo text.",
+        ].join(". ")
+      : "";
+
     const structuredPromptInstruction = [
       promptSections.styleName ? `STYLE NAME: ${promptSections.styleName}.` : "",
       promptSections.visualStyle ? `VISUAL STYLE: ${promptSections.visualStyle}.` : "",
@@ -406,6 +420,7 @@ serve(async (req: Request) => {
       structuredPromptInstruction,
       sceneLockInstruction,
       `USER REQUEST RAW: ${promptText}`,
+      finalLanguageLock,
     ]
       .filter(Boolean)
       .join(". ");
