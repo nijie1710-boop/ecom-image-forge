@@ -41,6 +41,57 @@ type DetailPlanOption = {
   screens: DetailPlanScreen[];
 };
 
+const STRING_ARRAY_SCHEMA = {
+  type: "array",
+  items: { type: "string" },
+};
+
+const DETAIL_PLAN_RESPONSE_SCHEMA = {
+  type: "object",
+  properties: {
+    productSummary: { type: "string" },
+    visibleText: { type: "string" },
+    planOptions: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          planName: { type: "string" },
+          tone: { type: "string" },
+          audience: { type: "string" },
+          summary: { type: "string" },
+          designSpec: {
+            type: "object",
+            properties: {
+              mainColors: STRING_ARRAY_SCHEMA,
+              accentColors: STRING_ARRAY_SCHEMA,
+              typography: { type: "string" },
+              layoutTone: { type: "string" },
+              imageStyle: { type: "string" },
+              languageGuidelines: { type: "string" },
+            },
+          },
+          screens: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                screen: { type: "integer" },
+                title: { type: "string" },
+                goal: { type: "string" },
+                visualDirection: { type: "string" },
+                copyPoints: STRING_ARRAY_SCHEMA,
+                overlayTitle: { type: "string" },
+                humanModelSuggested: { type: "boolean" },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+};
+
 function normalizeImages(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value
@@ -151,6 +202,52 @@ function overlayBodyFromCopyPoints(copyPoints: string[]) {
   return copyPoints.slice(0, 3).map((item) => item.trim()).filter(Boolean);
 }
 
+function defaultHumanModelReason(suggested: boolean) {
+  return suggested
+    ? "该屏适合加入真人或手部辅助，帮助用户理解使用场景。"
+    : "该屏优先突出商品本体，避免人物抢走主体注意力。";
+}
+
+function parseDetailPlanResponse(text: string) {
+  try {
+    return {
+      parsed: JSON.parse(text) as {
+        productSummary?: string;
+        visibleText?: string;
+        planOptions?: unknown[];
+      },
+      usedFallback: false,
+    };
+  } catch (primaryError) {
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch?.[0]) {
+      try {
+        return {
+          parsed: JSON.parse(jsonMatch[0]) as {
+            productSummary?: string;
+            visibleText?: string;
+            planOptions?: unknown[];
+          },
+          usedFallback: true,
+        };
+      } catch (fallbackError) {
+        throw new FunctionError("DETAIL_PLAN_PARSE_FAILED", 502, "Failed to parse detail plan JSON", {
+          detail: fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
+          meta: {
+            primaryError: primaryError instanceof Error ? primaryError.message : String(primaryError),
+            responseLength: text.length,
+          },
+        });
+      }
+    }
+
+    throw new FunctionError("DETAIL_PLAN_PARSE_FAILED", 502, "Failed to parse detail plan JSON", {
+      detail: primaryError instanceof Error ? primaryError.message : String(primaryError),
+      meta: { responseLength: text.length },
+    });
+  }
+}
+
 function buildFallbackPlan(planName: string, summary: string, screenCount: number, tone: string): DetailPlanOption {
   const screens = Array.from({ length: screenCount }, (_, index) => {
     const screen = index + 1;
@@ -240,6 +337,7 @@ function normalizePlanOption(value: unknown, index: number, screenCount: number,
     const current = screen && typeof screen === "object" ? (screen as Record<string, unknown>) : {};
     const fallbackScreen = fallback.screens[screenIndex];
     const copyPoints = safeStringArray(current.copyPoints, fallbackScreen.copyPoints);
+    const humanModelSuggested = Boolean(current.humanModelSuggested ?? fallbackScreen.humanModelSuggested);
 
     return {
       screen: Number(current.screen) || screenIndex + 1,
@@ -252,8 +350,8 @@ function normalizePlanOption(value: unknown, index: number, screenCount: number,
         current.overlayBodyLines,
         overlayBodyFromCopyPoints(copyPoints),
       ).slice(0, 4),
-      humanModelSuggested: Boolean(current.humanModelSuggested ?? fallbackScreen.humanModelSuggested),
-      humanModelReason: safeString(current.humanModelReason, fallbackScreen.humanModelReason),
+      humanModelSuggested,
+      humanModelReason: safeString(current.humanModelReason, defaultHumanModelReason(humanModelSuggested)),
     };
   });
 
@@ -297,6 +395,7 @@ serve(async (req: Request) => {
     const targetLanguage = safeString(body.targetLanguage, "zh");
     const languageInstruction = resolveLanguageInstruction(targetLanguage);
     const screenCount = clampScreenCount(body.screenCount);
+    const compactOutputMode = screenCount > 4;
     const screenIdeas = normalizeScreenIdeas(body.screenIdeas, screenCount);
 
     if (!productImages.length) {
@@ -332,9 +431,20 @@ serve(async (req: Request) => {
       languageInstruction.code === "zh"
         ? "If the uploaded product itself contains English branding or English printed words, keep that only inside visibleText when it truly exists on the product; all generated plan content must still be Simplified Chinese."
         : "",
-      "Return JSON only with this schema:",
-      '{"productSummary":"中文商品总结","visibleText":"图片中可见文字，没有则写 NONE","planOptions":[{"planName":"方案名","tone":"整体调性","audience":"目标人群","summary":"整版总结","designSpec":{"mainColors":["主色 1","主色 2"],"accentColors":["辅助色 1","辅助色 2"],"typography":"字体建议","layoutTone":"版式风格","imageStyle":"画面风格","languageGuidelines":"文案规范"},"screens":[{"screen":1,"title":"分屏标题","goal":"该屏目标","visualDirection":"该屏视觉方向","copyPoints":["文案点 1","文案点 2","文案点 3"],"overlayTitle":"短标题","overlayBodyLines":["短句 1","短句 2","短句 3"],"humanModelSuggested":false,"humanModelReason":"是否需要人物的简短理由"}]}]}',
+      compactOutputMode
+        ? "Use compact wording because the requested page has more than 4 screens. Keep every string short, practical, and non-repetitive."
+        : "Keep the plan concise and practical.",
+      "Follow the provided JSON schema exactly. Do not include markdown or extra commentary.",
     ].join(" ");
+
+    console.info("[detail-plan] request", {
+      screenCount,
+      targetLanguage: languageInstruction.code,
+      promptLength: promptText.length,
+      imageCount: productImages.length,
+      structuredOutput: true,
+      compactOutputMode,
+    });
 
     const { text, meta } = await callGeminiTextWithFallback({
       apiKey: geminiApiKey,
@@ -351,24 +461,46 @@ serve(async (req: Request) => {
       generationConfig: {
         temperature: 0.75,
         topP: 0.92,
-        maxOutputTokens: 4096,
+        maxOutputTokens: compactOutputMode ? 8192 : 6144,
+        responseMimeType: "application/json",
+        responseJsonSchema: DETAIL_PLAN_RESPONSE_SCHEMA,
         thinkingConfig: { thinkingBudget: 0 },
       },
     });
 
-    let parsed: {
-      productSummary?: string;
-      visibleText?: string;
-      planOptions?: unknown[];
-    } = {};
+    console.info("[detail-plan] upstream response", {
+      screenCount,
+      targetLanguage: languageInstruction.code,
+      modelUsed: meta.modelUsed,
+      modelRequested: meta.modelRequested,
+      fallbackUsed: meta.fallbackUsed,
+      rawResponseLength: meta.rawResponseLength ?? text.length,
+      textLength: text.length,
+      structuredOutput: true,
+    });
 
+    let parseResult: ReturnType<typeof parseDetailPlanResponse>;
     try {
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      parsed = JSON.parse(jsonMatch ? jsonMatch[0] : text);
-    } catch (error) {
-      console.warn("detail-plan parse failed:", error);
-      throw new FunctionError("DETAIL_PLAN_PARSE_FAILED", 502, "Failed to parse detail plan JSON");
+      parseResult = parseDetailPlanResponse(text);
+    } catch (parseError) {
+      console.error("[detail-plan] structured output parse", {
+        success: false,
+        screenCount,
+        modelUsed: meta.modelUsed,
+        rawResponseLength: meta.rawResponseLength ?? text.length,
+        reason: parseError instanceof Error ? parseError.message : String(parseError),
+      });
+      throw parseError;
     }
+
+    const { parsed, usedFallback } = parseResult;
+    console.info("[detail-plan] structured output parse", {
+      success: true,
+      usedFallback,
+      screenCount,
+      modelUsed: meta.modelUsed,
+      rawResponseLength: meta.rawResponseLength ?? text.length,
+    });
 
     const productSummary = safeString(parsed.productSummary, "该商品");
     const visibleText = safeString(parsed.visibleText, "NONE");
@@ -381,12 +513,21 @@ serve(async (req: Request) => {
       normalizePlanOption(option, index, screenCount, productSummary)
     );
 
+    while (planOptions.length < 3) {
+      planOptions.push(normalizePlanOption(undefined, planOptions.length, screenCount, productSummary));
+    }
+
     return jsonResponse(
       {
         productSummary,
         visibleText,
         planOptions,
-        meta,
+        meta: {
+          ...meta,
+          structuredOutput: true,
+          structuredParseFallbackUsed: usedFallback,
+          compactOutputMode,
+        },
       },
       200,
       corsHeaders,

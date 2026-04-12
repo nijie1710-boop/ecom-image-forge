@@ -52,6 +52,52 @@ async function loadBalanceFallback(userId: string): Promise<BalanceInfo> {
   };
 }
 
+async function loadCloudImages(userId: string): Promise<HistoryImage[]> {
+  const { data, error } = await supabase
+    .from("generated_images")
+    .select("id,image_url,created_at")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(8);
+
+  if (error) throw error;
+
+  return (data || []).map((item) => ({
+    ...item,
+    source: "cloud" as const,
+  }));
+}
+
+async function loadProfileDisplayName(userId: string): Promise<string> {
+  const { data, error } = await supabase.from("profiles").select("display_name").eq("user_id", userId).maybeSingle();
+
+  if (!error) return data?.display_name || "";
+
+  const message = String(error.message || "");
+  const isMissingProfilesTable = error.code === "42P01" || /profiles/i.test(message) || /not found/i.test(message);
+  if (isMissingProfilesTable) {
+    console.warn("profiles table is unavailable; using auth user metadata as account display fallback:", {
+      code: error.code,
+      message,
+    });
+    return "";
+  }
+
+  throw error;
+}
+
+async function loadBalanceInfo(userId: string): Promise<BalanceInfo> {
+  try {
+    const { data, error: invokeError } = await supabase.functions.invoke("manage-balance", { body: { action: "get" } });
+    if (invokeError) throw invokeError;
+    if (data?.error) throw new Error(String(data.error));
+    return { ...EMPTY_BALANCE, ...(data?.balance || {}) } as BalanceInfo;
+  } catch (invokeError) {
+    console.warn("manage-balance get failed, fallback to direct tables:", invokeError);
+    return loadBalanceFallback(userId);
+  }
+}
+
 function readLocalImages(): HistoryImage[] {
   try {
     const raw = localStorage.getItem("local_image_history") || "[]";
@@ -95,6 +141,52 @@ export default function AccountPage() {
 
     setIsLoading(true);
     setError(null);
+
+    const local = readLocalImages();
+    const [imagesResult, profileResult, balanceResult] = await Promise.allSettled([
+      loadCloudImages(user.id),
+      loadProfileDisplayName(user.id),
+      loadBalanceInfo(user.id),
+    ]);
+
+    setLocalImages(local);
+
+    if (imagesResult.status === "fulfilled") {
+      setCloudImages(imagesResult.value);
+    } else {
+      console.error("load account cloud images failed:", imagesResult.reason);
+      setCloudImages([]);
+    }
+
+    if (profileResult.status === "fulfilled") {
+      setDisplayName(profileResult.value);
+    } else {
+      console.error("load account profile failed:", profileResult.reason);
+      setDisplayName("");
+    }
+
+    if (balanceResult.status === "fulfilled") {
+      setBalance(balanceResult.value);
+    } else {
+      console.error("load account balance failed:", balanceResult.reason);
+      setBalance(EMPTY_BALANCE);
+    }
+
+    const blockingFailure =
+      imagesResult.status === "rejected" &&
+      profileResult.status === "rejected" &&
+      balanceResult.status === "rejected";
+
+    if (blockingFailure) {
+      setError(normalizeUserErrorMessage(balanceResult.reason, "账户信息加载失败，请稍后再试"));
+    } else if (balanceResult.status === "rejected") {
+      setError("积分信息暂时加载失败，其他账户信息已正常显示。");
+    } else {
+      setError(null);
+    }
+
+    setIsLoading(false);
+    return;
 
     try {
       const local = readLocalImages();

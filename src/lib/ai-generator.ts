@@ -10,6 +10,7 @@ export type { GenerationModel } from "@/lib/gemini-models";
 
 export type OutputResolution = "0.5k" | "1k" | "2k" | "4k";
 export type ModelMode = "none" | "with_model";
+export type FidelityMode = "normal" | "strict";
 
 export interface GenerateImageParams {
   prompt: string;
@@ -25,6 +26,7 @@ export interface GenerateImageParams {
   styleReferenceText?: string;
   modelMode?: ModelMode;
   modelImage?: string;
+  fidelityMode?: FidelityMode;
   debugContext?: {
     source?: "main" | "detail" | "copy";
     screenNumber?: number;
@@ -166,6 +168,12 @@ function isRetryableError(message: string | undefined): boolean {
   return [
     "timeout",
     "timed out",
+    "failed to fetch",
+    "networkerror",
+    "network request failed",
+    "edge_function_fetch_failed",
+    "生成接口请求失败",
+    "浏览器未能连接",
     "try again",
     "temporarily unavailable",
     "empty_image_result",
@@ -268,6 +276,7 @@ async function generateSingleImageRaw(
       styleReferenceText: params.styleReferenceText || undefined,
       modelMode: params.modelMode || "none",
       modelImage: params.modelImage || undefined,
+      fidelityMode: params.fidelityMode || "normal",
       debugContext: {
         ...params.debugContext,
         promptLength: params.prompt.length,
@@ -337,7 +346,8 @@ async function generateSingleImageStable(
 ): Promise<{ url: string | null; error: string | null; meta?: GenerateImageMeta }> {
   let lastError: string | null = null;
   let lastMeta: GenerateImageMeta | undefined;
-  const retryCount = 2;
+  const isDetailScreen = params.debugContext?.source === "detail";
+  const retryCount = isDetailScreen ? 4 : 2;
 
   for (let attempt = 0; attempt < retryCount; attempt += 1) {
     ensureNotAborted(params.signal);
@@ -358,7 +368,7 @@ async function generateSingleImageStable(
       break;
     }
 
-    await sleep(1200 * (attempt + 1));
+    await sleep((isDetailScreen ? 2200 : 1200) * (attempt + 1));
   }
 
   return {

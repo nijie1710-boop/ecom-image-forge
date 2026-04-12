@@ -22,6 +22,7 @@ import {
   ZoomIn,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -40,6 +41,7 @@ import {
 import { errorHintFromMessage, normalizeUserErrorMessage } from "@/lib/error-messages";
 import {
   type GenerationModel,
+  type FidelityMode,
   type OutputResolution,
 } from "@/lib/ai-generator";
 import {
@@ -149,6 +151,9 @@ type GeneratedScreenState = {
   prompt: string;
   imageUrl?: string;
   error?: string;
+  chargeStatus?: "not_charged" | "charged" | "charge_failed";
+  chargeAmount?: number;
+  chargeError?: string;
   overlayTitle: string;
   overlayBody: string;
   overlayEnabled: boolean;
@@ -195,8 +200,8 @@ const SelectField = ({
 const EmptyState = () => (
   <WorkspaceEmptyState
     icon={LayoutPanelTop}
-    title="先生成一套详情页方案"
-    description="上传商品图、补充卖点后，AI 会先输出 3 套完整详情页方案，包含整版调性、配色规范和每一屏的结构建议。"
+    title="先生成方案，再逐屏出图"
+    description="上传商品图并补充商品信息后，先生成详情页方案，再继续逐屏制作。"
     className="min-h-[520px]"
   />
 );
@@ -204,6 +209,10 @@ const EmptyState = () => (
 function languageRule(language: string): string {
   if (language === "pure") {
     return "整张图禁止新增任何场景文字、海报字、标题字或水印。商品本身已有 logo 或印花文字可以保留。";
+  }
+
+  if (language === "en") {
+    return "Any newly added poster text, headline, caption, label, badge, or decorative typography must be natural English only. Do not add Chinese, Japanese, Korean, pinyin, mixed-language text, or pseudo-CJK glyphs. If the product notes contain Chinese, translate the intent into short English or omit it; never copy Chinese notes into the image.";
   }
 
   const current =
@@ -220,6 +229,10 @@ function typographyRule(language: string): string {
     return "新增中文文字请使用清晰、端正、现代、易读的免费商用中文无衬线字体风格，优先参考思源黑体、阿里巴巴普惠体、HarmonyOS Sans SC 的视觉气质，不要花字、手写体、书法体、伪中文或乱码。";
   }
 
+  if (language === "en") {
+    return "Use clean, modern, readable Latin sans-serif typography. Use correct English spelling only. Do not create Chinese-style glyphs, pseudo-Asian lettering, malformed letters, or unreadable filler text.";
+  }
+
   return "新增文字请使用清晰、标准、现代的无衬线字体风格，字形必须完整可读，不要出现乱码、伪文字或错误字符。";
 }
 
@@ -227,6 +240,21 @@ function compactPromptText(value: string | undefined, maxLength: number) {
   const text = String(value || "").replace(/\s+/g, " ").trim();
   if (!text) return "无";
   return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
+}
+
+function isPromptCompatibleWithLanguage(prompt: string | undefined, language: string) {
+  const text = String(prompt || "").trim();
+  if (!text) return false;
+
+  if (language === "en") {
+    return !/你正在|商品识别|商品图中可见文字|用户补充要求|详情页整体方案|当前要生成的分屏|生成要求|中文文字/.test(text);
+  }
+
+  if (language === "zh") {
+    return !/You are generating|IMPORTANT LANGUAGE LOCK|Product recognition|Generation requirements/i.test(text);
+  }
+
+  return true;
 }
 
 function buildScreenPrompt(args: {
@@ -237,6 +265,7 @@ function buildScreenPrompt(args: {
   productInfo: string;
   targetPlatform: string;
   targetLanguage: string;
+  fidelityMode: FidelityMode;
   screenIdea?: string;
 }): string {
   const {
@@ -247,15 +276,88 @@ function buildScreenPrompt(args: {
     productInfo,
     targetPlatform,
     targetLanguage,
+    fidelityMode,
     screenIdea,
   } =
     args;
+  const strictFidelityRules =
+    fidelityMode === "strict"
+      ? "STRICT FIDELITY MODE: prioritize product faithfulness over creativity. Preserve phone-case camera cutout count, size, position, button holes, border thickness, corner radius, printed pattern layout, pattern scale, and pattern position. Do not redesign the artwork, do not create a similar new product, avoid strong perspective distortion, avoid complex hand occlusion, and keep the product front/structure clearly visible."
+      : "";
+
+  if (targetLanguage === "en") {
+    return `
+You are generating screen ${screen.screen} for an e-commerce product detail page.
+
+ABSOLUTE PRODUCT LOCK:
+- Use the exact same physical product from the uploaded product images.
+- Do not replace the product, product category, silhouette, structure, color, material, pattern, logo, artwork, ports, seams, buttons, or key details.
+- Only the background, scene, lighting, composition, supporting props, and camera language may change.
+${strictFidelityRules}
+
+IMPORTANT LANGUAGE LOCK:
+- The selected output language is English.
+- Any newly added poster text, headline, caption, label, badge, callout, or decorative typography must be English only.
+- Do not add Chinese, Japanese, Korean, pinyin, mixed-language text, pseudo-CJK glyphs, or unreadable filler characters.
+- The product/source notes below may contain Chinese. They are context only. Translate their meaning into short natural English if text is needed, or omit the text. Never copy Chinese notes onto the image.
+- Existing text physically printed on the product itself may be preserved only if it is visible in the reference product image.
+
+Product recognition:
+${compactPromptText(productSummary, 120)}
+
+Visible text on source product images:
+${compactPromptText(visibleText, 80)}
+
+User product notes:
+${compactPromptText(productInfo, 220)}
+
+Target platform:
+${targetPlatform}
+
+Overall detail-page plan:
+- Plan name: ${compactPromptText(plan.planName, 40)}
+- Tone: ${compactPromptText(plan.tone, 60)}
+- Audience: ${compactPromptText(plan.audience, 80)}
+- Summary: ${compactPromptText(plan.summary, 120)}
+
+Design system:
+- Main colors: ${compactPromptText(plan.designSpec.mainColors.join(", "), 60)}
+- Accent colors: ${compactPromptText(plan.designSpec.accentColors.join(", "), 60)}
+- Layout tone: ${compactPromptText(plan.designSpec.layoutTone, 80)}
+- Image style: ${compactPromptText(plan.designSpec.imageStyle, 80)}
+- Copy rules: ${compactPromptText(plan.designSpec.languageGuidelines, 80)}
+
+Current screen:
+- Title: ${compactPromptText(screen.title, 40)}
+- Goal: ${compactPromptText(screen.goal, 80)}
+- Visual direction: ${compactPromptText(screen.visualDirection, 160)}
+- Key selling points: ${compactPromptText(screen.copyPoints.join("; "), 120)}
+- Suggested English headline: ${compactPromptText(screen.overlayTitle || screen.title, 32)}
+- Suggested English short lines: ${compactPromptText(screen.overlayBodyLines?.join("; ") || screen.copyPoints.join("; "), 60)}
+- Human presence: ${screen.humanModelSuggested ? "A human model, hands, or natural usage action may help." : "Prefer product-only display."}${screen.humanModelReason ? ` Reason: ${screen.humanModelReason}` : ""}
+- User screen idea: ${compactPromptText(screenIdea?.trim(), 120)}
+
+Generation requirements:
+1. This is a product detail-page screen, not a plain white-background product cutout.
+2. The screen goal and visual direction must be obvious.
+3. If a user screen idea exists, integrate it into this exact screen.
+4. Use minimal text. Product accuracy, composition, and scene quality are more important than adding many words.
+5. If text appears, it must be readable English with correct spelling and clean hierarchy.
+6. ${typographyRule(targetLanguage)}
+7. ${languageRule(targetLanguage)}
+8. If human presence is suggested, add it naturally as supporting context only; the product must remain the hero.
+9. If product-only display is suggested, do not add a model unless a tiny hand interaction clearly improves the use explanation.
+10. Keep the result realistic, sellable, and suitable for an e-commerce detail page.
+${fidelityMode === "strict" ? "11. In strict fidelity mode, prefer product-only or light-scene composition. Avoid dramatic angles, strong perspective, complex hand-held poses, or people covering the product." : ""}
+`.trim();
+  }
 
   return `
 你正在为电商详情页生成第 ${screen.screen} 屏视觉。
 
 必须严格使用上传商品图中的同一件商品，不得替换商品、不得改掉商品主体结构、颜色、材质、图案和关键细节。
 允许变化的内容只有：背景、场景、灯光、构图、辅材和镜头语言。
+${fidelityMode === "strict" ? "严格保真模式：优先锁定商品本体，特别是手机壳、印花商品、包装类商品的开孔数量、开孔大小、开孔位置、边框厚度、四角弧度、按键孔、图案布局、图案比例和图案位置。禁止重设计图案，禁止生成成相似新款，禁止大透视形变，禁止手部或道具遮挡关键结构。" : ""}
 
 商品识别：
 ${compactPromptText(productSummary, 120)}
@@ -303,6 +405,7 @@ ${targetPlatform}
 8. 如果当前分屏建议人物出镜，可以自然加入真人模特、手部交互或使用动作，但人物只能辅助解释卖点，不能盖住商品主体。
 9. 如果当前分屏建议纯商品展示，就不要额外加入真人模特，除非只是极轻微的手部辅助且明显更利于说明使用方式。
 10. 保持商品真实、可售、适合电商详情页，不做无关艺术化改造。
+${fidelityMode === "strict" ? "11. 严格保真模式下优先纯商品或轻场景构图，不使用大角度斜拍、复杂手持、人物压住商品主体或遮挡开孔图案的画面。" : ""}
 `.trim();
 }
 
@@ -411,6 +514,7 @@ const DetailDesignPage = () => {
   const [selectedResolution, setSelectedResolution] =
     useState<OutputResolution>("2k");
   const [generationLanguage, setGenerationLanguage] = useState("zh");
+  const [fidelityMode, setFidelityMode] = useState<FidelityMode>("normal");
   const [generatedScreens, setGeneratedScreens] = useState<GeneratedScreenState[]>([]);
   const [isGeneratingScreens, setIsGeneratingScreens] = useState(false);
   const [generationError, setGenerationError] = useState<string | null>(null);
@@ -438,6 +542,10 @@ const DetailDesignPage = () => {
       .map((screen) => generatedScreens.find((item) => item.screen === screen.screen))
       .filter(Boolean) as GeneratedScreenState[];
   }, [activePlan, generatedScreens]);
+  const failedGeneratedScreens = useMemo(
+    () => generatedScreens.filter((screen) => screen.status === "error"),
+    [generatedScreens],
+  );
   const activeDetailJob = useMemo(
     () => (detailJobId ? getJob(detailJobId) : null),
     [detailJobId, getJob, jobs],
@@ -462,6 +570,7 @@ const DetailDesignPage = () => {
         selectedRatio: string;
         selectedResolution: OutputResolution;
         generationLanguage: string;
+        fidelityMode: FidelityMode;
         selectedModel: GenerationModel;
         targetPlatform: string;
         targetLanguage: string;
@@ -480,6 +589,7 @@ const DetailDesignPage = () => {
       setSelectedRatio(draft.selectedRatio || "3:4");
       setSelectedResolution(draft.selectedResolution || "2k");
       setGenerationLanguage(draft.generationLanguage || "zh");
+      setFidelityMode(draft.fidelityMode || "normal");
       setSelectedModel(draft.selectedModel || "gemini-3.1-flash-image-preview");
       setTargetPlatform(draft.targetPlatform || platformOptions[0]);
       setTargetLanguage(draft.targetLanguage || "zh");
@@ -514,6 +624,9 @@ const DetailDesignPage = () => {
           prompt: existing?.prompt || "",
           imageUrl: existing?.imageUrl,
           error: existing?.error,
+          chargeStatus: existing?.chargeStatus,
+          chargeAmount: existing?.chargeAmount,
+          chargeError: existing?.chargeError,
           overlayTitle: existing?.overlayTitle || screen.overlayTitle || screen.title,
           overlayBody:
             existing?.overlayBody ||
@@ -567,6 +680,9 @@ const DetailDesignPage = () => {
     }
     if (activeDetailJob.detailSettings?.resolution) {
       setSelectedResolution(activeDetailJob.detailSettings.resolution);
+    }
+    if (activeDetailJob.detailSettings?.fidelityMode) {
+      setFidelityMode(activeDetailJob.detailSettings.fidelityMode);
     }
     if (activeDetailJob.detailScreens?.length) {
       setGeneratedScreens((current) => {
@@ -627,6 +743,7 @@ const DetailDesignPage = () => {
         selectedRatio,
         selectedResolution,
         generationLanguage,
+        fidelityMode,
         selectedModel,
         targetPlatform,
         targetLanguage,
@@ -641,6 +758,8 @@ const DetailDesignPage = () => {
     );
   }, [
     hasRestoredDraft,
+    fidelityMode,
+    generationLanguage,
     planOptions,
     productImages,
     productInfo,
@@ -752,15 +871,24 @@ const DetailDesignPage = () => {
     resetPlan();
   };
 
-  const appendPlanningContext = () => {
+  const appendPlanningContext = (language = targetLanguage) => {
     const chunks = [productInfo.trim()];
 
     if (styleReferenceText.trim()) {
-      chunks.push(`风格补充：${styleReferenceText.trim()}`);
+      chunks.push(language === "en" ? `Style notes: ${styleReferenceText.trim()}` : `风格补充：${styleReferenceText.trim()}`);
     }
     chunks.push(
-      "人物策略：由 AI 根据当前商品品类和每一屏的卖点表达，自行判断是否需要真人模特、手部出镜或纯商品展示。只有在上身效果、手持演示、尺寸对比或生活场景更能说明卖点时才加入人物，并且人物不能喧宾夺主。",
+      language === "en"
+        ? "Human model strategy: let AI decide per screen whether a real model, hands, or product-only composition best explains the selling point. Add people only when wearing effect, hand-held use, scale comparison, or lifestyle context helps; never let people overpower the product."
+        : "人物策略：由 AI 根据当前商品品类和每一屏的卖点表达，自行判断是否需要真人模特、手部出镜或纯商品展示。只有在上身效果、手持演示、尺寸对比或生活场景更能说明卖点时才加入人物，并且人物不能喧宾夺主。",
     );
+    if (fidelityMode === "strict") {
+      chunks.push(
+        language === "en"
+          ? "Strict fidelity mode: prioritize product structure, cutouts, printed artwork, proportions, and packaging shape over creative variation. Prefer product-only or light-scene composition."
+          : "严格保真模式：优先锁定商品结构、开孔、印花图案、比例和包装外形，创意变化保持保守，优先纯商品或轻场景表达。",
+      );
+    }
 
     return chunks.filter(Boolean).join("\n");
   };
@@ -780,7 +908,7 @@ const DetailDesignPage = () => {
       const deductResult = await deductCredits(
         planCost,
         "detail_planning",
-        `AI 详情页方案策划（${planCost} 积分）`,
+        `AI 详情图方案策划（${planCost} 积分）`,
       );
       if (!deductResult.success) {
         setError(deductResult.error || "积分不足，请先充值");
@@ -791,7 +919,7 @@ const DetailDesignPage = () => {
 
       const result = await generateDetailPlan({
         productImages,
-        productInfo: appendPlanningContext(),
+        productInfo: appendPlanningContext(targetLanguage),
         targetPlatform,
         targetLanguage,
         screenCount: Number(screenCount),
@@ -980,14 +1108,16 @@ const DetailDesignPage = () => {
         screen,
         productSummary,
         visibleText,
-        productInfo: appendPlanningContext(),
+        productInfo: appendPlanningContext(generationLanguage),
         targetPlatform,
         targetLanguage: generationLanguage,
+        fidelityMode,
         screenIdea: useScreenIdeas ? screenIdeas[screen.screen - 1] : "",
       });
+      const existingPrompt = current?.prompt?.trim() || "";
       const prompt =
         promptOverrides?.[screen.screen]?.trim() ||
-        current?.prompt?.trim() ||
+        (isPromptCompatibleWithLanguage(existingPrompt, generationLanguage) ? existingPrompt : "") ||
         systemPrompt;
 
       return {
@@ -997,6 +1127,9 @@ const DetailDesignPage = () => {
         prompt,
         imageUrl: current?.imageUrl,
         error: undefined,
+        chargeStatus: "not_charged",
+        chargeAmount: 0,
+        chargeError: undefined,
         overlayTitle: screen.overlayTitle || screen.title,
         overlayBody: screen.overlayBodyLines?.join("\n") || screen.copyPoints.join("\n"),
         overlayEnabled: generationLanguage !== "pure",
@@ -1044,12 +1177,13 @@ const DetailDesignPage = () => {
       textLanguage: generationLanguage,
       model: selectedModel,
       resolution: selectedResolution,
+      fidelityMode,
       productImages,
       styleReferenceImage: styleReferenceImage || undefined,
       styleReferenceText: styleReferenceText.trim() || undefined,
       screens: nextScreens,
       screenCost,
-      chargeDescription: `AI 详情页逐屏生成（${modelLabel} ${selectedResolution}，${screenCost} 积分/屏）`,
+      chargeDescription: `AI 详情图逐屏生成（${modelLabel} ${selectedResolution}，${screenCost} 积分/屏）`,
       userId: user?.id,
       onComplete: () => refreshBalance(),
     });
@@ -1065,7 +1199,32 @@ const DetailDesignPage = () => {
   const handleRegenerateScreen = async (screen: DetailPlanScreen) => {
     const currentPrompt =
       generatedScreens.find((item) => item.screen === screen.screen)?.prompt || "";
-    await launchDetailGeneration([screen], { [screen.screen]: currentPrompt });
+    await launchDetailGeneration(
+      [screen],
+      isPromptCompatibleWithLanguage(currentPrompt, generationLanguage)
+        ? { [screen.screen]: currentPrompt }
+        : undefined,
+    );
+  };
+
+  const handleRegenerateFailedScreens = async () => {
+    if (!activePlan) return;
+    const failedScreenNumbers = new Set(failedGeneratedScreens.map((screen) => screen.screen));
+    const screens = activePlan.screens.filter((screen) => failedScreenNumbers.has(screen.screen));
+
+    if (!screens.length) {
+      setGenerationError("当前没有失败分屏需要重试");
+      return;
+    }
+
+    const promptOverrides = failedGeneratedScreens.reduce<Record<number, string>>((acc, screen) => {
+      if (screen.prompt?.trim() && isPromptCompatibleWithLanguage(screen.prompt, generationLanguage)) {
+        acc[screen.screen] = screen.prompt;
+      }
+      return acc;
+    }, {});
+
+    await launchDetailGeneration(screens, promptOverrides);
   };
 
   const toggleScreenSelection = (screenNumber: number) => {
@@ -1108,9 +1267,10 @@ const DetailDesignPage = () => {
       screen,
       productSummary,
       visibleText,
-      productInfo: appendPlanningContext(),
+      productInfo: appendPlanningContext(generationLanguage),
       targetPlatform,
       targetLanguage: generationLanguage,
+      fidelityMode,
       screenIdea: useScreenIdeas ? screenIdeas[screen.screen - 1] : "",
     });
     updateGeneratedScreen(screen.screen, (current) => ({
@@ -1146,6 +1306,25 @@ const DetailDesignPage = () => {
     }
   }, [selectedModel, selectedResolution]);
 
+  const handleFidelityModeChange = (checked: boolean) => {
+    const nextMode: FidelityMode = checked ? "strict" : "normal";
+    setFidelityMode(nextMode);
+    if (checked) {
+      setSelectedModel("gemini-3.1-flash-image-preview");
+      setSelectedResolution("1k");
+    }
+  };
+
+  useEffect(() => {
+    if (fidelityMode !== "strict") return;
+    if (selectedModel !== "gemini-3.1-flash-image-preview") {
+      setSelectedModel("gemini-3.1-flash-image-preview");
+    }
+    if (selectedResolution !== "1k") {
+      setSelectedResolution("1k");
+    }
+  }, [fidelityMode, selectedModel, selectedResolution]);
+
   // ---- 积分相关计算 ----
   const planCost = getDetailPlanCost();
   const perScreenCost = getDetailScreenCost(selectedModel, selectedResolution);
@@ -1160,6 +1339,35 @@ const DetailDesignPage = () => {
     userBalance !== null && perScreenCost > 0 && userBalance < perScreenCost;
   const planInsufficient =
     userBalance !== null && planCost > 0 && userBalance < planCost;
+  const generationChargeSummary = useMemo(() => {
+    const generated = generatedScreens.filter((screen) => Boolean(screen.imageUrl));
+    const charged = generatedScreens.filter((screen) => screen.chargeStatus === "charged");
+    const renderFailed = generatedScreens.filter(
+      (screen) => screen.status === "error" && screen.chargeStatus !== "charge_failed",
+    );
+    const chargeFailed = generatedScreens.filter((screen) => screen.chargeStatus === "charge_failed");
+    const chargedCredits = charged.reduce(
+      (total, screen) => total + (screen.chargeAmount ?? perScreenCost),
+      0,
+    );
+    const renderFailedLabels = renderFailed.map((screen) => `第 ${screen.screen} 屏`).join("、");
+    const chargeFailedLabels = chargeFailed.map((screen) => `第 ${screen.screen} 屏`).join("、");
+
+    return {
+      generatedCount: generated.length,
+      chargedCount: charged.length,
+      chargedCredits,
+      renderFailedCount: renderFailed.length,
+      renderFailedLabels,
+      chargeFailedCount: chargeFailed.length,
+      chargeFailedLabels,
+      shouldShow:
+        generated.length > 0 ||
+        renderFailed.length > 0 ||
+        chargeFailed.length > 0 ||
+        isGeneratingScreens,
+    };
+  }, [generatedScreens, isGeneratingScreens, perScreenCost]);
 
   // 获取余额
   useEffect(() => {
@@ -1175,9 +1383,9 @@ const DetailDesignPage = () => {
     <div className="mx-auto max-w-[1480px] space-y-5 px-3 py-4 sm:px-4 sm:py-5 md:space-y-6 md:px-6 md:py-6">
       <WorkspaceHeader
         icon={LayoutPanelTop}
-        badge="AI 详情页"
-        title="先策划，再逐屏生成"
-        description="先整理商品信息和风格方向，再从 3 套方案里挑一套，逐屏生成整套详情页。"
+        badge="AI 详情图"
+        title="AI 电商详情图生成"
+        description="先生成整套详情页策划方案，再逐屏输出详情图。适合制作统一风格的商品详情长图。"
         steps={["1. 上传商品", "2. 选方案", "3. 逐屏生成"]}
       />
 
@@ -1365,7 +1573,7 @@ const DetailDesignPage = () => {
           <section className="rounded-2xl border border-border bg-background/70 p-4">
             <div className="mb-4">
               <h2 className="text-base font-semibold text-foreground">策划参数</h2>
-              <p className="text-xs text-muted-foreground">先生成 3 套整版方案，再选一套往下走</p>
+              <p className="text-xs text-muted-foreground">AI 会先根据商品信息生成整套详情页方案，再按屏生成完整内容。</p>
             </div>
 
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-1">
@@ -1410,12 +1618,12 @@ const DetailDesignPage = () => {
               {isLoading ? (
                 <span className="inline-flex items-center">
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  <span>AI 正在策划详情页</span>
+                  <span>正在生成详情页方案</span>
                 </span>
               ) : (
                 <span className="inline-flex items-center">
                   <Sparkles className="mr-2 h-4 w-4" />
-                  <span>生成 3 套详情页方案</span>
+                  <span>生成详情页方案</span>
                 </span>
               )}
             </Button>
@@ -1496,7 +1704,7 @@ const DetailDesignPage = () => {
                 <div>
                   <h2 className="text-base font-semibold text-foreground">逐屏生成设置</h2>
                   <p className="text-xs text-muted-foreground">
-                    默认参数已经能直接生成，需要时再展开调整。
+                    适合整套详情页制作，不只是出图，还会先帮你规划每一屏的内容结构。
                   </p>
                 </div>
                 <button
@@ -1545,6 +1753,26 @@ const DetailDesignPage = () => {
                     onChange={setGenerationLanguage}
                     options={generationLanguageOptions}
                   />
+                  <div className="md:col-span-2 xl:col-span-1 rounded-2xl border border-border bg-background p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-semibold text-foreground">严格保真模式</div>
+                        <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                          适合手机壳、印花商品、包装类等对外形和图案一致性要求高的商品。开启后会优先锁定商品结构和图案，减少形变。
+                        </p>
+                      </div>
+                      <Switch
+                        checked={fidelityMode === "strict"}
+                        onCheckedChange={handleFidelityModeChange}
+                        aria-label="严格保真模式"
+                      />
+                    </div>
+                    {fidelityMode === "strict" && (
+                      <p className="mt-3 rounded-xl bg-primary/5 px-3 py-2 text-xs leading-5 text-primary">
+                        严格保真模式会优先保证商品外形、开孔和图案一致性，创意变化会相对保守。已优先使用 Nano Banana 2 和 1K 标准生成。
+                      </p>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -1662,6 +1890,18 @@ const DetailDesignPage = () => {
                   >
                     仅选人物屏
                   </Button>
+                  {failedGeneratedScreens.length > 0 && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="rounded-xl border-destructive/30 text-destructive hover:text-destructive"
+                      onClick={() => void handleRegenerateFailedScreens()}
+                      disabled={isGeneratingScreens || balanceInsufficient}
+                    >
+                      只重试失败屏（{failedGeneratedScreens.length}）
+                    </Button>
+                  )}
                 </div>
                 <Button
                   type="button"
@@ -1677,7 +1917,7 @@ const DetailDesignPage = () => {
                   ) : (
                     <span className="inline-flex items-center">
                       <ImagePlus className="mr-2 h-4 w-4" />
-                      <span>生成已选 {selectedScreenNumbers.length || 0} 屏</span>
+                      <span>生成已选屏</span>
                     </span>
                   )}
                 </Button>
@@ -1715,8 +1955,8 @@ const DetailDesignPage = () => {
           ) : (
             <>
               <WorkspaceSection
-                title="AI 详情页方案"
-                description="先从 3 套整体方向里选一套。选中的方案会直接作为下面逐屏生成的执行蓝本。"
+                title="AI 详情图方案"
+                description="AI 会先根据商品信息生成整套详情页方案，再按屏生成完整内容。选中的方案会作为下面逐屏生成的执行蓝本。"
                 actions={
                   <>
                     <span className="rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground">
@@ -1970,7 +2210,7 @@ const DetailDesignPage = () => {
                   <div>
                     <h3 className="text-lg font-semibold text-foreground">逐屏生成结果</h3>
                     <p className="text-sm text-muted-foreground">
-                      先看每屏结果，不满意就单独重生；全部满意后再预览或下载长图。
+                      已按当前顺序拼接为完整详情页长图，可预览或下载。
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -2006,11 +2246,49 @@ const DetailDesignPage = () => {
                   </div>
                 </div>
 
+                {generationChargeSummary.shouldShow && (
+                  <div className="mb-4 grid gap-3 rounded-2xl border border-border bg-muted/30 p-4 text-sm md:grid-cols-3">
+                    <div>
+                      <div className="text-xs font-semibold text-muted-foreground">生成结果</div>
+                      <div className="mt-1 font-medium text-foreground">
+                        已成功生成 {generationChargeSummary.generatedCount} 屏
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs font-semibold text-muted-foreground">实际扣费</div>
+                      <div className="mt-1 font-medium text-foreground">
+                        已扣 {generationChargeSummary.chargedCredits} 积分
+                        <span className="ml-1 text-xs text-muted-foreground">
+                          （{generationChargeSummary.chargedCount} 屏）
+                        </span>
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs font-semibold text-muted-foreground">失败与扣费状态</div>
+                      {generationChargeSummary.renderFailedCount > 0 ? (
+                        <div className="mt-1 text-destructive">
+                          生成失败 {generationChargeSummary.renderFailedCount} 屏，未扣费：
+                          {generationChargeSummary.renderFailedLabels}
+                        </div>
+                      ) : (
+                        <div className="mt-1 text-muted-foreground">暂无生成失败屏</div>
+                      )}
+                      {generationChargeSummary.chargeFailedCount > 0 && (
+                        <div className="mt-1 text-amber-700">
+                          已生成但扣费失败 {generationChargeSummary.chargeFailedCount} 屏：
+                          {generationChargeSummary.chargeFailedLabels}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 <div className="space-y-4">
                   {activePlan.screens.map((screen) => {
                     const generated = generatedScreens.find(
                       (item) => item.screen === screen.screen,
                     );
+                    const isChargeFailure = generated?.chargeStatus === "charge_failed";
 
                     return (
                       <div
@@ -2156,12 +2434,39 @@ const DetailDesignPage = () => {
                           </div>
 
                           {generated?.error && (
-                            <div className="rounded-2xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+                            <div
+                              className={
+                                isChargeFailure
+                                  ? "rounded-2xl border border-amber-300/60 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+                                  : "rounded-2xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+                              }
+                            >
                               <div>{generated.error}</div>
-                              {errorHintFromMessage(generated.error) && (
+                              {!isChargeFailure && errorHintFromMessage(generated.error) && (
                                 <div className="mt-1 text-xs text-muted-foreground">
                                   {errorHintFromMessage(generated.error)}
                                 </div>
+                              )}
+                            </div>
+                          )}
+
+                          {generated?.imageUrl && generated.chargeStatus && (
+                            <div className="rounded-2xl border border-border bg-card px-4 py-3 text-xs text-muted-foreground">
+                              {generated.chargeStatus === "charged" && (
+                                <span>
+                                  本屏已生成并已扣费：
+                                  <span className="font-semibold text-foreground">
+                                    {generated.chargeAmount ?? perScreenCost} 积分
+                                  </span>
+                                </span>
+                              )}
+                              {generated.chargeStatus === "charge_failed" && (
+                                <span className="text-amber-700">
+                                  本屏已生成，但扣费失败，暂不计入已扣积分。请稍后同步积分状态。
+                                </span>
+                              )}
+                              {generated.chargeStatus === "not_charged" && (
+                                <span>本屏尚未完成扣费。</span>
                               )}
                             </div>
                           )}

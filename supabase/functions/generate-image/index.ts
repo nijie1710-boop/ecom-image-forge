@@ -87,6 +87,10 @@ function normalizeModelMode(value: string | undefined): "none" | "with_model" {
   return value === "with_model" ? "with_model" : "none";
 }
 
+function normalizeFidelityMode(value: string | undefined): "normal" | "strict" {
+  return value === "strict" ? "strict" : "normal";
+}
+
 function normalizeModel(value: unknown): ImageModelInput {
   return String(value || "gemini-2.5-flash-image") as ImageModelInput;
 }
@@ -169,15 +173,20 @@ function buildTextInstruction(language: string): string {
   const targetLanguage = languageMap[language] || "Simplified Chinese";
   const fontGuidance = language === "zh"
     ? "Use a clean, modern, highly legible Chinese sans-serif font style inspired by free commercial fonts such as Source Han Sans SC, Alibaba PuHuiTi, or HarmonyOS Sans SC. Do not use calligraphy, handwriting, decorative novelty fonts, gibberish, or malformed Chinese glyphs."
+    : language === "en"
+    ? "Use clean, modern, highly legible Latin sans-serif typography with correct English spelling. Do not generate Chinese, Japanese, Korean, pinyin, pseudo-CJK glyphs, malformed letters, or unreadable filler text."
     : "Use a clean, modern, highly legible sans-serif font style. Do not use decorative novelty fonts, gibberish, malformed glyphs, or unreadable pseudo-text.";
   return [
     `TEXT POLICY: Any newly introduced scene text must be only in ${targetLanguage}.`,
     "Do not mix multiple languages in newly added scene text.",
+    language === "en"
+      ? "If the prompt, product notes, or visible-text notes contain Chinese/CJK text, treat them as product context only. Translate the meaning into short English if text is needed, or omit it. Never copy CJK notes into newly generated poster text."
+      : "",
     fontGuidance,
     "All newly generated text must use correct spelling, correct glyphs, and readable layout hierarchy.",
     "Preserve any existing logo, printed words, numbers, or graphics that are already part of the physical product exactly as-is.",
     "Do not translate or redesign text that is physically printed on the product.",
-  ].join(". ");
+  ].filter(Boolean).join(". ");
 }
 
 function buildResolutionInstruction(resolution: SupportedResolution): string {
@@ -255,6 +264,7 @@ serve(async (req: Request) => {
       styleReferenceText,
       modelMode,
       modelImage,
+      fidelityMode,
       imageType,
       textLanguage,
       model,
@@ -275,12 +285,20 @@ serve(async (req: Request) => {
 
     const modelSource = coerceImageInput(modelImage);
     const modelReferenceImage = modelSource ? await resolveImageToBase64(modelSource) : null;
-    const galleryLimit = modelReferenceImage ? 1 : 2;
+    const normalizedFidelityMode = normalizeFidelityMode(fidelityMode);
+    const styleSource = coerceImageInput(referenceStyleUrl);
+    const galleryLimit =
+      normalizedFidelityMode === "strict"
+        ? modelReferenceImage || styleSource
+          ? 3
+          : 4
+        : modelReferenceImage
+        ? 1
+        : 2;
     const gallerySources = coerceImageList(referenceGallery).slice(0, galleryLimit);
     const galleryImages = (
       await Promise.all(gallerySources.map((item) => resolveImageToBase64(item)))
     ).filter(Boolean) as Array<{ mimeType: string; base64: string }>;
-    const styleSource = coerceImageInput(referenceStyleUrl);
     const styleImage = styleSource ? await resolveImageToBase64(styleSource) : null;
 
     const normalizedImageType = normalizeImageType(imageType);
@@ -289,7 +307,11 @@ serve(async (req: Request) => {
     const normalizedResolution = normalizeResolution(resolution);
     const normalizedAspectRatio = normalizeAspectRatio(aspectRatio);
     const normalizedModelMode = normalizeModelMode(modelMode);
-    const modelSelection = resolveImageModelSelection(normalizedModel);
+    const effectiveModel =
+      normalizedFidelityMode === "strict" ? "gemini-3.1-flash-image-preview" : normalizedModel;
+    const effectiveResolution: SupportedResolution =
+      normalizedFidelityMode === "strict" ? "1k" : normalizedResolution;
+    const modelSelection = resolveImageModelSelection(effectiveModel);
 
     const absoluteRules = [
       "=== ABSOLUTE RULES ===",
@@ -305,6 +327,22 @@ serve(async (req: Request) => {
       "If the product proportions or material appearance changes, the result is a total failure.",
     ].join(". ");
 
+    const strictFidelityInstruction =
+      normalizedFidelityMode === "strict"
+        ? [
+            "=== STRICT FIDELITY MODE ===",
+            "Product fidelity has higher priority than creativity, new styling, dramatic composition, or lifestyle storytelling.",
+            "For phone cases: preserve exact camera hole count, hole size, hole position, lens-ring spacing, button cutouts, speaker/charging cutouts, edge thickness, corner radius, raised lip, and transparent/opaque material behavior.",
+            "For printed products: preserve the exact artwork layout, artwork scale, artwork position, typography placement, color blocks, line art, logos, and decorative motifs.",
+            "For packaging: preserve the box/bottle/bag silhouette, label placement, cap shape, edges, folds, seams, and printed panel structure.",
+            "Do not redesign the product pattern. Do not invent a similar new SKU. Do not simplify or stylize away key details.",
+            "Avoid strong perspective distortion, extreme close-up cropping, warped surfaces, fisheye angles, and dramatic rotations that change the perceived product geometry.",
+            "Do not let hands, props, people, shadows, or foreground objects cover camera holes, printed artwork, labels, ports, buttons, or key structure.",
+            "Prefer front-facing, three-quarter-front, or mild perspective views with the full product clearly readable.",
+            "Use light scenes and restrained props only when they do not reduce product structure visibility.",
+          ].join(". ")
+        : "";
+
     const roleInstructions = [
       "ROLE ASSIGNMENT:",
       "Image 1 is the primary product reference and must be preserved exactly.",
@@ -318,6 +356,9 @@ serve(async (req: Request) => {
         ? "One reference image is style reference only for lighting, atmosphere, composition rhythm, and color mood. Do not copy the style image's product."
         : "",
       "If the source image is a poster, banner, lifestyle shot, or already contains scene props, extract the core product and rebuild a clean product-focused composition around it.",
+      normalizedFidelityMode === "strict"
+        ? "Strict fidelity is enabled. Treat all additional product-angle references as structural evidence. The final image must agree with the majority of product references on holes, edges, artwork, and proportions."
+        : "",
     ]
       .filter(Boolean)
       .join(". ");
@@ -355,7 +396,15 @@ serve(async (req: Request) => {
       ].join(". ");
 
     const modelPresenceInstruction =
-      normalizedModelMode === "with_model"
+      normalizedFidelityMode === "strict"
+        ? [
+            "MODEL PRESENCE:",
+            normalizedModelMode === "with_model" && modelReferenceImage
+              ? "A model reference is provided, but strict fidelity is enabled. Use a restrained pose and keep the product unobstructed; hands or body must not cover key holes, artwork, labels, or edges."
+              : "Strict fidelity is enabled. Prefer product-only or light-scene composition. Avoid adding models, hands, mannequins, or complex interactions unless absolutely necessary for the screen goal.",
+            "If any human element is used, it must stay secondary and must not touch, bend, warp, squeeze, crop, or obscure the product's key structure.",
+          ].join(". ")
+        : normalizedModelMode === "with_model"
         ? [
             "MODEL PRESENCE:",
             modelReferenceImage
@@ -381,6 +430,15 @@ serve(async (req: Request) => {
       ].join(". ")
       : "";
 
+    const finalLanguageLock = normalizedTextLanguage === "en"
+      ? [
+          "FINAL TEXT LANGUAGE LOCK:",
+          "Newly generated poster or scene text must be English only.",
+          "Do not generate Chinese/CJK characters anywhere except text already physically printed on the product reference.",
+          "If uncertain about text, use fewer English words rather than inventing non-English or pseudo text.",
+        ].join(". ")
+      : "";
+
     const structuredPromptInstruction = [
       promptSections.styleName ? `STYLE NAME: ${promptSections.styleName}.` : "",
       promptSections.visualStyle ? `VISUAL STYLE: ${promptSections.visualStyle}.` : "",
@@ -394,11 +452,12 @@ serve(async (req: Request) => {
 
     const systemInstruction = [
       absoluteRules,
+      strictFidelityInstruction,
       roleInstructions,
       sceneExecutionInstruction,
       typeInstruction,
       buildTextInstruction(normalizedTextLanguage),
-      buildResolutionInstruction(normalizedResolution),
+      buildResolutionInstruction(effectiveResolution),
       buildAspectRatioInstruction(normalizedAspectRatio),
       `MODEL TARGET: Prefer visual behavior suitable for ${modelSelection.label}.`,
       modelPresenceInstruction,
@@ -406,6 +465,7 @@ serve(async (req: Request) => {
       structuredPromptInstruction,
       sceneLockInstruction,
       `USER REQUEST RAW: ${promptText}`,
+      finalLanguageLock,
     ]
       .filter(Boolean)
       .join(". ");
@@ -464,9 +524,11 @@ serve(async (req: Request) => {
       textLanguage: normalizedTextLanguage,
       modelRequested: modelSelection.requestedModel,
       modelSelection: normalizedModel,
-      resolution: normalizedResolution,
+      resolution: effectiveResolution,
+      requestedResolution: normalizedResolution,
       aspectRatio: normalizedAspectRatio,
       modelMode: normalizedModelMode,
+      fidelityMode: normalizedFidelityMode,
       promptLength: promptText.length,
       galleryCount: galleryImages.length,
       hasModelReference: Boolean(modelReferenceImage),
@@ -478,9 +540,9 @@ serve(async (req: Request) => {
       functionName: normalizedDebugContext.screenNumber
         ? `generate-image:detail-screen-${normalizedDebugContext.screenNumber}`
         : "generate-image",
-      selectedModel: normalizedModel,
+      selectedModel: effectiveModel,
       parts,
-      resolution: normalizedResolution,
+      resolution: effectiveResolution,
     });
 
     return jsonResponse(
@@ -490,8 +552,12 @@ serve(async (req: Request) => {
           ...meta,
           debugContext: normalizedDebugContext,
           modelSelection: normalizedModel,
+          effectiveModelSelection: effectiveModel,
           modelLabel: modelSelection.label,
+          requestedResolution: normalizedResolution,
+          effectiveResolution,
           aspectRatio: normalizedAspectRatio,
+          fidelityMode: normalizedFidelityMode,
         },
       },
       200,

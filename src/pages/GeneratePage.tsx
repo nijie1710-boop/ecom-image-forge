@@ -1,6 +1,7 @@
 ﻿import { useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
@@ -31,7 +32,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { GenerationContext } from "@/contexts/GenerationContext";
-import type { GenerationModel, ModelMode, OutputResolution } from "@/lib/ai-generator";
+import type { FidelityMode, GenerationModel, ModelMode, OutputResolution } from "@/lib/ai-generator";
 import { errorHintFromMessage, normalizeUserErrorMessage } from "@/lib/error-messages";
 import { suggestScenes } from "@/lib/suggest-scenes";
 import {
@@ -172,6 +173,7 @@ const GeneratePage = () => {
   const [styleReferenceText, setStyleReferenceText] = useState("");
   const [modelMode, setModelMode] = useState<ModelMode>("none");
   const [modelImage, setModelImage] = useState("");
+  const [fidelityMode, setFidelityMode] = useState<FidelityMode>("normal");
   const [imageType, setImageType] = useState(imageTypes[0]);
   const [selectedRatio, setSelectedRatio] = useState("3:4");
   const [textLanguage, setTextLanguage] = useState("zh");
@@ -236,6 +238,29 @@ const GeneratePage = () => {
     }
   }, [selectedModel, selectedResolution]);
 
+  const handleFidelityModeChange = (checked: boolean) => {
+    const nextMode: FidelityMode = checked ? "strict" : "normal";
+    setFidelityMode(nextMode);
+    if (checked) {
+      setSelectedModel("gemini-3.1-flash-image-preview");
+      setSelectedResolution("1k");
+      if (modelMode === "with_model") {
+        setModelMode("none");
+        setModelImage("");
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (fidelityMode !== "strict") return;
+    if (selectedModel !== "gemini-3.1-flash-image-preview") {
+      setSelectedModel("gemini-3.1-flash-image-preview");
+    }
+    if (selectedResolution !== "1k") {
+      setSelectedResolution("1k");
+    }
+  }, [fidelityMode, selectedModel, selectedResolution]);
+
   useEffect(() => {
     if (templateId && !appliedTemplate) {
       setAppliedTemplate(templateId);
@@ -259,6 +284,7 @@ const GeneratePage = () => {
         imageType: string;
         selectedRatio: string;
         textLanguage: string;
+        fidelityMode: FidelityMode;
       }>;
 
       if (Array.isArray(draft.uploadedImages) && draft.uploadedImages.length) {
@@ -271,6 +297,7 @@ const GeneratePage = () => {
       if (draft.imageType && imageTypes.includes(draft.imageType)) setImageType(draft.imageType);
       if (draft.selectedRatio) setSelectedRatio(draft.selectedRatio);
       if (draft.textLanguage) setTextLanguage(draft.textLanguage);
+      if (draft.fidelityMode) setFidelityMode(draft.fidelityMode);
 
       setErrorMessage(null);
       setResults([]);
@@ -495,7 +522,7 @@ const GeneratePage = () => {
     const deductResult = await deductCredits(
       cost,
       "generate_image",
-      `AI 生图 ${totalImages} 张（${modelLabel} ${selectedResolution}，${unitCost} 积分/张）`,
+      `AI 主图 ${totalImages} 张（${modelLabel} ${selectedResolution}，${unitCost} 积分/张）`,
     );
     if (!deductResult.success) {
       setIsGenerating(false);
@@ -522,6 +549,7 @@ const GeneratePage = () => {
       styleReferenceText: styleReferenceText.trim() || undefined,
       modelMode,
       modelImage: modelImage || undefined,
+      fidelityMode,
       userId: user?.id,
       onComplete: (images: string[]) => {
         setResults(images);
@@ -559,7 +587,7 @@ const GeneratePage = () => {
     const deductResult = await deductCredits(
       cost,
       "generate_image",
-      `AI 生图整批重生 ${regenCount} 张（${modelLabel} ${regenRes}，${getGenerateImageUnitCost(regenModel, regenRes)} 积分/张）`,
+      `AI 主图整批重生 ${regenCount} 张（${modelLabel} ${regenRes}，${getGenerateImageUnitCost(regenModel, regenRes)} 积分/张）`,
     );
     if (!deductResult.success) {
       setIsGenerating(false);
@@ -600,7 +628,7 @@ const GeneratePage = () => {
     const deductResult = await deductCredits(
       cost,
       "generate_image",
-      `AI 生图单张重生（${modelLabel} ${singleRes}，${cost} 积分）`,
+      `AI 主图基于此图再生成（${modelLabel} ${singleRes}，${cost} 积分）`,
     );
     if (!deductResult.success) {
       setIsGenerating(false);
@@ -715,15 +743,18 @@ const GeneratePage = () => {
     <div className="mx-auto max-w-[1480px] space-y-6 px-4 py-6 md:px-6">
       <WorkspaceHeader
         icon={Sparkles}
-        badge="AI 生图"
-        title="AI 电商图片生成"
-        description="上传商品图，先分析场景方案，再快速生成多张电商图结果。"
+        badge="AI 主图"
+        title="AI 电商主图生成"
+        description="上传商品图，快速生成主图、场景图或单张详情图。适合快速出图、试风格、试场景。"
         steps={["1. 上传商品", "2. 分析场景", "3. 生成图片"]}
       />
 
       <WorkspaceShell
         sidebar={
           <div className="space-y-5 rounded-3xl border border-border bg-card p-5 pb-24 shadow-sm xl:max-h-[calc(100vh-7rem)] xl:overflow-y-auto xl:pb-6">
+        <div className="rounded-2xl border border-primary/15 bg-primary/5 p-3 text-xs leading-5 text-muted-foreground">
+          适合单张或多张独立图片生成，不负责整套详情页结构策划。
+        </div>
 
         <div className="space-y-2">
           <div className="flex items-center justify-between">
@@ -1016,6 +1047,27 @@ const GeneratePage = () => {
                 />
               </div>
 
+              <div className="rounded-2xl border border-border bg-background/60 p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-foreground">严格保真模式</div>
+                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                      适合手机壳、印花商品、包装类等对外形和图案一致性要求高的商品。开启后会优先锁定商品结构和图案，减少形变。
+                    </p>
+                  </div>
+                  <Switch
+                    checked={fidelityMode === "strict"}
+                    onCheckedChange={handleFidelityModeChange}
+                    aria-label="严格保真模式"
+                  />
+                </div>
+                {fidelityMode === "strict" && (
+                  <p className="mt-3 rounded-xl bg-primary/5 px-3 py-2 text-xs leading-5 text-primary">
+                    严格保真模式会优先保证商品外形、开孔和图案一致性，创意变化会相对保守。已优先使用 Nano Banana 2 和 1K 标准生成。
+                  </p>
+                )}
+              </div>
+
               <div className="space-y-3 rounded-2xl border border-border bg-background/60 p-3">
                 <div className="flex items-center justify-between">
                   <div>
@@ -1045,7 +1097,11 @@ const GeneratePage = () => {
                     </button>
                     <button
                       type="button"
-                      onClick={() => setModelMode("with_model")}
+                      onClick={() => {
+                        if (fidelityMode === "strict") return;
+                        setModelMode("with_model");
+                      }}
+                      disabled={fidelityMode === "strict"}
                       className={`rounded-md px-2 py-1 text-[11px] font-medium transition ${
                         modelMode === "with_model"
                           ? "bg-primary text-primary-foreground"
@@ -1057,6 +1113,11 @@ const GeneratePage = () => {
                     </button>
                   </div>
                 </div>
+                {fidelityMode === "strict" && (
+                  <p className="text-[11px] leading-5 text-muted-foreground">
+                    严格保真模式下会默认减少人物和手持遮挡，因此暂不启用模特图。
+                  </p>
+                )}
 
                 {modelMode === "with_model" && (
                   <label className="flex min-h-24 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-border px-3 text-center transition-colors hover:border-primary/40">
@@ -1221,7 +1282,7 @@ const GeneratePage = () => {
           <>
             <WorkspaceSection
               title="结果已经准备好了"
-              description="先挑一张满意的结果预览或编辑，不满意可整批重生。"
+              description="已生成多张独立图片结果，可继续挑选、下载、编辑或重生。"
               actions={
                 <>
                   <div className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-[11px] font-medium text-primary">
@@ -1230,11 +1291,11 @@ const GeneratePage = () => {
                   </div>
                   <Button variant="outline" size="sm" className="h-9 text-xs" onClick={handleRegenerate}>
                     <RefreshCw className="mr-1 h-3.5 w-3.5" />
-                    整批重生（{results.length} 张）
+                    整批重生
                   </Button>
                   <Button variant="default" size="sm" className="h-9 text-xs" onClick={downloadAll}>
                     <Download className="mr-1 h-3.5 w-3.5" />
-                    全部下载
+                    全部下载图片
                   </Button>
                 </>
               }
@@ -1246,6 +1307,7 @@ const GeneratePage = () => {
                   { label: "模型", value: selectedModelLabel },
                   { label: "规格", value: `${selectedResolutionLabel} / ${selectedRatio}` },
                   { label: "文字语言", value: selectedLanguageLabel },
+                  { label: "保真模式", value: fidelityMode === "strict" ? "严格保真" : "标准" },
                 ]}
               />
             </WorkspaceSection>
@@ -1288,13 +1350,13 @@ const GeneratePage = () => {
                         onClick={() => navigate(`/dashboard/edit?url=${encodeURIComponent(src)}`)}
                         className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-medium text-foreground transition hover:border-primary/40 hover:text-primary"
                       >
-                        编辑
+                        编辑图片
                       </button>
                       <button
                         onClick={() => downloadImage(src, `picspark-${Date.now()}-${index + 1}.jpg`)}
                         className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-medium text-foreground transition hover:border-primary/40 hover:text-primary"
                       >
-                        下载
+                        下载图片
                       </button>
                       <button
                         onClick={handleRegenerateSingle}
@@ -1302,7 +1364,7 @@ const GeneratePage = () => {
                         className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-medium text-foreground transition hover:border-primary/40 hover:text-primary disabled:opacity-50"
                       >
                         <RefreshCw className="mr-1 inline h-3 w-3" />
-                        单张重生
+                        基于此图再生成
                       </button>
                     </div>
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
@@ -1357,8 +1419,8 @@ const GeneratePage = () => {
         ) : (
           <WorkspaceEmptyState
             icon={Sparkles}
-            title="准备就绪"
-            description="上传商品图，先选一个场景方案，再生成电商图。"
+            title="准备开始生成"
+            description="上传商品图并选择场景方案后，即可快速生成电商主图。"
             className="min-h-[400px]"
           />
         )}

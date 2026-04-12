@@ -25,8 +25,8 @@ import { callAdminApi, type AdminTask } from "@/lib/admin-api";
 
 const TASK_FILTERS = [
   { value: "all", label: "全部" },
-  { value: "generate_image", label: "AI 生图" },
-  { value: "generate_copy", label: "AI 详情页" },
+  { value: "generate_image", label: "AI 主图" },
+  { value: "generate_copy", label: "AI 详情图" },
   { value: "translate_image", label: "图文翻译" },
   { value: "manual_adjustment", label: "手动调整" },
 ] as const;
@@ -40,8 +40,8 @@ const STATUS_FILTERS = [
 ] as const;
 
 const TASK_TYPE_LABELS: Record<string, string> = {
-  generate_image: "AI 生图",
-  generate_copy: "AI 详情页",
+  generate_image: "AI 主图",
+  generate_copy: "AI 详情图",
   translate_image: "图文翻译",
   manual_adjustment: "手动调整",
   unknown: "其他任务",
@@ -202,7 +202,7 @@ const AdminTasksPage = () => {
         }),
       );
       navigate("/dashboard/generate");
-      toast.success("已创建后台重试草稿，并带你回到 AI 生图页。");
+      toast.success("已创建后台重试草稿，并带你回到 AI 主图页。");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "创建重试草稿失败");
     } finally {
@@ -478,7 +478,7 @@ const AdminTasksPage = () => {
                   <div className="text-xs text-muted-foreground">重试能力</div>
                   <div className="mt-1 text-sm leading-6 text-foreground">
                     {selectedTask.retry_supported
-                      ? "当前支持后台重试：会基于这条任务关联的结果图自动创建 AI 生图草稿，并直接带回工具页。"
+                      ? "当前支持后台重试：会基于这条任务关联的结果图自动创建 AI 主图草稿，并直接带回工具页。"
                       : "当前没有足够的原始素材可在后台直接重建，因此仍建议先复制摘要，再回到对应工具重新发起。"}
                   </div>
                 </div>

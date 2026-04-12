@@ -1,10 +1,17 @@
-const PRODUCTION_URL = "https://www.picspark.cn";
+function normalizeOrigin(value: string): string {
+  return value.replace(/\/+$/, "");
+}
 
 export function getAppOrigin(): string {
   if (typeof window !== "undefined") {
     return window.location.origin;
   }
-  return PRODUCTION_URL;
+
+  const appUrl = import.meta.env.VITE_APP_URL?.trim();
+  if (!appUrl) {
+    throw new Error("[env] Missing VITE_APP_URL. Configure it in the current Vercel environment.");
+  }
+  return normalizeOrigin(appUrl);
 }
 
 export function getAuthCallbackUrl(): string {

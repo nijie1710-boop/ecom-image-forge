@@ -58,6 +58,27 @@ interface PricingDefaults {
   };
 }
 
+type DbErrorLike = {
+  code?: string;
+  message?: string;
+  details?: string;
+  hint?: string;
+};
+
+class AppError extends Error {
+  code: string;
+  status: number;
+  detail?: string;
+
+  constructor(code: string, status: number, message: string, detail?: string) {
+    super(message);
+    this.name = "AppError";
+    this.code = code;
+    this.status = status;
+    this.detail = detail;
+  }
+}
+
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
@@ -66,6 +87,132 @@ function json(data: unknown, status = 200) {
       "Content-Type": "application/json",
     },
   });
+}
+
+function jsonError(error: unknown) {
+  const appError =
+    error instanceof AppError
+      ? error
+      : new AppError(
+          "MANAGE_BALANCE_FAILED",
+          500,
+          "积分服务请求失败，请稍后再试。",
+          error instanceof Error ? error.message : String(error),
+        );
+
+  console.error("manage-balance failed:", {
+    code: appError.code,
+    status: appError.status,
+    message: appError.message,
+    detail: appError.detail,
+  });
+
+  return json(
+    {
+      error: appError.code,
+      message: appError.message,
+      detail: appError.detail,
+    },
+    appError.status,
+  );
+}
+
+function dbErrorDetail(error: DbErrorLike) {
+  return [error.code, error.message, error.details, error.hint]
+    .filter(Boolean)
+    .join(" | ")
+    .slice(0, 800);
+}
+
+function classifyDbError(error: DbErrorLike, context: string): AppError {
+  const detail = dbErrorDetail(error);
+  const text = detail.toLowerCase();
+
+  if (
+    error.code === "PGRST203" ||
+    text.includes("multiple choices") ||
+    text.includes("more than one function") ||
+    text.includes("ambiguous")
+  ) {
+    return new AppError(
+      "DATABASE_RPC_AMBIGUOUS",
+      500,
+      "积分扣费 RPC 存在多个重载版本，PostgREST 无法确定调用哪个函数，请清理旧版 deduct_balance 重载。",
+      detail || context,
+    );
+  }
+
+  if (
+    error.code === "PGRST202" ||
+    error.code === "42883" ||
+    text.includes("could not find the function") ||
+    text.includes("function") && text.includes("deduct_balance")
+  ) {
+    return new AppError(
+      "DATABASE_RPC_MISSING",
+      500,
+      "积分扣费 RPC 缺失或 PostgREST schema 尚未刷新，请同步 staging 数据库 migration。",
+      detail || context,
+    );
+  }
+
+  if (
+    error.code === "42P01" ||
+    error.code === "PGRST205" ||
+    text.includes("relation") && text.includes("does not exist") ||
+    text.includes("could not find the table")
+  ) {
+    return new AppError(
+      "DATABASE_TABLE_MISSING",
+      500,
+      "积分服务依赖的数据表缺失，请同步 staging 数据库 migration。",
+      detail || context,
+    );
+  }
+
+  if (
+    error.code === "42703" ||
+    error.code === "PGRST204" ||
+    text.includes("column") && text.includes("does not exist") ||
+    text.includes("could not find") && text.includes("column")
+  ) {
+    return new AppError(
+      "DATABASE_COLUMN_MISSING",
+      500,
+      "积分服务依赖的数据列缺失，请同步 staging 数据库 migration。",
+      detail || context,
+    );
+  }
+
+  if (
+    error.code === "42501" ||
+    text.includes("permission denied") ||
+    text.includes("row-level security")
+  ) {
+    return new AppError(
+      "DATABASE_PERMISSION_DENIED",
+      500,
+      "积分服务数据库权限不足，请检查 service role key、RLS policy 和 RPC grant。",
+      detail || context,
+    );
+  }
+
+  return new AppError("DATABASE_QUERY_FAILED", 500, `积分服务数据库查询失败：${context}`, detail);
+}
+
+function throwDb(error: DbErrorLike | null | undefined, context: string) {
+  if (error) throw classifyDbError(error, context);
+}
+
+function requireEnv(name: string, value: string | undefined) {
+  if (!value) {
+    throw new AppError(
+      `${name}_MISSING`,
+      500,
+      `后端环境变量 ${name} 缺失，请检查 staging Supabase Function secrets。`,
+    );
+  }
+  return value;
 }
 
 function getDefaultPricing(): PricingDefaults {
@@ -102,16 +249,17 @@ function getDefaultPricing(): PricingDefaults {
 }
 
 async function ensureBalanceRow(supabase: ReturnType<typeof createClient>, userId: string) {
-  const { error } = await supabase.from("user_balances").insert({
-    user_id: userId,
-    balance: 0,
-    total_recharged: 0,
-    total_consumed: 0,
-  });
+  const { error } = await supabase.from("user_balances").upsert(
+    {
+      user_id: userId,
+      balance: 0,
+      total_recharged: 0,
+      total_consumed: 0,
+    },
+    { onConflict: "user_id", ignoreDuplicates: true },
+  );
 
-  if (error && !String(error.message || "").includes("duplicate key")) {
-    throw error;
-  }
+  throwDb(error, "ensure user_balances row");
 }
 
 async function applyRecharge(
@@ -122,7 +270,7 @@ async function applyRecharge(
   notes?: string,
 ) {
   if (!credits || credits <= 0) {
-    throw new Error("充值积分必须大于 0");
+    throw new AppError("INVALID_AMOUNT", 400, "充值积分必须大于 0。");
   }
 
   await ensureBalanceRow(supabase, userId);
@@ -134,7 +282,7 @@ async function applyRecharge(
     .eq("user_id", userId)
     .single();
 
-  if (currentBalanceError) throw currentBalanceError;
+  throwDb(currentBalanceError, "read current user_balances row");
 
   const nextBalance = Number(currentBalanceRow.balance || 0) + credits;
   const nextRecharged = Number(currentBalanceRow.total_recharged || 0) + credits;
@@ -148,7 +296,7 @@ async function applyRecharge(
     })
     .eq("user_id", userId);
 
-  if (updateBalanceError) throw updateBalanceError;
+  throwDb(updateBalanceError, "update user_balances for recharge");
 
   const { error: rechargeInsertError } = await supabase.from("recharge_records").insert({
     user_id: userId,
@@ -159,7 +307,7 @@ async function applyRecharge(
     completed_at: now,
   });
 
-  if (rechargeInsertError) throw rechargeInsertError;
+  throwDb(rechargeInsertError, "insert recharge_records");
 
   return nextBalance;
 }
@@ -171,7 +319,7 @@ async function getPricingSettings(supabase: ReturnType<typeof createClient>) {
     .select("key,value")
     .in("key", ["recharge_packages", "credit_rules"]);
 
-  if (error) throw error;
+  throwDb(error, "read admin_settings pricing");
 
   const settings =
     rows?.reduce((acc: Record<string, unknown>, row: { key: string; value: unknown }) => {
@@ -191,16 +339,15 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-
-    if (!supabaseUrl || !supabaseServiceKey) {
-      return json({ error: "系统配置缺失，请联系管理员" }, 500);
-    }
+    const supabaseUrl = requireEnv("SUPABASE_URL", Deno.env.get("SUPABASE_URL"));
+    const supabaseServiceKey = requireEnv(
+      "SUPABASE_SERVICE_ROLE_KEY",
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"),
+    );
 
     const authHeader = req.headers.get("Authorization");
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return json({ error: "未登录，请先登录" }, 401);
+      throw new AppError("UNAUTHORIZED", 401, "未登录，请先登录。");
     }
 
     const token = authHeader.replace("Bearer ", "");
@@ -212,19 +359,24 @@ Deno.serve(async (req) => {
     } = await supabase.auth.getUser(token);
 
     if (authError || !user) {
-      return json({ error: "未登录，请先登录" }, 401);
+      throw new AppError("UNAUTHORIZED", 401, "登录状态无效，请重新登录。", authError?.message);
     }
 
     const body = (await req.json().catch(() => ({}))) as BalanceRequest;
     const { action, amount, operationType, description, paymentMethod, notes } = body;
     const targetUserId = body.userId || user.id;
 
-    const { data: roleData } = await supabase
+    if (!action) {
+      throw new AppError("INVALID_ACTION", 400, "缺少积分操作类型。");
+    }
+
+    const { data: roleData, error: roleError } = await supabase
       .from("user_roles")
       .select("role")
       .eq("user_id", user.id)
       .eq("role", "admin")
       .maybeSingle();
+    throwDb(roleError, "read user_roles admin role");
     const isAdmin = !!roleData;
 
     switch (action) {
@@ -235,19 +387,19 @@ Deno.serve(async (req) => {
           .select("balance,total_recharged,total_consumed")
           .eq("user_id", user.id)
           .maybeSingle();
-        if (error) throw error;
+        throwDb(error, "read user_balances");
 
         const { count: rechargeCount, error: rechargeCountError } = await supabase
           .from("recharge_records")
           .select("*", { count: "exact", head: true })
           .eq("user_id", user.id);
-        if (rechargeCountError) throw rechargeCountError;
+        throwDb(rechargeCountError, "count recharge_records");
 
         const { count: consumptionCount, error: consumptionCountError } = await supabase
           .from("consumption_records")
           .select("*", { count: "exact", head: true })
           .eq("user_id", user.id);
-        if (consumptionCountError) throw consumptionCountError;
+        throwDb(consumptionCountError, "count consumption_records");
 
         return json({
           balance: {
@@ -268,7 +420,8 @@ Deno.serve(async (req) => {
       case "purchase_package": {
         return json(
           {
-            error: "当前充值已切换为支付宝网站支付，请从充值页发起支付，支付成功后系统会自动加积分。",
+            error: "PAYMENT_MOVED_TO_ALIPAY",
+            message: "当前充值已切换为支付宝网页支付，请从充值页发起支付。",
           },
           410,
         );
@@ -276,7 +429,7 @@ Deno.serve(async (req) => {
 
       case "deduct": {
         if (!amount || amount <= 0) {
-          return json({ error: "扣费积分必须大于 0" }, 400);
+          throw new AppError("INVALID_AMOUNT", 400, "扣费积分必须大于 0。");
         }
 
         const { data, error } = await supabase.rpc("deduct_balance", {
@@ -286,8 +439,8 @@ Deno.serve(async (req) => {
           p_description: description,
         });
 
-        if (error) throw error;
-        return json({ result: data?.[0] });
+        throwDb(error, "call deduct_balance RPC");
+        return json({ result: Array.isArray(data) ? data[0] : data });
       }
 
       case "history": {
@@ -306,8 +459,8 @@ Deno.serve(async (req) => {
             .limit(50),
         ]);
 
-        if (recharges.error) throw recharges.error;
-        if (consumptions.error) throw consumptions.error;
+        throwDb(recharges.error, "read recharge_records history");
+        throwDb(consumptions.error, "read consumption_records history");
 
         return json({
           recharges: recharges.data || [],
@@ -317,11 +470,11 @@ Deno.serve(async (req) => {
 
       case "recharge": {
         if (!isAdmin) {
-          return json({ error: "权限不足，当前账户不能手动充值。" }, 403);
+          throw new AppError("FORBIDDEN", 403, "权限不足，当前账号不能手动充值。");
         }
 
         if (!amount || amount <= 0) {
-          return json({ error: "充值积分必须大于 0" }, 400);
+          throw new AppError("INVALID_AMOUNT", 400, "充值积分必须大于 0。");
         }
 
         const newBalance = await applyRecharge(
@@ -336,15 +489,9 @@ Deno.serve(async (req) => {
       }
 
       default:
-        return json({ error: "未知操作" }, 400);
+        throw new AppError("INVALID_ACTION", 400, `未知积分操作：${action}`);
     }
   } catch (error) {
-    console.error("manage-balance failed:", error);
-    return json(
-      {
-        error: error instanceof Error ? error.message : "当前请求失败，请稍后再试",
-      },
-      500,
-    );
+    return jsonError(error);
   }
 });

@@ -2,35 +2,34 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
-const DEFAULT_SUPABASE_URL = 'https://rqgrovumfgjwuhkthqxe.supabase.co';
-const DEFAULT_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_kR5Qt951QycXiDjppFSquQ_XODYlvpq';
-
-function getProductionOverride() {
-  if (typeof window === 'undefined') return null;
-
-  const hostname = window.location.hostname;
-  if (hostname === 'picspark.cn' || hostname === 'www.picspark.cn') {
-    return {
-      url: DEFAULT_SUPABASE_URL,
-      key: DEFAULT_SUPABASE_PUBLISHABLE_KEY,
-    };
+function requireClientEnv(name: string, value: string | undefined): string {
+  const resolved = value?.trim();
+  if (!resolved) {
+    throw new Error(`[env] Missing ${name}. Configure it in the current Vercel environment.`);
   }
-
-  return null;
+  return resolved;
 }
 
-const productionOverride = getProductionOverride();
-export const SUPABASE_URL =
-  productionOverride?.url || import.meta.env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL;
-export const SUPABASE_PUBLISHABLE_KEY =
-  productionOverride?.key || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || DEFAULT_SUPABASE_PUBLISHABLE_KEY;
+export const SUPABASE_URL = requireClientEnv("VITE_SUPABASE_URL", import.meta.env.VITE_SUPABASE_URL);
+export const SUPABASE_PUBLISHABLE_KEY = requireClientEnv(
+  "VITE_SUPABASE_PUBLISHABLE_KEY",
+  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+);
+
+if (typeof window !== "undefined") {
+  try {
+    console.info("[env] Supabase host:", new URL(SUPABASE_URL).host);
+  } catch {
+    console.warn("[env] VITE_SUPABASE_URL is not a valid URL.");
+  }
+}
 
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
 
 export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   auth: {
-    storage: localStorage,
+    storage: typeof window !== "undefined" ? window.localStorage : undefined,
     persistSession: true,
     autoRefreshToken: true,
   }
