@@ -1,6 +1,7 @@
 ﻿import { useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
@@ -31,7 +32,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { GenerationContext } from "@/contexts/GenerationContext";
-import type { GenerationModel, ModelMode, OutputResolution } from "@/lib/ai-generator";
+import type { FidelityMode, GenerationModel, ModelMode, OutputResolution } from "@/lib/ai-generator";
 import { errorHintFromMessage, normalizeUserErrorMessage } from "@/lib/error-messages";
 import { suggestScenes } from "@/lib/suggest-scenes";
 import {
@@ -172,6 +173,7 @@ const GeneratePage = () => {
   const [styleReferenceText, setStyleReferenceText] = useState("");
   const [modelMode, setModelMode] = useState<ModelMode>("none");
   const [modelImage, setModelImage] = useState("");
+  const [fidelityMode, setFidelityMode] = useState<FidelityMode>("normal");
   const [imageType, setImageType] = useState(imageTypes[0]);
   const [selectedRatio, setSelectedRatio] = useState("3:4");
   const [textLanguage, setTextLanguage] = useState("zh");
@@ -236,6 +238,29 @@ const GeneratePage = () => {
     }
   }, [selectedModel, selectedResolution]);
 
+  const handleFidelityModeChange = (checked: boolean) => {
+    const nextMode: FidelityMode = checked ? "strict" : "normal";
+    setFidelityMode(nextMode);
+    if (checked) {
+      setSelectedModel("gemini-3.1-flash-image-preview");
+      setSelectedResolution("1k");
+      if (modelMode === "with_model") {
+        setModelMode("none");
+        setModelImage("");
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (fidelityMode !== "strict") return;
+    if (selectedModel !== "gemini-3.1-flash-image-preview") {
+      setSelectedModel("gemini-3.1-flash-image-preview");
+    }
+    if (selectedResolution !== "1k") {
+      setSelectedResolution("1k");
+    }
+  }, [fidelityMode, selectedModel, selectedResolution]);
+
   useEffect(() => {
     if (templateId && !appliedTemplate) {
       setAppliedTemplate(templateId);
@@ -259,6 +284,7 @@ const GeneratePage = () => {
         imageType: string;
         selectedRatio: string;
         textLanguage: string;
+        fidelityMode: FidelityMode;
       }>;
 
       if (Array.isArray(draft.uploadedImages) && draft.uploadedImages.length) {
@@ -271,6 +297,7 @@ const GeneratePage = () => {
       if (draft.imageType && imageTypes.includes(draft.imageType)) setImageType(draft.imageType);
       if (draft.selectedRatio) setSelectedRatio(draft.selectedRatio);
       if (draft.textLanguage) setTextLanguage(draft.textLanguage);
+      if (draft.fidelityMode) setFidelityMode(draft.fidelityMode);
 
       setErrorMessage(null);
       setResults([]);
@@ -522,6 +549,7 @@ const GeneratePage = () => {
       styleReferenceText: styleReferenceText.trim() || undefined,
       modelMode,
       modelImage: modelImage || undefined,
+      fidelityMode,
       userId: user?.id,
       onComplete: (images: string[]) => {
         setResults(images);
@@ -1019,6 +1047,27 @@ const GeneratePage = () => {
                 />
               </div>
 
+              <div className="rounded-2xl border border-border bg-background/60 p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-foreground">严格保真模式</div>
+                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                      适合手机壳、印花商品、包装类等对外形和图案一致性要求高的商品。开启后会优先锁定商品结构和图案，减少形变。
+                    </p>
+                  </div>
+                  <Switch
+                    checked={fidelityMode === "strict"}
+                    onCheckedChange={handleFidelityModeChange}
+                    aria-label="严格保真模式"
+                  />
+                </div>
+                {fidelityMode === "strict" && (
+                  <p className="mt-3 rounded-xl bg-primary/5 px-3 py-2 text-xs leading-5 text-primary">
+                    严格保真模式会优先保证商品外形、开孔和图案一致性，创意变化会相对保守。已优先使用 Nano Banana 2 和 1K 标准生成。
+                  </p>
+                )}
+              </div>
+
               <div className="space-y-3 rounded-2xl border border-border bg-background/60 p-3">
                 <div className="flex items-center justify-between">
                   <div>
@@ -1048,7 +1097,11 @@ const GeneratePage = () => {
                     </button>
                     <button
                       type="button"
-                      onClick={() => setModelMode("with_model")}
+                      onClick={() => {
+                        if (fidelityMode === "strict") return;
+                        setModelMode("with_model");
+                      }}
+                      disabled={fidelityMode === "strict"}
                       className={`rounded-md px-2 py-1 text-[11px] font-medium transition ${
                         modelMode === "with_model"
                           ? "bg-primary text-primary-foreground"
@@ -1060,6 +1113,11 @@ const GeneratePage = () => {
                     </button>
                   </div>
                 </div>
+                {fidelityMode === "strict" && (
+                  <p className="text-[11px] leading-5 text-muted-foreground">
+                    严格保真模式下会默认减少人物和手持遮挡，因此暂不启用模特图。
+                  </p>
+                )}
 
                 {modelMode === "with_model" && (
                   <label className="flex min-h-24 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-border px-3 text-center transition-colors hover:border-primary/40">
@@ -1249,6 +1307,7 @@ const GeneratePage = () => {
                   { label: "模型", value: selectedModelLabel },
                   { label: "规格", value: `${selectedResolutionLabel} / ${selectedRatio}` },
                   { label: "文字语言", value: selectedLanguageLabel },
+                  { label: "保真模式", value: fidelityMode === "strict" ? "严格保真" : "标准" },
                 ]}
               />
             </WorkspaceSection>

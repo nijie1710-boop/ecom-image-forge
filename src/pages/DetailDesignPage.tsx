@@ -22,6 +22,7 @@ import {
   ZoomIn,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -40,6 +41,7 @@ import {
 import { errorHintFromMessage, normalizeUserErrorMessage } from "@/lib/error-messages";
 import {
   type GenerationModel,
+  type FidelityMode,
   type OutputResolution,
 } from "@/lib/ai-generator";
 import {
@@ -263,6 +265,7 @@ function buildScreenPrompt(args: {
   productInfo: string;
   targetPlatform: string;
   targetLanguage: string;
+  fidelityMode: FidelityMode;
   screenIdea?: string;
 }): string {
   const {
@@ -273,9 +276,14 @@ function buildScreenPrompt(args: {
     productInfo,
     targetPlatform,
     targetLanguage,
+    fidelityMode,
     screenIdea,
   } =
     args;
+  const strictFidelityRules =
+    fidelityMode === "strict"
+      ? "STRICT FIDELITY MODE: prioritize product faithfulness over creativity. Preserve phone-case camera cutout count, size, position, button holes, border thickness, corner radius, printed pattern layout, pattern scale, and pattern position. Do not redesign the artwork, do not create a similar new product, avoid strong perspective distortion, avoid complex hand occlusion, and keep the product front/structure clearly visible."
+      : "";
 
   if (targetLanguage === "en") {
     return `
@@ -285,6 +293,7 @@ ABSOLUTE PRODUCT LOCK:
 - Use the exact same physical product from the uploaded product images.
 - Do not replace the product, product category, silhouette, structure, color, material, pattern, logo, artwork, ports, seams, buttons, or key details.
 - Only the background, scene, lighting, composition, supporting props, and camera language may change.
+${strictFidelityRules}
 
 IMPORTANT LANGUAGE LOCK:
 - The selected output language is English.
@@ -339,6 +348,7 @@ Generation requirements:
 8. If human presence is suggested, add it naturally as supporting context only; the product must remain the hero.
 9. If product-only display is suggested, do not add a model unless a tiny hand interaction clearly improves the use explanation.
 10. Keep the result realistic, sellable, and suitable for an e-commerce detail page.
+${fidelityMode === "strict" ? "11. In strict fidelity mode, prefer product-only or light-scene composition. Avoid dramatic angles, strong perspective, complex hand-held poses, or people covering the product." : ""}
 `.trim();
   }
 
@@ -347,6 +357,7 @@ Generation requirements:
 
 必须严格使用上传商品图中的同一件商品，不得替换商品、不得改掉商品主体结构、颜色、材质、图案和关键细节。
 允许变化的内容只有：背景、场景、灯光、构图、辅材和镜头语言。
+${fidelityMode === "strict" ? "严格保真模式：优先锁定商品本体，特别是手机壳、印花商品、包装类商品的开孔数量、开孔大小、开孔位置、边框厚度、四角弧度、按键孔、图案布局、图案比例和图案位置。禁止重设计图案，禁止生成成相似新款，禁止大透视形变，禁止手部或道具遮挡关键结构。" : ""}
 
 商品识别：
 ${compactPromptText(productSummary, 120)}
@@ -394,6 +405,7 @@ ${targetPlatform}
 8. 如果当前分屏建议人物出镜，可以自然加入真人模特、手部交互或使用动作，但人物只能辅助解释卖点，不能盖住商品主体。
 9. 如果当前分屏建议纯商品展示，就不要额外加入真人模特，除非只是极轻微的手部辅助且明显更利于说明使用方式。
 10. 保持商品真实、可售、适合电商详情页，不做无关艺术化改造。
+${fidelityMode === "strict" ? "11. 严格保真模式下优先纯商品或轻场景构图，不使用大角度斜拍、复杂手持、人物压住商品主体或遮挡开孔图案的画面。" : ""}
 `.trim();
 }
 
@@ -502,6 +514,7 @@ const DetailDesignPage = () => {
   const [selectedResolution, setSelectedResolution] =
     useState<OutputResolution>("2k");
   const [generationLanguage, setGenerationLanguage] = useState("zh");
+  const [fidelityMode, setFidelityMode] = useState<FidelityMode>("normal");
   const [generatedScreens, setGeneratedScreens] = useState<GeneratedScreenState[]>([]);
   const [isGeneratingScreens, setIsGeneratingScreens] = useState(false);
   const [generationError, setGenerationError] = useState<string | null>(null);
@@ -557,6 +570,7 @@ const DetailDesignPage = () => {
         selectedRatio: string;
         selectedResolution: OutputResolution;
         generationLanguage: string;
+        fidelityMode: FidelityMode;
         selectedModel: GenerationModel;
         targetPlatform: string;
         targetLanguage: string;
@@ -575,6 +589,7 @@ const DetailDesignPage = () => {
       setSelectedRatio(draft.selectedRatio || "3:4");
       setSelectedResolution(draft.selectedResolution || "2k");
       setGenerationLanguage(draft.generationLanguage || "zh");
+      setFidelityMode(draft.fidelityMode || "normal");
       setSelectedModel(draft.selectedModel || "gemini-3.1-flash-image-preview");
       setTargetPlatform(draft.targetPlatform || platformOptions[0]);
       setTargetLanguage(draft.targetLanguage || "zh");
@@ -666,6 +681,9 @@ const DetailDesignPage = () => {
     if (activeDetailJob.detailSettings?.resolution) {
       setSelectedResolution(activeDetailJob.detailSettings.resolution);
     }
+    if (activeDetailJob.detailSettings?.fidelityMode) {
+      setFidelityMode(activeDetailJob.detailSettings.fidelityMode);
+    }
     if (activeDetailJob.detailScreens?.length) {
       setGeneratedScreens((current) => {
         if (!current.length) {
@@ -725,6 +743,7 @@ const DetailDesignPage = () => {
         selectedRatio,
         selectedResolution,
         generationLanguage,
+        fidelityMode,
         selectedModel,
         targetPlatform,
         targetLanguage,
@@ -739,6 +758,8 @@ const DetailDesignPage = () => {
     );
   }, [
     hasRestoredDraft,
+    fidelityMode,
+    generationLanguage,
     planOptions,
     productImages,
     productInfo,
@@ -861,6 +882,13 @@ const DetailDesignPage = () => {
         ? "Human model strategy: let AI decide per screen whether a real model, hands, or product-only composition best explains the selling point. Add people only when wearing effect, hand-held use, scale comparison, or lifestyle context helps; never let people overpower the product."
         : "人物策略：由 AI 根据当前商品品类和每一屏的卖点表达，自行判断是否需要真人模特、手部出镜或纯商品展示。只有在上身效果、手持演示、尺寸对比或生活场景更能说明卖点时才加入人物，并且人物不能喧宾夺主。",
     );
+    if (fidelityMode === "strict") {
+      chunks.push(
+        language === "en"
+          ? "Strict fidelity mode: prioritize product structure, cutouts, printed artwork, proportions, and packaging shape over creative variation. Prefer product-only or light-scene composition."
+          : "严格保真模式：优先锁定商品结构、开孔、印花图案、比例和包装外形，创意变化保持保守，优先纯商品或轻场景表达。",
+      );
+    }
 
     return chunks.filter(Boolean).join("\n");
   };
@@ -1080,9 +1108,10 @@ const DetailDesignPage = () => {
         screen,
         productSummary,
         visibleText,
-        productInfo: appendPlanningContext(),
+        productInfo: appendPlanningContext(generationLanguage),
         targetPlatform,
         targetLanguage: generationLanguage,
+        fidelityMode,
         screenIdea: useScreenIdeas ? screenIdeas[screen.screen - 1] : "",
       });
       const existingPrompt = current?.prompt?.trim() || "";
@@ -1148,6 +1177,7 @@ const DetailDesignPage = () => {
       textLanguage: generationLanguage,
       model: selectedModel,
       resolution: selectedResolution,
+      fidelityMode,
       productImages,
       styleReferenceImage: styleReferenceImage || undefined,
       styleReferenceText: styleReferenceText.trim() || undefined,
@@ -1240,6 +1270,7 @@ const DetailDesignPage = () => {
       productInfo: appendPlanningContext(generationLanguage),
       targetPlatform,
       targetLanguage: generationLanguage,
+      fidelityMode,
       screenIdea: useScreenIdeas ? screenIdeas[screen.screen - 1] : "",
     });
     updateGeneratedScreen(screen.screen, (current) => ({
@@ -1274,6 +1305,25 @@ const DetailDesignPage = () => {
       setSelectedResolution(allowed[0]);
     }
   }, [selectedModel, selectedResolution]);
+
+  const handleFidelityModeChange = (checked: boolean) => {
+    const nextMode: FidelityMode = checked ? "strict" : "normal";
+    setFidelityMode(nextMode);
+    if (checked) {
+      setSelectedModel("gemini-3.1-flash-image-preview");
+      setSelectedResolution("1k");
+    }
+  };
+
+  useEffect(() => {
+    if (fidelityMode !== "strict") return;
+    if (selectedModel !== "gemini-3.1-flash-image-preview") {
+      setSelectedModel("gemini-3.1-flash-image-preview");
+    }
+    if (selectedResolution !== "1k") {
+      setSelectedResolution("1k");
+    }
+  }, [fidelityMode, selectedModel, selectedResolution]);
 
   // ---- 积分相关计算 ----
   const planCost = getDetailPlanCost();
@@ -1703,6 +1753,26 @@ const DetailDesignPage = () => {
                     onChange={setGenerationLanguage}
                     options={generationLanguageOptions}
                   />
+                  <div className="md:col-span-2 xl:col-span-1 rounded-2xl border border-border bg-background p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-semibold text-foreground">严格保真模式</div>
+                        <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                          适合手机壳、印花商品、包装类等对外形和图案一致性要求高的商品。开启后会优先锁定商品结构和图案，减少形变。
+                        </p>
+                      </div>
+                      <Switch
+                        checked={fidelityMode === "strict"}
+                        onCheckedChange={handleFidelityModeChange}
+                        aria-label="严格保真模式"
+                      />
+                    </div>
+                    {fidelityMode === "strict" && (
+                      <p className="mt-3 rounded-xl bg-primary/5 px-3 py-2 text-xs leading-5 text-primary">
+                        严格保真模式会优先保证商品外形、开孔和图案一致性，创意变化会相对保守。已优先使用 Nano Banana 2 和 1K 标准生成。
+                      </p>
+                    )}
+                  </div>
                 </div>
               )}
 

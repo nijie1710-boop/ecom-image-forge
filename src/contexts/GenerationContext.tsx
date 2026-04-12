@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
 import {
   generateImage,
+  type FidelityMode,
   type GenerationModel,
   type ModelMode,
   type OutputResolution,
@@ -52,6 +53,7 @@ export interface GenerationJob {
     resolution?: OutputResolution;
     styleReferenceImage?: string;
     styleReferenceText?: string;
+    fidelityMode?: FidelityMode;
   };
   createdAt: number;
 }
@@ -87,6 +89,7 @@ export interface ImageGenParams {
   styleReferenceText?: string;
   modelMode?: ModelMode;
   modelImage?: string;
+  fidelityMode?: FidelityMode;
   userId?: string;
   onComplete?: (images: string[]) => void;
 }
@@ -99,6 +102,7 @@ export interface DetailGenParams {
   productImages: string[];
   styleReferenceImage?: string;
   styleReferenceText?: string;
+  fidelityMode?: FidelityMode;
   screens: DetailScreenJobResult[];
   screenCost?: number;
   chargeDescription?: string;
@@ -694,6 +698,7 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           resolution: params.resolution,
           styleReferenceImage: params.styleReferenceImage,
           styleReferenceText: params.styleReferenceText,
+          fidelityMode: params.fidelityMode,
         },
         createdAt: Date.now(),
       });
@@ -757,9 +762,13 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
               textLanguage: params.textLanguage,
               model: params.model,
               resolution: params.resolution,
-              referenceGallery: (gallery.filter(Boolean) as string[]).slice(0, 1),
+              referenceGallery: (gallery.filter(Boolean) as string[]).slice(
+                0,
+                params.fidelityMode === "strict" ? 4 : 1,
+              ),
               styleReferenceImage,
               styleReferenceText: params.styleReferenceText,
+              fidelityMode: params.fidelityMode,
               debugContext: {
                 source: "detail",
                 screenNumber: screen.screen,

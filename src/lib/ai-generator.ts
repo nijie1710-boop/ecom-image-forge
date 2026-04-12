@@ -10,6 +10,7 @@ export type { GenerationModel } from "@/lib/gemini-models";
 
 export type OutputResolution = "0.5k" | "1k" | "2k" | "4k";
 export type ModelMode = "none" | "with_model";
+export type FidelityMode = "normal" | "strict";
 
 export interface GenerateImageParams {
   prompt: string;
@@ -25,6 +26,7 @@ export interface GenerateImageParams {
   styleReferenceText?: string;
   modelMode?: ModelMode;
   modelImage?: string;
+  fidelityMode?: FidelityMode;
   debugContext?: {
     source?: "main" | "detail" | "copy";
     screenNumber?: number;
@@ -274,6 +276,7 @@ async function generateSingleImageRaw(
       styleReferenceText: params.styleReferenceText || undefined,
       modelMode: params.modelMode || "none",
       modelImage: params.modelImage || undefined,
+      fidelityMode: params.fidelityMode || "normal",
       debugContext: {
         ...params.debugContext,
         promptLength: params.prompt.length,
