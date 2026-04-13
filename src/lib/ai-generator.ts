@@ -11,6 +11,18 @@ export type { GenerationModel } from "@/lib/gemini-models";
 export type OutputResolution = "0.5k" | "1k" | "2k" | "4k";
 export type ModelMode = "none" | "with_model";
 export type FidelityMode = "normal" | "strict";
+export type FidelityCategory = "phone-case" | "printed-product" | "packaging" | "general";
+
+export interface FidelityContext {
+  categoryHint?: FidelityCategory;
+  preservePattern?: boolean;
+  preferProductOnly?: boolean;
+  suppressModelReference?: boolean;
+  strictReason?: string;
+  structureReferencePriority?: string[];
+  preferredAngles?: string[];
+  forbiddenAngles?: string[];
+}
 
 export interface GenerateImageParams {
   prompt: string;
@@ -27,6 +39,7 @@ export interface GenerateImageParams {
   modelMode?: ModelMode;
   modelImage?: string;
   fidelityMode?: FidelityMode;
+  fidelityContext?: FidelityContext;
   debugContext?: {
     source?: "main" | "detail" | "copy";
     screenNumber?: number;
@@ -277,6 +290,7 @@ async function generateSingleImageRaw(
       modelMode: params.modelMode || "none",
       modelImage: params.modelImage || undefined,
       fidelityMode: params.fidelityMode || "normal",
+      fidelityContext: params.fidelityContext || undefined,
       debugContext: {
         ...params.debugContext,
         promptLength: params.prompt.length,

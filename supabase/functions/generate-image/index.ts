@@ -17,6 +17,50 @@ const corsHeaders = {
 };
 
 type SupportedResolution = "0.5k" | "1k" | "2k" | "4k";
+type FidelityCategory = "phone-case" | "printed-product" | "packaging" | "general";
+
+type FidelityContext = {
+  categoryHint?: FidelityCategory;
+  preservePattern?: boolean;
+  preferProductOnly?: boolean;
+  suppressModelReference?: boolean;
+  strictReason?: string;
+  structureReferencePriority?: string[];
+  preferredAngles?: string[];
+  forbiddenAngles?: string[];
+};
+
+type StrictStrategy = {
+  enabled: boolean;
+  category: FidelityCategory;
+  allowModelReference: boolean;
+  allowHumanPresence: boolean;
+  allowStyleReference: boolean;
+  preferProductOnly: boolean;
+  galleryLimit: number;
+  effectiveModel: ImageModelInput;
+  effectiveResolution: SupportedResolution;
+  structureReferencePriority: string[];
+  preferredAngles: string[];
+  forbiddenAngles: string[];
+  preservePattern: boolean;
+  strictReason?: string;
+};
+
+const PHONE_CASE_KEYWORDS = [
+  "手机壳",
+  "手机套",
+  "保护壳",
+  "保护套",
+  "phone case",
+  "iphone case",
+  "magsafe",
+  "镜头孔",
+  "camera cutout",
+];
+
+const PRINTED_PRODUCT_KEYWORDS = ["印花", "图案", "pattern", "graphic", "printed", "插画", "壳面"];
+const PACKAGING_KEYWORDS = ["包装", "包装盒", "礼盒", "瓶", "袋", "box", "bottle", "pouch", "label"];
 
 function parseDataUrl(url: string): { mimeType: string; base64: string } | null {
   if (!url.startsWith("data:")) return null;
@@ -89,6 +133,166 @@ function normalizeModelMode(value: string | undefined): "none" | "with_model" {
 
 function normalizeFidelityMode(value: string | undefined): "normal" | "strict" {
   return value === "strict" ? "strict" : "normal";
+}
+
+function includesKeyword(text: string, keywords: string[]) {
+  return keywords.some((keyword) => text.includes(keyword));
+}
+
+function normalizeFidelityCategory(value: unknown): FidelityCategory | undefined {
+  if (
+    value === "phone-case" ||
+    value === "printed-product" ||
+    value === "packaging" ||
+    value === "general"
+  ) {
+    return value;
+  }
+  return undefined;
+}
+
+function normalizeFidelityContext(value: unknown): FidelityContext | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const input = value as Record<string, unknown>;
+  const list = (field: string) =>
+    Array.isArray(input[field])
+      ? input[field]
+          .map((item) => String(item || "").trim())
+          .filter(Boolean)
+          .slice(0, 8)
+      : undefined;
+
+  return {
+    categoryHint: normalizeFidelityCategory(input.categoryHint),
+    preservePattern: Boolean(input.preservePattern),
+    preferProductOnly: Boolean(input.preferProductOnly),
+    suppressModelReference: Boolean(input.suppressModelReference),
+    strictReason: typeof input.strictReason === "string" ? input.strictReason.trim() : undefined,
+    structureReferencePriority: list("structureReferencePriority"),
+    preferredAngles: list("preferredAngles"),
+    forbiddenAngles: list("forbiddenAngles"),
+  };
+}
+
+function inferFidelityCategory(
+  prompt: string,
+  styleReferenceText: string | undefined,
+  fidelityContext: FidelityContext | undefined,
+): FidelityCategory {
+  if (fidelityContext?.categoryHint) return fidelityContext.categoryHint;
+
+  const combined = `${prompt}\n${styleReferenceText || ""}`.toLowerCase();
+  if (includesKeyword(combined, PHONE_CASE_KEYWORDS)) return "phone-case";
+  if (includesKeyword(combined, PACKAGING_KEYWORDS)) return "packaging";
+  if (includesKeyword(combined, PRINTED_PRODUCT_KEYWORDS)) return "printed-product";
+  return "general";
+}
+
+function buildStrictStrategy(args: {
+  fidelityMode: "normal" | "strict";
+  category: FidelityCategory;
+  fidelityContext?: FidelityContext;
+  normalizedModel: ImageModelInput;
+  normalizedResolution: SupportedResolution;
+  normalizedModelMode: "none" | "with_model";
+  hasModelReference: boolean;
+  hasStyleReference: boolean;
+}): StrictStrategy {
+  const {
+    fidelityMode,
+    category,
+    fidelityContext,
+    normalizedModel,
+    normalizedResolution,
+    normalizedModelMode,
+    hasModelReference,
+    hasStyleReference,
+  } = args;
+
+  if (fidelityMode !== "strict") {
+    return {
+      enabled: false,
+      category,
+      allowModelReference: normalizedModelMode === "with_model" && hasModelReference,
+      allowHumanPresence: true,
+      allowStyleReference: hasStyleReference,
+      preferProductOnly: false,
+      galleryLimit: hasModelReference ? 1 : 2,
+      effectiveModel: normalizedModel,
+      effectiveResolution: normalizedResolution,
+      structureReferencePriority: fidelityContext?.structureReferencePriority || ["front", "back"],
+      preferredAngles: fidelityContext?.preferredAngles || ["front", "3-4"],
+      forbiddenAngles: fidelityContext?.forbiddenAngles || [],
+      preservePattern: Boolean(fidelityContext?.preservePattern),
+      strictReason: fidelityContext?.strictReason,
+    };
+  }
+
+  const preservePattern =
+    Boolean(fidelityContext?.preservePattern) ||
+    category === "phone-case" ||
+    category === "printed-product";
+  const preferProductOnly =
+    category === "phone-case" ||
+    Boolean(fidelityContext?.preferProductOnly) ||
+    category === "printed-product" ||
+    category === "packaging";
+  const allowModelReference =
+    normalizedModelMode === "with_model" &&
+    hasModelReference &&
+    !fidelityContext?.suppressModelReference &&
+    category !== "phone-case";
+  const allowHumanPresence = category !== "phone-case";
+  const allowStyleReference = hasStyleReference;
+  const galleryLimit =
+    category === "phone-case"
+      ? 6
+      : category === "printed-product" || category === "packaging"
+      ? 5
+      : allowStyleReference || allowModelReference
+      ? 4
+      : 5;
+
+  return {
+    enabled: true,
+    category,
+    allowModelReference,
+    allowHumanPresence,
+    allowStyleReference,
+    preferProductOnly,
+    galleryLimit,
+    effectiveModel: "gemini-3.1-flash-image-preview",
+    effectiveResolution: "1k",
+    structureReferencePriority:
+      fidelityContext?.structureReferencePriority ||
+      (category === "phone-case"
+        ? ["front", "back", "side", "camera-cutout-closeup"]
+        : category === "printed-product"
+        ? ["front", "back", "pattern-closeup"]
+        : category === "packaging"
+        ? ["front", "back", "side", "label-closeup"]
+        : ["front", "side", "detail-closeup"]),
+    preferredAngles:
+      fidelityContext?.preferredAngles ||
+      (category === "phone-case"
+        ? ["front", "mild-3-4", "flat-lay", "camera-closeup", "simple-desktop"]
+        : category === "printed-product"
+        ? ["front", "mild-3-4", "flat-lay", "pattern-closeup"]
+        : category === "packaging"
+        ? ["front", "mild-3-4", "desktop", "label-closeup"]
+        : ["front", "mild-3-4", "clean-desktop"]),
+    forbiddenAngles:
+      fidelityContext?.forbiddenAngles ||
+      (category === "phone-case"
+        ? ["dramatic-tilt", "heavy-handheld", "model-shot", "prop-occlusion"]
+        : category === "printed-product"
+        ? ["extreme-perspective", "heavy-occlusion"]
+        : category === "packaging"
+        ? ["fisheye", "heavy-handheld", "prop-occlusion"]
+        : ["extreme-perspective", "heavy-occlusion"]),
+    preservePattern,
+    strictReason: fidelityContext?.strictReason,
+  };
 }
 
 function normalizeModel(value: unknown): ImageModelInput {
@@ -265,6 +469,7 @@ serve(async (req: Request) => {
       modelMode,
       modelImage,
       fidelityMode,
+      fidelityContext,
       imageType,
       textLanguage,
       model,
@@ -272,6 +477,7 @@ serve(async (req: Request) => {
       debugContext,
     } = body;
     const normalizedDebugContext = normalizeDebugContext(debugContext);
+    const normalizedFidelityContext = normalizeFidelityContext(fidelityContext);
 
     const productSource = coerceImageInput(imageBase64) || coerceImageInput(referenceImageUrl);
     const productImage = productSource ? await resolveImageToBase64(productSource) : null;
@@ -285,32 +491,42 @@ serve(async (req: Request) => {
 
     const modelSource = coerceImageInput(modelImage);
     const modelReferenceImage = modelSource ? await resolveImageToBase64(modelSource) : null;
-    const normalizedFidelityMode = normalizeFidelityMode(fidelityMode);
     const styleSource = coerceImageInput(referenceStyleUrl);
-    const galleryLimit =
-      normalizedFidelityMode === "strict"
-        ? modelReferenceImage || styleSource
-          ? 3
-          : 4
-        : modelReferenceImage
-        ? 1
-        : 2;
-    const gallerySources = coerceImageList(referenceGallery).slice(0, galleryLimit);
-    const galleryImages = (
-      await Promise.all(gallerySources.map((item) => resolveImageToBase64(item)))
-    ).filter(Boolean) as Array<{ mimeType: string; base64: string }>;
-    const styleImage = styleSource ? await resolveImageToBase64(styleSource) : null;
-
+    const normalizedFidelityMode = normalizeFidelityMode(fidelityMode);
     const normalizedImageType = normalizeImageType(imageType);
     const normalizedTextLanguage = normalizeTextLanguage(textLanguage);
     const normalizedModel = normalizeModel(model);
     const normalizedResolution = normalizeResolution(resolution);
     const normalizedAspectRatio = normalizeAspectRatio(aspectRatio);
     const normalizedModelMode = normalizeModelMode(modelMode);
-    const effectiveModel =
-      normalizedFidelityMode === "strict" ? "gemini-3.1-flash-image-preview" : normalizedModel;
-    const effectiveResolution: SupportedResolution =
-      normalizedFidelityMode === "strict" ? "1k" : normalizedResolution;
+    const inferredCategory = inferFidelityCategory(
+      String(prompt || ""),
+      typeof styleReferenceText === "string" ? styleReferenceText : undefined,
+      normalizedFidelityContext,
+    );
+    const strictStrategy = buildStrictStrategy({
+      fidelityMode: normalizedFidelityMode,
+      category: inferredCategory,
+      fidelityContext: normalizedFidelityContext,
+      normalizedModel,
+      normalizedResolution,
+      normalizedModelMode,
+      hasModelReference: Boolean(modelReferenceImage),
+      hasStyleReference: Boolean(styleSource),
+    });
+    const gallerySources = coerceImageList(referenceGallery).slice(0, strictStrategy.galleryLimit);
+    const galleryImages = (
+      await Promise.all(gallerySources.map((item) => resolveImageToBase64(item)))
+    ).filter(Boolean) as Array<{ mimeType: string; base64: string }>;
+    const styleImage = strictStrategy.allowStyleReference && styleSource
+      ? await resolveImageToBase64(styleSource)
+      : null;
+    const effectiveModel = strictStrategy.effectiveModel;
+    const effectiveResolution: SupportedResolution = strictStrategy.effectiveResolution;
+    const effectiveModelMode =
+      strictStrategy.allowModelReference && modelReferenceImage ? normalizedModelMode : "none";
+    const effectiveModelReferenceImage =
+      strictStrategy.allowModelReference && modelReferenceImage ? modelReferenceImage : null;
     const modelSelection = resolveImageModelSelection(effectiveModel);
 
     const absoluteRules = [
@@ -332,28 +548,51 @@ serve(async (req: Request) => {
         ? [
             "=== STRICT FIDELITY MODE ===",
             "Product fidelity has higher priority than creativity, new styling, dramatic composition, or lifestyle storytelling.",
-            "For phone cases: preserve exact camera hole count, hole size, hole position, lens-ring spacing, button cutouts, speaker/charging cutouts, edge thickness, corner radius, raised lip, and transparent/opaque material behavior.",
-            "For printed products: preserve the exact artwork layout, artwork scale, artwork position, typography placement, color blocks, line art, logos, and decorative motifs.",
-            "For packaging: preserve the box/bottle/bag silhouette, label placement, cap shape, edges, folds, seams, and printed panel structure.",
+            strictStrategy.category === "phone-case"
+              ? "PHONE CASE LOCK: preserve exact outer contour, width-height ratio, corner radius, camera hole count, camera hole position, lens-ring spacing, button cutouts, speaker/charging cutouts, edge thickness, raised lip, and transparent/opaque material behavior."
+              : "Keep the original product silhouette, width-height ratio, structure, and visual construction details unchanged.",
+            strictStrategy.category === "printed-product" || strictStrategy.preservePattern
+              ? "PRINT LOCK: preserve the exact artwork layout, artwork scale, artwork position, typography placement, color blocks, line art, logos, and decorative motifs."
+              : "",
+            strictStrategy.category === "packaging"
+              ? "PACKAGING LOCK: preserve the box/bottle/bag silhouette, label placement, cap shape, edges, folds, seams, and printed panel structure."
+              : "",
             "Do not redesign the product pattern. Do not invent a similar new SKU. Do not simplify or stylize away key details.",
             "Avoid strong perspective distortion, extreme close-up cropping, warped surfaces, fisheye angles, and dramatic rotations that change the perceived product geometry.",
             "Do not let hands, props, people, shadows, or foreground objects cover camera holes, printed artwork, labels, ports, buttons, or key structure.",
-            "Prefer front-facing, three-quarter-front, or mild perspective views with the full product clearly readable.",
+            `Prefer ${strictStrategy.preferredAngles.join(", ")} views with the full product clearly readable.`,
+            `Avoid ${strictStrategy.forbiddenAngles.join(", ")} compositions in strict mode.`,
             "Use light scenes and restrained props only when they do not reduce product structure visibility.",
           ].join(". ")
+        : "";
+
+    const strictExecutionStrategyInstruction =
+      normalizedFidelityMode === "strict"
+        ? [
+            "STRICT EXECUTION STRATEGY:",
+            `Requested model ${normalizedModel} is overridden to ${effectiveModel}.`,
+            `Requested resolution ${normalizedResolution} is overridden to ${effectiveResolution}.`,
+            `Use up to ${galleryImages.length} structure reference images before any style reference.`,
+            strictStrategy.category === "phone-case"
+              ? "Phone-case strict mode suppresses aggressive model-led composition and prioritizes product-only framing."
+              : "",
+            strictStrategy.strictReason ? `Strict reason: ${strictStrategy.strictReason}.` : "",
+          ].filter(Boolean).join(" ")
         : "";
 
     const roleInstructions = [
       "ROLE ASSIGNMENT:",
       "Image 1 is the primary product reference and must be preserved exactly.",
       galleryImages.length
-        ? `Images 2 to ${galleryImages.length + 1} are additional product angle references of the same item. Use them to lock structure, ports, seams, print, texture, and color consistency.`
+        ? `Images 2 to ${galleryImages.length + 1} are additional product angle references of the same item. Treat them as structure-lock evidence in this order of priority: ${strictStrategy.structureReferencePriority.join(", ")}. Use them to lock structure, ports, seams, print, texture, and color consistency.`
         : "There are no additional product-angle references. Re-photograph the same product in a better e-commerce setup.",
-      normalizedModelMode === "with_model" && modelReferenceImage
+      effectiveModelMode === "with_model" && effectiveModelReferenceImage
         ? "One reference image is a model/person reference. A visible human model is mandatory in the final image. Use it to guide pose, hand placement, body presence, and natural wearing context. Do not let the model hide the product."
-        : "There is no dedicated model reference image. Only add a natural human presence or hands when the screen plan clearly benefits from wearing effect, size reference, or real usage context.",
+        : strictStrategy.allowHumanPresence
+        ? "There is no dedicated model reference image. Only add a natural human presence or hands when the screen plan clearly benefits from wearing effect, size reference, or real usage context."
+        : "Strict category lock is active. Default to product-only composition and do not add people or hands unless the prompt explicitly requires a tiny non-occluding usage cue.",
       styleImage
-        ? "One reference image is style reference only for lighting, atmosphere, composition rhythm, and color mood. Do not copy the style image's product."
+        ? "One reference image is style reference only for lighting, atmosphere, composition rhythm, and color mood. Do not copy the style image's product. Style reference has lower priority than the structure-lock references."
         : "",
       "If the source image is a poster, banner, lifestyle shot, or already contains scene props, extract the core product and rebuild a clean product-focused composition around it.",
       normalizedFidelityMode === "strict"
@@ -399,15 +638,17 @@ serve(async (req: Request) => {
       normalizedFidelityMode === "strict"
         ? [
             "MODEL PRESENCE:",
-            normalizedModelMode === "with_model" && modelReferenceImage
+            effectiveModelMode === "with_model" && effectiveModelReferenceImage
               ? "A model reference is provided, but strict fidelity is enabled. Use a restrained pose and keep the product unobstructed; hands or body must not cover key holes, artwork, labels, or edges."
-              : "Strict fidelity is enabled. Prefer product-only or light-scene composition. Avoid adding models, hands, mannequins, or complex interactions unless absolutely necessary for the screen goal.",
+              : strictStrategy.allowHumanPresence
+              ? "Strict fidelity is enabled. Prefer product-only or light-scene composition. Avoid adding models, hands, mannequins, or complex interactions unless absolutely necessary for the screen goal."
+              : "Strict category lock is enabled. Do not add models, hands, mannequins, or body interaction by default. Keep the frame product-only unless a tiny unobstructed usage cue is absolutely required.",
             "If any human element is used, it must stay secondary and must not touch, bend, warp, squeeze, crop, or obscure the product's key structure.",
           ].join(". ")
-        : normalizedModelMode === "with_model"
+        : effectiveModelMode === "with_model"
         ? [
             "MODEL PRESENCE:",
-            modelReferenceImage
+            effectiveModelReferenceImage
               ? "A real human model must appear in the composition. The output is invalid if there is no visible person. Follow the model reference naturally while keeping the product fully visible."
               : "A real human model must appear in the composition, but the product must remain the primary hero.",
             "Do not crop the product awkwardly and do not let hair, hands, or clothing cover the key selling points.",
@@ -453,6 +694,7 @@ serve(async (req: Request) => {
     const systemInstruction = [
       absoluteRules,
       strictFidelityInstruction,
+      strictExecutionStrategyInstruction,
       roleInstructions,
       sceneExecutionInstruction,
       typeInstruction,
@@ -482,8 +724,13 @@ serve(async (req: Request) => {
     ];
 
     galleryImages.forEach((image, index) => {
+      const structureRole =
+        strictStrategy.structureReferencePriority[index] ||
+        `reference-${index + 1}`;
       parts.push({
-        text: `REFERENCE IMAGE ${index + 2}: ADDITIONAL PRODUCT ANGLE. Use only to lock product details and consistency.`,
+        text: normalizedFidelityMode === "strict"
+          ? `REFERENCE IMAGE ${index + 2}: STRUCTURE LOCK REFERENCE (${structureRole}). This outranks any style reference. Use it to preserve the same product geometry, openings, edges, and artwork.`
+          : `REFERENCE IMAGE ${index + 2}: ADDITIONAL PRODUCT ANGLE. Use only to lock product details and consistency.`,
       });
       parts.push({
         inlineData: {
@@ -493,14 +740,14 @@ serve(async (req: Request) => {
       });
     });
 
-    if (modelReferenceImage) {
+    if (effectiveModelReferenceImage) {
       parts.push({
         text: "MODEL REFERENCE IMAGE: Use this only for body presence, pose, and interaction. Do not let it replace the product.",
       });
       parts.push({
         inlineData: {
-          mimeType: modelReferenceImage.mimeType,
-          data: modelReferenceImage.base64,
+          mimeType: effectiveModelReferenceImage.mimeType,
+          data: effectiveModelReferenceImage.base64,
         },
       });
     }
@@ -520,18 +767,29 @@ serve(async (req: Request) => {
     console.info("generate-image request meta:", {
       userId: user.id,
       debugContext: normalizedDebugContext,
+      source: normalizedDebugContext.source,
+      screenNumber: normalizedDebugContext.screenNumber,
       imageType: normalizedImageType,
       textLanguage: normalizedTextLanguage,
-      modelRequested: modelSelection.requestedModel,
-      modelSelection: normalizedModel,
-      resolution: effectiveResolution,
+      modelRequested: normalizedModel,
+      modelUsed: effectiveModel,
+      modelSelectionRequested: modelSelection.requestedModel,
+      resolutionRequested: normalizedResolution,
+      resolutionUsed: effectiveResolution,
       requestedResolution: normalizedResolution,
       aspectRatio: normalizedAspectRatio,
-      modelMode: normalizedModelMode,
+      modelModeRequested: normalizedModelMode,
+      modelModeUsed: effectiveModelMode,
       fidelityMode: normalizedFidelityMode,
+      strictStrategyEnabled: strictStrategy.enabled,
+      strictCategory: strictStrategy.category,
+      strictReason: strictStrategy.strictReason,
+      allowModelReference: strictStrategy.allowModelReference,
+      allowHumanPresence: strictStrategy.allowHumanPresence,
+      preferProductOnly: strictStrategy.preferProductOnly,
       promptLength: promptText.length,
-      galleryCount: galleryImages.length,
-      hasModelReference: Boolean(modelReferenceImage),
+      referenceGalleryCount: galleryImages.length,
+      hasModelReference: Boolean(effectiveModelReferenceImage),
       hasStyleReference: Boolean(styleImage),
     });
 
@@ -558,6 +816,11 @@ serve(async (req: Request) => {
           effectiveResolution,
           aspectRatio: normalizedAspectRatio,
           fidelityMode: normalizedFidelityMode,
+          strictCategory: strictStrategy.category,
+          strictStrategyEnabled: strictStrategy.enabled,
+          referenceGalleryCount: galleryImages.length,
+          hasStyleReference: Boolean(styleImage),
+          hasModelReference: Boolean(effectiveModelReferenceImage),
         },
       },
       200,

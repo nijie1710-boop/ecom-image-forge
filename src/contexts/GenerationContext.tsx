@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
 import {
+  type FidelityContext,
   generateImage,
   type FidelityMode,
   type GenerationModel,
@@ -54,6 +55,7 @@ export interface GenerationJob {
     styleReferenceImage?: string;
     styleReferenceText?: string;
     fidelityMode?: FidelityMode;
+    fidelityContext?: FidelityContext;
   };
   createdAt: number;
 }
@@ -90,6 +92,7 @@ export interface ImageGenParams {
   modelMode?: ModelMode;
   modelImage?: string;
   fidelityMode?: FidelityMode;
+  fidelityContext?: FidelityContext;
   userId?: string;
   onComplete?: (images: string[]) => void;
 }
@@ -103,6 +106,7 @@ export interface DetailGenParams {
   styleReferenceImage?: string;
   styleReferenceText?: string;
   fidelityMode?: FidelityMode;
+  fidelityContext?: FidelityContext;
   screens: DetailScreenJobResult[];
   screenCost?: number;
   chargeDescription?: string;
@@ -604,6 +608,10 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
               referenceGallery: gallery.filter(Boolean) as string[],
               styleReferenceImage,
               modelImage,
+              fidelityContext: params.fidelityContext,
+              debugContext: {
+                source: "main",
+              },
               signal: controller.signal,
             });
             assertJobExecutionActive(jobId, runId);
@@ -699,6 +707,7 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           styleReferenceImage: params.styleReferenceImage,
           styleReferenceText: params.styleReferenceText,
           fidelityMode: params.fidelityMode,
+          fidelityContext: params.fidelityContext,
         },
         createdAt: Date.now(),
       });
@@ -764,11 +773,16 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
               resolution: params.resolution,
               referenceGallery: (gallery.filter(Boolean) as string[]).slice(
                 0,
-                params.fidelityMode === "strict" ? 4 : 1,
+                params.fidelityMode === "strict"
+                  ? params.fidelityContext?.categoryHint === "phone-case"
+                    ? 6
+                    : 5
+                  : 1,
               ),
               styleReferenceImage,
               styleReferenceText: params.styleReferenceText,
               fidelityMode: params.fidelityMode,
+              fidelityContext: params.fidelityContext,
               debugContext: {
                 source: "detail",
                 screenNumber: screen.screen,

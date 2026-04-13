@@ -32,7 +32,14 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { GenerationContext } from "@/contexts/GenerationContext";
-import type { FidelityMode, GenerationModel, ModelMode, OutputResolution } from "@/lib/ai-generator";
+import type {
+  FidelityCategory,
+  FidelityContext,
+  FidelityMode,
+  GenerationModel,
+  ModelMode,
+  OutputResolution,
+} from "@/lib/ai-generator";
 import { errorHintFromMessage, normalizeUserErrorMessage } from "@/lib/error-messages";
 import { suggestScenes } from "@/lib/suggest-scenes";
 import {
@@ -116,6 +123,117 @@ const imageCountOptions = Array.from({ length: 9 }, (_, index) => ({
   value: String(index + 1),
   label: `${index + 1} 张`,
 }));
+
+const PHONE_CASE_KEYWORDS = [
+  "手机壳",
+  "手机套",
+  "保护壳",
+  "保护套",
+  "iphone case",
+  "phone case",
+  "magsafe",
+  "镜头孔",
+  "camera cutout",
+];
+
+const PRINTED_PRODUCT_KEYWORDS = [
+  "印花",
+  "图案",
+  "pattern",
+  "graphic",
+  "printed",
+  "插画",
+  "壳面",
+];
+
+const PACKAGING_KEYWORDS = [
+  "包装",
+  "盒",
+  "礼盒",
+  "瓶",
+  "袋",
+  "包装盒",
+  "box",
+  "bottle",
+  "pouch",
+  "label",
+];
+
+function includesKeyword(text: string, keywords: string[]) {
+  return keywords.some((keyword) => text.includes(keyword));
+}
+
+function detectFidelityCategory(texts: Array<string | undefined>): FidelityCategory {
+  const combined = texts
+    .map((value) => String(value || "").toLowerCase())
+    .join("\n");
+
+  if (includesKeyword(combined, PHONE_CASE_KEYWORDS)) return "phone-case";
+  if (includesKeyword(combined, PACKAGING_KEYWORDS)) return "packaging";
+  if (includesKeyword(combined, PRINTED_PRODUCT_KEYWORDS)) return "printed-product";
+  return "general";
+}
+
+function buildStrictFidelityContext(args: {
+  categoryHint: FidelityCategory;
+  productBrief: string;
+  prompt: string;
+  productSummary: string;
+  visibleTextSummary: string;
+}): FidelityContext {
+  const { categoryHint, productBrief, prompt, productSummary, visibleTextSummary } = args;
+  const preservePattern =
+    categoryHint === "phone-case" ||
+    categoryHint === "printed-product" ||
+    includesKeyword(`${productBrief}\n${prompt}\n${productSummary}\n${visibleTextSummary}`.toLowerCase(), PRINTED_PRODUCT_KEYWORDS);
+
+  if (categoryHint === "phone-case") {
+    return {
+      categoryHint,
+      preservePattern,
+      preferProductOnly: true,
+      suppressModelReference: true,
+      strictReason: "phone-case-geometry-lock",
+      structureReferencePriority: ["front", "back", "side", "camera-cutout-closeup"],
+      preferredAngles: ["front", "mild-3-4", "flat-lay", "camera-closeup", "simple-desktop"],
+      forbiddenAngles: ["dramatic-tilt", "heavy-handheld", "model-shot", "prop-occlusion"],
+    };
+  }
+
+  if (categoryHint === "printed-product") {
+    return {
+      categoryHint,
+      preservePattern,
+      preferProductOnly: true,
+      strictReason: "printed-layout-lock",
+      structureReferencePriority: ["front", "back", "pattern-closeup"],
+      preferredAngles: ["front", "mild-3-4", "flat-lay", "pattern-closeup"],
+      forbiddenAngles: ["extreme-perspective", "heavy-occlusion"],
+    };
+  }
+
+  if (categoryHint === "packaging") {
+    return {
+      categoryHint,
+      preservePattern,
+      preferProductOnly: true,
+      strictReason: "packaging-structure-lock",
+      structureReferencePriority: ["front", "back", "side", "label-closeup"],
+      preferredAngles: ["front", "mild-3-4", "desktop", "label-closeup"],
+      forbiddenAngles: ["fisheye", "heavy-handheld", "prop-occlusion"],
+    };
+  }
+
+  return {
+    categoryHint,
+    preservePattern,
+    preferProductOnly: false,
+    strictReason: "general-structure-lock",
+    structureReferencePriority: ["front", "side", "detail-closeup"],
+    preferredAngles: ["front", "mild-3-4", "clean-desktop"],
+    forbiddenAngles: ["extreme-perspective", "heavy-occlusion"],
+  };
+}
 
 const SelectField = ({
   label,
@@ -219,6 +337,45 @@ const GeneratePage = () => {
     () => getGenResolutionOptions(selectedModel),
     [selectedModel],
   );
+  const strictCategoryHint = useMemo(
+    () =>
+      detectFidelityCategory([
+        imageType,
+        productBrief,
+        textPrompt,
+        productSummary,
+        visibleTextSummary,
+        sceneSuggestions[selectedSuggestionIndex]?.description,
+      ]),
+    [
+      imageType,
+      productBrief,
+      productSummary,
+      sceneSuggestions,
+      selectedSuggestionIndex,
+      textPrompt,
+      visibleTextSummary,
+    ],
+  );
+  const strictFidelityContext = useMemo(
+    () =>
+      buildStrictFidelityContext({
+        categoryHint: strictCategoryHint,
+        productBrief,
+        prompt: textPrompt,
+        productSummary,
+        visibleTextSummary,
+      }),
+    [productBrief, productSummary, strictCategoryHint, textPrompt, visibleTextSummary],
+  );
+  const strictModeDescription =
+    strictCategoryHint === "phone-case"
+      ? "已识别为手机壳类目：会优先锁定外轮廓、镜头孔、边框厚度和壳面图案，默认压低人物、手持和大角度斜拍。建议上传正面、背面、侧边和镜头孔特写。"
+      : strictCategoryHint === "printed-product"
+      ? "已识别为印花卖点商品：会把图案布局、图案比例和图案位置与商品结构一起锁定，减少重画图案。"
+      : strictCategoryHint === "packaging"
+      ? "已识别为包装类商品：会优先锁定包装轮廓、标签位置和结构边界，场景表达会更保守。"
+      : "严格保真模式会优先保证商品结构和图案一致性，并把风格参考置于结构参考之后。";
 
   // 获取余额
   useEffect(() => {
@@ -550,6 +707,7 @@ const GeneratePage = () => {
       modelMode,
       modelImage: modelImage || undefined,
       fidelityMode,
+      fidelityContext: fidelityMode === "strict" ? strictFidelityContext : undefined,
       userId: user?.id,
       onComplete: (images: string[]) => {
         setResults(images);
@@ -1023,7 +1181,7 @@ const GeneratePage = () => {
           </div>
           {fidelityMode === "strict" && (
             <p className="mt-3 rounded-xl bg-background/80 px-3 py-2 text-xs leading-5 text-primary">
-              严格保真模式会优先保证商品外形、开孔和图案一致性，创意变化会相对保守。已优先使用 Nano Banana 2 和 1K 标准生成。
+              {strictModeDescription}
             </p>
           )}
         </div>
