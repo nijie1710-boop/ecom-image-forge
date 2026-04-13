@@ -197,6 +197,7 @@ function buildStrictStrategy(args: {
   normalizedModelMode: "none" | "with_model";
   hasModelReference: boolean;
   hasStyleReference: boolean;
+  retryStrategy?: string;
 }): StrictStrategy {
   const {
     fidelityMode,
@@ -207,24 +208,26 @@ function buildStrictStrategy(args: {
     normalizedModelMode,
     hasModelReference,
     hasStyleReference,
+    retryStrategy,
   } = args;
+  const isDetailRescue = retryStrategy === "detail_rescue" || retryStrategy === "detail_strict_rescue";
 
   if (fidelityMode !== "strict") {
     return {
       enabled: false,
       category,
-      allowModelReference: normalizedModelMode === "with_model" && hasModelReference,
-      allowHumanPresence: true,
-      allowStyleReference: hasStyleReference,
-      preferProductOnly: false,
-      galleryLimit: hasModelReference ? 1 : 2,
-      effectiveModel: normalizedModel,
-      effectiveResolution: normalizedResolution,
+      allowModelReference: !isDetailRescue && normalizedModelMode === "with_model" && hasModelReference,
+      allowHumanPresence: !isDetailRescue,
+      allowStyleReference: !isDetailRescue && hasStyleReference,
+      preferProductOnly: isDetailRescue,
+      galleryLimit: isDetailRescue ? 3 : hasModelReference ? 1 : 2,
+      effectiveModel: isDetailRescue ? "gemini-3.1-flash-image-preview" : normalizedModel,
+      effectiveResolution: isDetailRescue ? "1k" : normalizedResolution,
       structureReferencePriority: fidelityContext?.structureReferencePriority || ["front", "back"],
       preferredAngles: fidelityContext?.preferredAngles || ["front", "3-4"],
       forbiddenAngles: fidelityContext?.forbiddenAngles || [],
       preservePattern: Boolean(fidelityContext?.preservePattern),
-      strictReason: fidelityContext?.strictReason,
+      strictReason: isDetailRescue ? "detail-rescue" : fidelityContext?.strictReason,
     };
   }
 
@@ -256,11 +259,11 @@ function buildStrictStrategy(args: {
   return {
     enabled: true,
     category,
-    allowModelReference,
-    allowHumanPresence,
-    allowStyleReference,
-    preferProductOnly,
-    galleryLimit,
+    allowModelReference: isDetailRescue ? false : allowModelReference,
+    allowHumanPresence: isDetailRescue ? false : allowHumanPresence,
+    allowStyleReference: isDetailRescue ? false : allowStyleReference,
+    preferProductOnly: isDetailRescue ? true : preferProductOnly,
+    galleryLimit: isDetailRescue ? Math.min(galleryLimit, category === "phone-case" ? 4 : 3) : galleryLimit,
     effectiveModel: "gemini-3.1-flash-image-preview",
     effectiveResolution: "1k",
     structureReferencePriority:
@@ -291,7 +294,11 @@ function buildStrictStrategy(args: {
         ? ["fisheye", "heavy-handheld", "prop-occlusion"]
         : ["extreme-perspective", "heavy-occlusion"]),
     preservePattern,
-    strictReason: fidelityContext?.strictReason,
+    strictReason: isDetailRescue
+      ? retryStrategy === "detail_strict_rescue"
+        ? "detail-strict-rescue"
+        : "detail-rescue"
+      : fidelityContext?.strictReason,
   };
 }
 
@@ -318,6 +325,7 @@ function normalizeDebugContext(value: unknown): Record<string, unknown> {
   return {
     source: typeof input.source === "string" ? input.source : undefined,
     screenNumber: Number.isFinite(Number(input.screenNumber)) ? Number(input.screenNumber) : undefined,
+    retryStrategy: typeof input.retryStrategy === "string" ? input.retryStrategy : undefined,
     promptLength: Number.isFinite(Number(input.promptLength)) ? Number(input.promptLength) : undefined,
     referenceGalleryCount: Number.isFinite(Number(input.referenceGalleryCount))
       ? Number(input.referenceGalleryCount)
@@ -513,6 +521,9 @@ serve(async (req: Request) => {
       normalizedModelMode,
       hasModelReference: Boolean(modelReferenceImage),
       hasStyleReference: Boolean(styleSource),
+      retryStrategy: typeof normalizedDebugContext.retryStrategy === "string"
+        ? normalizedDebugContext.retryStrategy
+        : undefined,
     });
     const gallerySources = coerceImageList(referenceGallery).slice(0, strictStrategy.galleryLimit);
     const galleryImages = (
@@ -573,6 +584,9 @@ serve(async (req: Request) => {
             `Requested model ${normalizedModel} is overridden to ${effectiveModel}.`,
             `Requested resolution ${normalizedResolution} is overridden to ${effectiveResolution}.`,
             `Use up to ${galleryImages.length} structure reference images before any style reference.`,
+            normalizedDebugContext.retryStrategy
+              ? `Retry strategy is active: ${String(normalizedDebugContext.retryStrategy)}. Simplify scene ambition and prioritize successful same-product output.`
+              : "",
             strictStrategy.category === "phone-case"
               ? "Phone-case strict mode suppresses aggressive model-led composition and prioritizes product-only framing."
               : "",
@@ -769,6 +783,7 @@ serve(async (req: Request) => {
       debugContext: normalizedDebugContext,
       source: normalizedDebugContext.source,
       screenNumber: normalizedDebugContext.screenNumber,
+      retryStrategy: normalizedDebugContext.retryStrategy,
       imageType: normalizedImageType,
       textLanguage: normalizedTextLanguage,
       modelRequested: normalizedModel,
@@ -816,6 +831,7 @@ serve(async (req: Request) => {
           effectiveResolution,
           aspectRatio: normalizedAspectRatio,
           fidelityMode: normalizedFidelityMode,
+          retryStrategy: normalizedDebugContext.retryStrategy,
           strictCategory: strictStrategy.category,
           strictStrategyEnabled: strictStrategy.enabled,
           referenceGalleryCount: galleryImages.length,
