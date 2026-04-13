@@ -13,8 +13,19 @@ export default async function handler(req, res) {
   }
 
   const { prompt, aspect_ratio, n, image_base64 } = req.body;
-  
-  const API_KEY = 'sk-cp-e6WVIE6k2uQ6FwQRe82XcIj79A-rLfQb0Bz0dqU4shIP9fLsa4aWAUoBwmvQ4zUZhdMitF01u8qAjH6qI4q-LYsZgfLSda4sCVVGWWAIC9K0ji_oT1qLccU';
+  const vercelEnv = String(process.env.VERCEL_ENV || process.env.NODE_ENV || '').toLowerCase();
+  const apiKey =
+    process.env.MINIMAX_API_KEY ||
+    (vercelEnv === 'production'
+      ? process.env.PRODUCTION_MINIMAX_API_KEY
+      : process.env.STAGING_MINIMAX_API_KEY);
+
+  if (!String(apiKey || '').trim()) {
+    return res.status(503).json({
+      error: 'MINIMAX_API_KEY_MISSING',
+      message: `MiniMax API key is not configured for ${vercelEnv || 'current'} environment`,
+    });
+  }
   
   try {
     // Build request body
@@ -35,7 +46,7 @@ export default async function handler(req, res) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${API_KEY}`,
+        'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify(requestBody),
     });

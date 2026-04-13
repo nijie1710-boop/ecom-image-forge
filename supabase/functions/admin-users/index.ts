@@ -2,7 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-admin-email",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
 const ADMIN_EMAIL_ALLOWLIST = ["nijie1710@gmail.com"];
@@ -15,18 +15,6 @@ function json(data: unknown, status = 200) {
       "Content-Type": "application/json",
     },
   });
-}
-
-function parseJwtPayload(token: string): Record<string, unknown> | null {
-  try {
-    const parts = token.split(".");
-    if (parts.length !== 3) return null;
-    const payload = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-    const padded = payload + "=".repeat((4 - (payload.length % 4)) % 4);
-    return JSON.parse(atob(padded));
-  } catch {
-    return null;
-  }
 }
 
 function mapTaskType(operationType: string | null) {
@@ -114,39 +102,25 @@ async function resolveCurrentUser(
 ) {
   const authHeader = req.headers.get("Authorization") || "";
   const token = authHeader.replace("Bearer ", "").trim();
-  const adminEmailHeader = (req.headers.get("x-admin-email") || "").trim().toLowerCase();
 
-  let currentUser: { id: string; email?: string | null } | null = null;
-
-  if (token) {
-    const payload = parseJwtPayload(token);
-    const sub = typeof payload?.sub === "string" ? payload.sub : "";
-    const email = typeof payload?.email === "string" ? payload.email.toLowerCase() : null;
-
-    if (sub) {
-      currentUser = { id: sub, email };
-    }
-
-    try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser(token);
-      if (user?.id) {
-        currentUser = { id: user.id, email: user.email?.toLowerCase() || email };
-      }
-    } catch (error) {
-      console.warn("admin-users getUser fallback to JWT payload:", error);
-    }
-  }
-
-  if (!currentUser && adminEmailHeader && ADMIN_EMAIL_ALLOWLIST.includes(adminEmailHeader)) {
-    return { currentUser: null, isAdmin: true };
-  }
-
-  if (!currentUser) {
+  if (!token) {
     return { currentUser: null, isAdmin: false };
   }
 
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser(token);
+
+  if (authError || !user?.id) {
+    console.warn("admin-users auth validation failed:", authError);
+    return { currentUser: null, isAdmin: false };
+  }
+
+  const currentUser = {
+    id: user.id,
+    email: user.email?.toLowerCase() || null,
+  };
   const normalizedEmail = currentUser.email?.toLowerCase();
   if (normalizedEmail && ADMIN_EMAIL_ALLOWLIST.includes(normalizedEmail)) {
     return { currentUser, isAdmin: true };

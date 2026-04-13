@@ -37,7 +37,7 @@ const ALLOWED_ORIGINS = Array.from(
 function resolveAllowedOrigin(req) {
   const origin = String(req?.headers?.origin || "").trim();
   if (origin && ALLOWED_ORIGINS.includes(origin)) return origin;
-  // 本地开发 / Vercel Preview：放行常见的开发源
+  // 鏈湴寮€鍙?/ Vercel Preview锛氭斁琛屽父瑙佺殑寮€鍙戞簮
   if (origin && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) return origin;
   if (origin && /\.vercel\.app$/i.test(new URL(origin).hostname)) return origin;
   return ALLOWED_ORIGINS[0] || "";
@@ -69,7 +69,7 @@ export async function parseJsonBody(req) {
     try {
       return JSON.parse(text);
     } catch {
-      const error = new Error("请求体不是合法的 JSON");
+      const error = new Error("璇锋眰浣撲笉鏄悎娉曠殑 JSON");
       error.status = 400;
       throw error;
     }
@@ -121,7 +121,7 @@ export function appendQueryParams(url, params) {
   return target.toString();
 }
 
-// 严格的 PEM 头/尾正则：必须是 "-----BEGIN XXX-----" 和 "-----END XXX-----" 成对出现
+// 涓ユ牸鐨?PEM 澶?灏炬鍒欙細蹇呴』鏄?"-----BEGIN XXX-----" 鍜?"-----END XXX-----" 鎴愬鍑虹幇
 const PEM_BEGIN_RE = /-----BEGIN ([A-Z0-9 ]+)-----/;
 const PEM_END_RE = /-----END ([A-Z0-9 ]+)-----/;
 
@@ -132,18 +132,18 @@ function normalizePem(value, kind) {
 
   if (!raw) return "";
 
-  // 严格校验：必须同时有 BEGIN 和 END 且 label 一致
+  // 涓ユ牸鏍￠獙锛氬繀椤诲悓鏃舵湁 BEGIN 鍜?END 涓?label 涓€鑷?
   const beginMatch = raw.match(PEM_BEGIN_RE);
   const endMatch = raw.match(PEM_END_RE);
   if (beginMatch && endMatch && beginMatch[1] === endMatch[1]) {
     return raw;
   }
-  // 如果只有 BEGIN 没有 END，视为不完整，抛错
+  // 濡傛灉鍙湁 BEGIN 娌℃湁 END锛岃涓轰笉瀹屾暣锛屾姏閿?
   if (beginMatch || endMatch) {
     throw new Error(`Invalid ${kind} PEM: BEGIN/END markers not paired correctly`);
   }
 
-  // 纯 base64 字符串：必须只包含 base64 合法字符
+  // 绾?base64 瀛楃涓诧細蹇呴』鍙寘鍚?base64 鍚堟硶瀛楃
   if (!/^[A-Za-z0-9+/=\s]+$/.test(raw)) {
     throw new Error(`Invalid ${kind} PEM: contains non-base64 characters`);
   }
@@ -254,49 +254,36 @@ export function getMissingEnv(envMap) {
 }
 
 export function buildEnvErrorMessage(missingKeys) {
-  return `缺少关键环境变量：${missingKeys.join(", ")}`;
+  return `缂哄皯鍏抽敭鐜鍙橀噺锛?{missingKeys.join(", ")}`;
 }
 
 export async function requireUserFromRequest(req) {
   const authorization = req.headers.authorization || req.headers.Authorization || "";
   if (!String(authorization).startsWith("Bearer ")) {
-    const error = new Error("未登录，请先登录");
+    const error = new Error("鏈櫥褰曪紝璇峰厛鐧诲綍");
     error.status = 401;
     throw error;
   }
 
   const token = authorization.slice(7);
-  const { supabaseUrl, serviceRoleKey } = getSupabaseConfig();
+  const adminClient = createAdminClient();
+  const {
+    data: { user },
+    error,
+  } = await adminClient.auth.getUser(token);
 
-  // 优先用 service role key 验证（最可靠）
-  if (serviceRoleKey) {
-    const adminClient = createClient(supabaseUrl, serviceRoleKey, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    });
-    const { data: { user }, error } = await adminClient.auth.getUser(token);
-    if (!error && user) return user;
+  if (!error && user) {
+    return user;
   }
 
-  // 降级：直接解码 JWT payload，安全由 Supabase RLS 在每次 DB 查询时兜底
-  try {
-    const base64 = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
-    const payload = JSON.parse(Buffer.from(base64, "base64").toString("utf8"));
-    const now = Math.floor(Date.now() / 1000);
-    if (payload.sub && payload.exp && payload.exp > now) {
-      return { id: payload.sub, email: payload.email || "" };
-    }
-  } catch {
-    // fall through
-  }
-
-  const authError = new Error("未登录，请先登录");
+  const authError = new Error("鏈櫥褰曪紝璇峰厛鐧诲綍");
   authError.status = 401;
   throw authError;
 }
 
 export function respondJson(res, status, payload, req) {
-  // CORS 通常已由 handleOptions 在请求入口设置好；这里仅在未设置时兜底，
-  // 避免覆盖正确的 origin。
+  // CORS 閫氬父宸茬敱 handleOptions 鍦ㄨ姹傚叆鍙ｈ缃ソ锛涜繖閲屼粎鍦ㄦ湭璁剧疆鏃跺厹搴曪紝
+  // 閬垮厤瑕嗙洊姝ｇ‘鐨?origin銆?
   if (!res.getHeader || !res.getHeader("Access-Control-Allow-Origin")) {
     applyCors(res, req);
   }
@@ -305,9 +292,9 @@ export function respondJson(res, status, payload, req) {
 
 export function getPaymentPackages() {
   return [
-    { id: "starter", label: "体验包", price: 19.9, credits: 200, badge: "适合试用" },
-    { id: "growth", label: "常用包", price: 49.9, credits: 520, badge: "推荐", highlight: true },
-    { id: "pro", label: "进阶包", price: 99, credits: 1080, badge: "单价更省" },
-    { id: "business", label: "商用包", price: 199, credits: 2280, badge: "高频创作" },
+    { id: "starter", label: "浣撻獙鍖?, price: 19.9, credits: 200, badge: "閫傚悎璇曠敤" },
+    { id: "growth", label: "甯哥敤鍖?, price: 49.9, credits: 520, badge: "鎺ㄨ崘", highlight: true },
+    { id: "pro", label: "杩涢樁鍖?, price: 99, credits: 1080, badge: "鍗曚环鏇寸渷" },
+    { id: "business", label: "鍟嗙敤鍖?, price: 199, credits: 2280, badge: "楂橀鍒涗綔" },
   ];
 }
