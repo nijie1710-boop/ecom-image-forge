@@ -1132,7 +1132,7 @@ export default function TranslateImagePage() {
   );
 
   return (
-    <div className="mx-auto max-w-[1480px] space-y-5 px-3 py-4 sm:px-4 sm:py-5 md:space-y-6 md:px-6 md:py-6">
+    <div className="mx-auto max-w-[1680px] space-y-5 px-3 py-4 sm:px-4 sm:py-5 md:space-y-6 md:px-6 md:py-6">
       <WorkspaceHeader
         icon={Languages}
         badge="图文翻译"
@@ -1148,7 +1148,7 @@ export default function TranslateImagePage() {
 
       <WorkspaceShell
         sidebar={
-        <Card className="overflow-hidden rounded-3xl border-border shadow-sm xl:max-h-[calc(100vh-7rem)] xl:overflow-y-auto" onDragOver={(e) => e.preventDefault()} onDrop={handleDrop}>
+        <Card className="overflow-hidden rounded-3xl border-border shadow-sm lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto" onDragOver={(e) => e.preventDefault()} onDrop={handleDrop}>
           <CardHeader className="space-y-4 p-4 sm:p-6">
             <div className="flex items-start justify-between gap-3">
               <div>
@@ -1319,7 +1319,7 @@ export default function TranslateImagePage() {
                     </div>
                   </div>
                 )}
-                  <div className="grid gap-4 xl:grid-cols-2">
+                  <div className="grid gap-3 sm:gap-4 xl:grid-cols-2">
                     <PreviewPanel title="原图" subtitle="用于 OCR 识别和替换生成" image={activeJob.originalImage} />
                     <PreviewPanel
                       title="结果图"
@@ -1521,7 +1521,7 @@ export default function TranslateImagePage() {
           <CardHeader className="p-4 sm:p-6">
             <CardTitle className="text-base">已完成结果</CardTitle>
           </CardHeader>
-          <CardContent className="grid gap-4 p-4 pt-0 sm:grid-cols-2 sm:p-6 sm:pt-0 xl:grid-cols-4">
+          <CardContent className="grid grid-cols-2 gap-2.5 p-3 pt-0 sm:gap-4 sm:p-6 sm:pt-0 xl:grid-cols-4">
             {doneJobs.map((job) => (
               <div key={`done-${job.id}`} className="overflow-hidden rounded-2xl border border-border bg-card">
                 <img src={job.translatedImage} alt={job.fileName} className="aspect-[4/5] w-full object-cover" />

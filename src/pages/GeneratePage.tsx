@@ -898,7 +898,7 @@ const GeneratePage = () => {
   };
 
   return (
-    <div className="mx-auto max-w-[1480px] space-y-6 px-4 py-6 md:px-6">
+    <div className="mx-auto max-w-[1680px] space-y-5 px-4 py-5 md:space-y-6 md:px-6 md:py-6">
       <WorkspaceHeader
         icon={Sparkles}
         badge="AI 主图"
@@ -909,7 +909,7 @@ const GeneratePage = () => {
 
       <WorkspaceShell
         sidebar={
-          <div className="space-y-5 rounded-3xl border border-border bg-card p-5 pb-24 shadow-sm xl:max-h-[calc(100vh-7rem)] xl:overflow-y-auto xl:pb-6">
+          <div className="space-y-4 rounded-3xl border border-border bg-card p-3 pb-24 shadow-sm sm:space-y-5 sm:p-4 md:p-5 lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto lg:pb-6">
         <div className="rounded-2xl border border-primary/15 bg-primary/5 p-3 text-xs leading-5 text-muted-foreground">
           适合单张或多张独立图片生成，不负责整套详情页结构策划。
         </div>
@@ -947,7 +947,7 @@ const GeneratePage = () => {
             }`}
           >
             {uploadedImages.length > 0 ? (
-              <div className="grid grid-cols-4 gap-1.5">
+              <div className="grid grid-cols-2 gap-1 sm:grid-cols-3 md:grid-cols-4 sm:gap-1.5">
                 {uploadedImages.map((image, index) => (
                   <div key={index} className="relative">
                     <img src={image} alt="" className="aspect-square w-full rounded-md object-contain" />
@@ -1396,7 +1396,7 @@ const GeneratePage = () => {
           </div>
         }
         content={
-      <div className="space-y-6 rounded-3xl border border-border bg-card p-4 pb-24 shadow-sm md:p-6 lg:pb-6 xl:min-h-[720px]">
+      <div className="space-y-5 rounded-3xl border border-border bg-card p-3 pb-24 shadow-sm sm:space-y-6 sm:p-4 md:p-6 lg:pb-6 xl:min-h-[720px]">
         {errorMessage && (
           <div className="mb-3 flex items-center justify-between rounded-lg bg-destructive/10 p-2.5 text-sm text-destructive">
             <div className="min-w-0">
@@ -1428,7 +1428,7 @@ const GeneratePage = () => {
               />
             </div>
             <p className="text-xs text-muted-foreground">AI 正在生成电商图片，请稍候...</p>
-            <div className="mt-6 grid w-full grid-cols-2 gap-3 lg:grid-cols-3">
+            <div className="mt-6 grid w-full grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-3">
               {Array.from({ length: Math.min(Math.max(Number(selectedCount), 1), 9) }).map(
                 (_, index) => (
                   <div key={index} className="aspect-square rounded-lg bg-muted animate-pulse" />

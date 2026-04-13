@@ -263,17 +263,17 @@ export default function AccountPage() {
 
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 lg:px-8">
-      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div className="mb-5 flex flex-col gap-3 sm:mb-6 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">账户设置</h1>
+          <h1 className="text-xl font-bold text-foreground sm:text-2xl">账户设置</h1>
           <p className="mt-1 text-sm text-muted-foreground">查看个人资料、最近图片和积分余额。</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => void refresh()} disabled={isLoading}>
+          <Button variant="outline" size="sm" className="sm:size-default" onClick={() => void refresh()} disabled={isLoading}>
             {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
             刷新数据
           </Button>
-          <Button variant="outline" onClick={handleSignOut} disabled={isSigningOut}>
+          <Button variant="outline" size="sm" className="sm:size-default" onClick={handleSignOut} disabled={isSigningOut}>
             {isSigningOut ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LogOut className="mr-2 h-4 w-4" />}
             退出登录
           </Button>
@@ -286,8 +286,8 @@ export default function AccountPage() {
         </Card>
       ) : null}
 
-      <Card className="mb-6 rounded-3xl border border-border shadow-sm">
-        <CardHeader className="flex flex-row items-start justify-between gap-4">
+      <Card className="mb-5 rounded-3xl border border-border shadow-sm sm:mb-6">
+        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex items-center gap-3">
             <div className="rounded-2xl bg-primary/10 p-2 text-primary">
               <ImageIcon className="h-5 w-5" />
@@ -336,7 +336,7 @@ export default function AccountPage() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-6 lg:grid-cols-[1.2fr_0.9fr]">
+      <div className="grid gap-5 sm:gap-6 lg:grid-cols-[1.2fr_0.9fr]">
         <Card className="rounded-3xl border border-border shadow-sm">
           <CardHeader>
             <div className="flex items-center gap-3">
@@ -390,7 +390,7 @@ export default function AccountPage() {
             <div className="rounded-2xl border border-border bg-background p-4">
               <div className="text-sm text-muted-foreground">当前余额</div>
               <div className="mt-2 flex items-end gap-2">
-                <span className="text-4xl font-bold text-foreground">{balance.balance}</span>
+                <span className="text-3xl font-bold text-foreground sm:text-4xl">{balance.balance}</span>
                 <span className="pb-1 text-sm font-medium text-primary">积分</span>
               </div>
               <p className="mt-3 text-sm text-muted-foreground">生成图片和图文翻译会消耗积分，余额不足时请先充值后再继续使用。</p>

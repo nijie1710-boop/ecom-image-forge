@@ -83,7 +83,7 @@ const galleryItems = [
 
 const DashboardHome = () => {
   return (
-    <div className="mx-auto max-w-[1480px] space-y-4 px-3 py-4 sm:space-y-5 sm:px-4 sm:py-5 md:space-y-6 md:px-6 md:py-6">
+    <div className="mx-auto max-w-[1680px] space-y-4 px-3 py-4 sm:space-y-5 sm:px-4 sm:py-5 md:space-y-6 md:px-6 md:py-6">
       <WorkspaceHeader
         icon={Zap}
         badge="工作台首页"
@@ -94,15 +94,15 @@ const DashboardHome = () => {
 
       <section className="grid gap-4 lg:gap-5 xl:grid-cols-[1.25fr_0.95fr] xl:gap-6">
         <Link to="/dashboard/generate" className="block">
-          <div className="group relative overflow-hidden rounded-[28px] bg-gradient-to-br from-primary via-primary/90 to-purple-600 p-5 text-primary-foreground shadow-sm transition-shadow hover:shadow-xl hover:shadow-primary/20 sm:p-6 md:p-8">
+          <div className="group relative overflow-hidden rounded-[28px] bg-gradient-to-br from-primary via-primary/90 to-purple-600 p-4 text-primary-foreground shadow-sm transition-shadow hover:shadow-xl hover:shadow-primary/20 sm:p-6 md:p-8">
             <div className="relative z-10 flex flex-col gap-4 sm:gap-5 md:flex-row md:items-end md:justify-between">
               <div className="max-w-xl">
                 <div className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-[11px] font-medium sm:text-xs">
                   <Sparkles className="h-3.5 w-3.5" />
                   推荐从这里开始
                 </div>
-                <h2 className="mt-4 text-xl font-bold sm:text-2xl md:text-3xl">先从 AI 主图快速试一版</h2>
-                <p className="mt-2 text-sm leading-6 text-primary-foreground/80 md:text-base">
+                <h2 className="mt-3 text-lg font-bold sm:mt-4 sm:text-2xl md:text-3xl">先从 AI 主图快速试一版</h2>
+                <p className="mt-1.5 text-sm leading-6 text-primary-foreground/80 sm:mt-2 md:text-base">
                   想快速出一张或几张商品图，先用 AI 主图试风格；需要整套详情页和长图时，再进入 AI 详情图做完整策划。
                 </p>
               </div>

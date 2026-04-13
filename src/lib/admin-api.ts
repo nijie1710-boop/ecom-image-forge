@@ -1,4 +1,4 @@
-import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL, supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase/client";
 
 function normalizeAdminErrorMessage(message?: string) {
   const text = String(message || "").trim();
@@ -24,62 +24,43 @@ function normalizeAdminErrorMessage(message?: string) {
   return text;
 }
 
-async function parseAdminResponse(response: Response) {
-  const text = await response.text();
+async function readInvokeError(error: Error & { context?: Response | string }) {
+  const context = error.context;
 
-  try {
-    return text ? (JSON.parse(text) as Record<string, unknown>) : {};
-  } catch {
-    return { error: text || response.statusText };
-  }
-}
-
-async function resolveAdminSession() {
-  const {
-    data: { session: cachedSession },
-  } = await supabase.auth.getSession();
-
-  if (!cachedSession?.user) {
-    throw new Error("登录状态已失效，请重新登录后再进入后台。");
+  if (context instanceof Response) {
+    try {
+      const text = await context.text();
+      try {
+        const payload = JSON.parse(text);
+        return normalizeAdminErrorMessage(payload?.error || error.message);
+      } catch {
+        return normalizeAdminErrorMessage(text || error.message);
+      }
+    } catch {
+      return normalizeAdminErrorMessage(error.message);
+    }
   }
 
-  const {
-    data: { user },
-    error: userError,
-  } = await supabase.auth.getUser();
-
-  if (userError || !user) {
-    throw new Error("登录状态已失效，请重新登录后再进入后台。");
+  if (typeof context === "string") {
+    return normalizeAdminErrorMessage(context || error.message);
   }
 
-  const {
-    data: { session: activeSession },
-  } = await supabase.auth.getSession();
-
-  const resolvedSession = activeSession || cachedSession;
-  if (!resolvedSession?.access_token) {
-    throw new Error("登录状态已失效，请重新登录后再进入后台。");
-  }
-
-  return resolvedSession;
+  return normalizeAdminErrorMessage(error.message);
 }
 
 export async function callAdminApi(body: Record<string, unknown>) {
-  const session = await resolveAdminSession();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
 
-  const response = await fetch(`${SUPABASE_URL}/functions/v1/admin-users`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      apikey: SUPABASE_PUBLISHABLE_KEY,
-      Authorization: `Bearer ${session.access_token}`,
-    },
-    body: JSON.stringify(body),
-  });
-  const data = await parseAdminResponse(response);
+  if (!session?.user) {
+    throw new Error("登录状态已失效，请重新登录后再进入后台。");
+  }
 
-  if (!response.ok) {
-    throw new Error(normalizeAdminErrorMessage(String(data?.error || data?.message || response.statusText)));
+  const { data, error } = await supabase.functions.invoke("admin-users", { body });
+
+  if (error) {
+    throw new Error(await readInvokeError(error as Error & { context?: Response | string }));
   }
 
   if (data?.error) {

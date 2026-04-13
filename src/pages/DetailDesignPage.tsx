@@ -1563,7 +1563,7 @@ const DetailDesignPage = () => {
   };
 
   return (
-    <div className="mx-auto max-w-[1480px] space-y-5 px-3 py-4 sm:px-4 sm:py-5 md:space-y-6 md:px-6 md:py-6">
+    <div className="mx-auto max-w-[1680px] space-y-5 px-3 py-4 sm:px-4 sm:py-5 md:space-y-6 md:px-6 md:py-6">
       <WorkspaceHeader
         icon={LayoutPanelTop}
         badge="AI 详情图"
@@ -1574,7 +1574,7 @@ const DetailDesignPage = () => {
 
       <WorkspaceShell
         sidebar={
-        <div className="space-y-5 rounded-3xl border border-border bg-card p-5 pb-24 shadow-sm xl:max-h-[calc(100vh-7rem)] xl:overflow-y-auto xl:pb-6">
+        <div className="space-y-5 rounded-3xl border border-border bg-card p-3 pb-24 shadow-sm sm:p-4 md:p-5 lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto lg:pb-6">
           <section className="rounded-2xl border border-border bg-background/70 p-4">
             <div className="mb-4 flex items-center justify-between">
               <div>

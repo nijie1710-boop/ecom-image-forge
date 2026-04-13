@@ -351,8 +351,8 @@ const MyImagesPage = () => {
   const selectedImages = filteredImages.filter((item) => selectedIds.includes(item.id));
 
   return (
-    <div className="mx-auto max-w-7xl p-6">
-      <div className="mb-8 rounded-3xl border border-border bg-card p-5 shadow-sm">
+    <div className="mx-auto max-w-7xl px-3 py-4 sm:px-4 sm:py-5 md:p-6">
+      <div className="mb-5 rounded-3xl border border-border bg-card p-3 shadow-sm sm:mb-8 sm:p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <div className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-[11px] font-medium text-primary">
@@ -373,7 +373,7 @@ const MyImagesPage = () => {
         </div>
       </div>
 
-      <div className="mb-6 rounded-3xl border border-border bg-card p-4 shadow-sm">
+      <div className="mb-4 rounded-3xl border border-border bg-card p-3 shadow-sm sm:mb-6 sm:p-4">
         <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_auto_auto_auto]">
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -419,7 +419,7 @@ const MyImagesPage = () => {
       </div>
 
       {selectedImages.length > 0 && (
-        <div className="mb-6 rounded-3xl border border-primary/20 bg-primary/5 p-4 shadow-sm">
+        <div className="mb-4 rounded-3xl border border-primary/20 bg-primary/5 p-3 shadow-sm sm:mb-6 sm:p-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <div className="text-sm font-semibold text-foreground">已选中 {selectedImages.length} 张图片</div>
@@ -492,7 +492,7 @@ const MyImagesPage = () => {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-4">
+                <div className="grid grid-cols-2 gap-2.5 sm:gap-4 md:grid-cols-3 xl:grid-cols-4">
                   {images.map((img) => (
                     <div
                       key={`${img.id}-${img.source}`}
@@ -548,9 +548,9 @@ const MyImagesPage = () => {
                         </label>
                       </div>
 
-                      <div className="space-y-3 p-3">
+                      <div className="space-y-2 p-2 sm:space-y-3 sm:p-3">
                         <div className="space-y-1">
-                          <div className="line-clamp-2 text-sm font-medium text-foreground">
+                          <div className="line-clamp-2 text-xs font-medium text-foreground sm:text-sm">
                             {img.prompt || "未记录提示词"}
                           </div>
                           <div className="flex flex-wrap gap-2 text-[11px] text-muted-foreground">
@@ -640,10 +640,10 @@ const MyImagesPage = () => {
           )}
         </>
       ) : (
-        <div className="rounded-3xl border border-dashed border-border bg-card p-16 text-center">
-          <ImageIcon className="mx-auto mb-4 h-16 w-16 text-muted-foreground/20" />
+        <div className="rounded-3xl border border-dashed border-border bg-card px-6 py-12 text-center sm:p-16">
+          <ImageIcon className="mx-auto mb-4 h-12 w-12 text-muted-foreground/20 sm:h-16 sm:w-16" />
           <p className="mb-2 text-lg font-semibold text-foreground">图片库还是空的</p>
-          <p className="mb-6 text-sm text-muted-foreground">
+          <p className="mb-4 text-sm text-muted-foreground sm:mb-6">
             先去生成几张图片，或者把你满意的结果加入精选图库。
           </p>
           <Link to="/dashboard/generate">
@@ -653,7 +653,7 @@ const MyImagesPage = () => {
       )}
 
       <Dialog open={!!previewImage} onOpenChange={(open) => !open && setPreviewImage(null)}>
-        <DialogContent className="max-w-5xl p-4">
+        <DialogContent className="max-w-[95vw] p-3 sm:max-w-5xl sm:p-4">
           {previewImage && (
             <>
               <DialogHeader>
