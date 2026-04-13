@@ -48,14 +48,38 @@ async function readInvokeError(error: Error & { context?: Response | string }) {
   return normalizeAdminErrorMessage(error.message);
 }
 
-export async function callAdminApi(body: Record<string, unknown>) {
+async function resolveAdminSession() {
   const {
-    data: { session },
+    data: { session: cachedSession },
   } = await supabase.auth.getSession();
 
-  if (!session?.user || !session.access_token) {
+  if (!cachedSession?.user) {
     throw new Error("登录状态已失效，请重新登录后再进入后台。");
   }
+
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    throw new Error("登录状态已失效，请重新登录后再进入后台。");
+  }
+
+  const {
+    data: { session: activeSession },
+  } = await supabase.auth.getSession();
+
+  const resolvedSession = activeSession || cachedSession;
+  if (!resolvedSession?.access_token) {
+    throw new Error("登录状态已失效，请重新登录后再进入后台。");
+  }
+
+  return resolvedSession;
+}
+
+export async function callAdminApi(body: Record<string, unknown>) {
+  const session = await resolveAdminSession();
 
   const { data, error } = await supabase.functions.invoke("admin-users", {
     body,

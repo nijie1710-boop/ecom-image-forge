@@ -47,6 +47,19 @@ async function checkAdminRole(user: User | null | undefined) {
   return Boolean(data);
 }
 
+async function resolveActiveUser() {
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
+
+  if (error || !user) {
+    return null;
+  }
+
+  return user;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
@@ -55,17 +68,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const applySession = async (nextSession: Session | null) => {
-      setSession(nextSession);
-      setLoading(false);
-
       if (!nextSession?.user) {
+        setSession(null);
+        setLoading(false);
         setIsAdmin(false);
         setAdminLoading(false);
         return;
       }
 
+      const activeUser = await resolveActiveUser();
+      if (!activeUser) {
+        setSession(null);
+        setLoading(false);
+        setIsAdmin(false);
+        setAdminLoading(false);
+        return;
+      }
+
+      setSession({ ...nextSession, user: activeUser });
+      setLoading(false);
       setAdminLoading(true);
-      const admin = await checkAdminRole(nextSession.user);
+      const admin = await checkAdminRole(activeUser);
       setIsAdmin(admin);
       setAdminLoading(false);
     };
