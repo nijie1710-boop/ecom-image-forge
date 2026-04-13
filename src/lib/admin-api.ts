@@ -1,4 +1,4 @@
-import { supabase } from "@/integrations/supabase/client";
+import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL, supabase } from "@/integrations/supabase/client";
 
 function normalizeAdminErrorMessage(message?: string) {
   const text = String(message || "").trim();
@@ -24,28 +24,14 @@ function normalizeAdminErrorMessage(message?: string) {
   return text;
 }
 
-async function readInvokeError(error: Error & { context?: Response | string }) {
-  const context = error.context;
+async function parseAdminResponse(response: Response) {
+  const text = await response.text();
 
-  if (context instanceof Response) {
-    try {
-      const text = await context.text();
-      try {
-        const payload = JSON.parse(text);
-        return normalizeAdminErrorMessage(payload?.error || error.message);
-      } catch {
-        return normalizeAdminErrorMessage(text || error.message);
-      }
-    } catch {
-      return normalizeAdminErrorMessage(error.message);
-    }
+  try {
+    return text ? (JSON.parse(text) as Record<string, unknown>) : {};
+  } catch {
+    return { error: text || response.statusText };
   }
-
-  if (typeof context === "string") {
-    return normalizeAdminErrorMessage(context || error.message);
-  }
-
-  return normalizeAdminErrorMessage(error.message);
 }
 
 async function resolveAdminSession() {
@@ -81,15 +67,19 @@ async function resolveAdminSession() {
 export async function callAdminApi(body: Record<string, unknown>) {
   const session = await resolveAdminSession();
 
-  const { data, error } = await supabase.functions.invoke("admin-users", {
-    body,
+  const response = await fetch(`${SUPABASE_URL}/functions/v1/admin-users`, {
+    method: "POST",
     headers: {
+      "Content-Type": "application/json",
+      apikey: SUPABASE_PUBLISHABLE_KEY,
       Authorization: `Bearer ${session.access_token}`,
     },
+    body: JSON.stringify(body),
   });
+  const data = await parseAdminResponse(response);
 
-  if (error) {
-    throw new Error(await readInvokeError(error as Error & { context?: Response | string }));
+  if (!response.ok) {
+    throw new Error(normalizeAdminErrorMessage(String(data?.error || data?.message || response.statusText)));
   }
 
   if (data?.error) {
