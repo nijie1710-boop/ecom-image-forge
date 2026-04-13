@@ -22,7 +22,7 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.admin-users]
-verify_jwt = true
+verify_jwt = false
 
 [functions.alipay-order]
 verify_jwt = false
