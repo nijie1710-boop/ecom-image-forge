@@ -53,11 +53,16 @@ export async function callAdminApi(body: Record<string, unknown>) {
     data: { session },
   } = await supabase.auth.getSession();
 
-  if (!session?.user) {
+  if (!session?.user || !session.access_token) {
     throw new Error("登录状态已失效，请重新登录后再进入后台。");
   }
 
-  const { data, error } = await supabase.functions.invoke("admin-users", { body });
+  const { data, error } = await supabase.functions.invoke("admin-users", {
+    body,
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+    },
+  });
 
   if (error) {
     throw new Error(await readInvokeError(error as Error & { context?: Response | string }));
