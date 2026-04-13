@@ -121,6 +121,12 @@ async function resolveCurrentUser(
     email: user.email?.toLowerCase() || null,
   };
 
+  // 邮箱优先匹配
+  if (currentUser.email && ADMIN_EMAIL_ALLOWLIST.includes(currentUser.email)) {
+    return { currentUser, isAdmin: true };
+  }
+
+  // 再查数据库
   const { data, error } = await supabase
     .from("user_roles")
     .select("role")
@@ -130,9 +136,7 @@ async function resolveCurrentUser(
 
   if (error) {
     console.error("load admin role failed:", error);
-    // 数据库查询失败时，用邮箱兜底
-    const normalizedEmail = currentUser.email?.toLowerCase();
-    return { currentUser, isAdmin: Boolean(normalizedEmail && ADMIN_EMAIL_ALLOWLIST.includes(normalizedEmail)) };
+    return { currentUser, isAdmin: false };
   }
 
   return { currentUser, isAdmin: Boolean(data) };

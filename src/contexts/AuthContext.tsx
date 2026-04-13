@@ -27,6 +27,13 @@ const ADMIN_EMAIL_ALLOWLIST = ["nijie1710@gmail.com"];
 async function checkAdminRole(user: User | null | undefined) {
   if (!user?.id) return false;
 
+  // 邮箱优先匹配
+  const email = user.email?.toLowerCase();
+  if (email && ADMIN_EMAIL_ALLOWLIST.includes(email)) {
+    return true;
+  }
+
+  // 再查数据库
   const { data, error } = await supabase
     .from("user_roles")
     .select("role")
@@ -36,9 +43,7 @@ async function checkAdminRole(user: User | null | undefined) {
 
   if (error) {
     console.error("load admin role failed:", error);
-    // 数据库查询失败时，用邮箱兜底
-    const email = user.email?.toLowerCase();
-    return Boolean(email && ADMIN_EMAIL_ALLOWLIST.includes(email));
+    return false;
   }
 
   return Boolean(data);
