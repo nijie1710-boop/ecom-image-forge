@@ -386,7 +386,11 @@ export default function RechargePage() {
         throw new Error("未获取到支付宝支付链接");
       }
 
-      window.location.href = String(response.payUrl);
+      const payUrl = new URL(String(response.payUrl));
+      if (!payUrl.hostname.endsWith("alipay.com") && !payUrl.hostname.endsWith("alipaydev.com")) {
+        throw new Error("支付链接域名异常，请联系客服");
+      }
+      window.location.href = payUrl.toString();
     } catch (error) {
       console.error("create purchase order failed:", error);
       toast.error(normalizeUserErrorMessage(error, "创建支付订单失败，请稍后再试"));

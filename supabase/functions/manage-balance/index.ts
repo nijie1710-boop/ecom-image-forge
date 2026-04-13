@@ -1,9 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { corsHeaders, handleOptions } from "../_shared/cors.ts";
 
 type BalanceAction =
   | "get"
@@ -79,11 +75,13 @@ class AppError extends Error {
   }
 }
 
+let _currentReq: Request | undefined;
+
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
-      ...corsHeaders,
+      ...(_currentReq ? corsHeaders(_currentReq) : {}),
       "Content-Type": "application/json",
     },
   });
@@ -310,8 +308,10 @@ async function getPricingSettings(supabase: ReturnType<typeof createClient>) {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+    return handleOptions(req);
   }
+
+  _currentReq = req;
 
   try {
     const supabaseUrl = requireEnv("SUPABASE_URL", Deno.env.get("SUPABASE_URL"));

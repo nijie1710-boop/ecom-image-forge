@@ -22,15 +22,8 @@ const AuthContext = createContext<AuthContextType>({
 
 export const useAuth = () => useContext(AuthContext);
 
-const ADMIN_EMAIL_ALLOWLIST = ["nijie1710@gmail.com"];
-
 async function checkAdminRole(user: User | null | undefined) {
   if (!user?.id) return false;
-
-  const email = user.email?.toLowerCase();
-  if (email && ADMIN_EMAIL_ALLOWLIST.includes(email)) {
-    return true;
-  }
 
   const { data, error } = await supabase
     .from("user_roles")
@@ -41,7 +34,7 @@ async function checkAdminRole(user: User | null | undefined) {
 
   if (error) {
     console.error("load admin role failed:", error);
-    return Boolean(email && ADMIN_EMAIL_ALLOWLIST.includes(email));
+    return false;
   }
 
   return Boolean(data);

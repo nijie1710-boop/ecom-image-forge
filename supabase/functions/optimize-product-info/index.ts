@@ -7,10 +7,7 @@ import {
   requireEnv,
 } from "../_shared/gemini.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { corsHeaders as buildCorsHeaders, handleOptions } from "../_shared/cors.ts";
 
 function normalizeImages(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
@@ -71,8 +68,10 @@ async function tryOptionalAuth(req: Request) {
 
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    return handleOptions(req);
   }
+
+  const corsHeaders = buildCorsHeaders(req);
 
   try {
     await tryOptionalAuth(req);

@@ -1,17 +1,14 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { corsHeaders, handleOptions } from "../_shared/cors.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
 
-const ADMIN_EMAIL_ALLOWLIST = ["nijie1710@gmail.com"];
+let _currentReq: Request | undefined;
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
-      ...corsHeaders,
+      ...(_currentReq ? corsHeaders(_currentReq) : {}),
       "Content-Type": "application/json",
     },
   });
@@ -121,10 +118,6 @@ async function resolveCurrentUser(
     id: user.id,
     email: user.email?.toLowerCase() || null,
   };
-  const normalizedEmail = currentUser.email?.toLowerCase();
-  if (normalizedEmail && ADMIN_EMAIL_ALLOWLIST.includes(normalizedEmail)) {
-    return { currentUser, isAdmin: true };
-  }
 
   const { data, error } = await supabase
     .from("user_roles")
@@ -143,8 +136,10 @@ async function resolveCurrentUser(
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    return handleOptions(req);
   }
+
+  _currentReq = req;
 
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
@@ -162,13 +157,21 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json().catch(() => ({}));
+    const VALID_ACTIONS = [
+      "list_users", "list_tasks", "list_images", "delete_image",
+      "delete_images", "add_credits", "get_settings", "save_settings",
+    ];
     const action = typeof body.action === "string" ? body.action : "";
+    if (!VALID_ACTIONS.includes(action)) {
+      return json({ error: "未知后台操作。" }, 400);
+    }
     const userId = typeof body.userId === "string" ? body.userId : "";
     const imageIds = Array.isArray(body.imageIds)
       ? body.imageIds.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
       : [];
-    const amount = typeof body.amount === "number" ? body.amount : Number(body.amount || 0);
-    const notes = typeof body.notes === "string" ? body.notes : "";
+    const rawAmount = typeof body.amount === "number" ? body.amount : Number(body.amount || 0);
+    const amount = Number.isFinite(rawAmount) && rawAmount > 0 && rawAmount <= 999999 ? rawAmount : 0;
+    const notes = typeof body.notes === "string" ? body.notes.slice(0, 500) : "";
 
     switch (action) {
       case "list_users": {
