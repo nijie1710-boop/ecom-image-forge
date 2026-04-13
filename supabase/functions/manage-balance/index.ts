@@ -273,43 +273,18 @@ async function applyRecharge(
     throw new AppError("INVALID_AMOUNT", 400, "充值积分必须大于 0。");
   }
 
-  await ensureBalanceRow(supabase, userId);
-
-  const now = new Date().toISOString();
-  const { data: currentBalanceRow, error: currentBalanceError } = await supabase
-    .from("user_balances")
-    .select("balance,total_recharged")
-    .eq("user_id", userId)
-    .single();
-
-  throwDb(currentBalanceError, "read current user_balances row");
-
-  const nextBalance = Number(currentBalanceRow.balance || 0) + credits;
-  const nextRecharged = Number(currentBalanceRow.total_recharged || 0) + credits;
-
-  const { error: updateBalanceError } = await supabase
-    .from("user_balances")
-    .update({
-      balance: nextBalance,
-      total_recharged: nextRecharged,
-      updated_at: now,
-    })
-    .eq("user_id", userId);
-
-  throwDb(updateBalanceError, "update user_balances for recharge");
-
-  const { error: rechargeInsertError } = await supabase.from("recharge_records").insert({
-    user_id: userId,
-    amount: credits,
-    payment_method: paymentMethod,
-    status: "completed",
-    notes: notes || "管理员手动补充积分",
-    completed_at: now,
+  const { data: rechargeResult, error: rechargeError } = await supabase.rpc("add_balance", {
+    p_user_id: userId,
+    p_amount: credits,
+    p_payment_method: paymentMethod,
+    p_notes: notes || "管理员手动补充积分",
   });
 
-  throwDb(rechargeInsertError, "insert recharge_records");
+  throwDb(rechargeError, "apply add_balance rpc");
 
-  return nextBalance;
+  return Array.isArray(rechargeResult)
+    ? Number(rechargeResult[0]?.new_balance || 0)
+    : Number((rechargeResult as { new_balance?: number } | null)?.new_balance || 0);
 }
 
 async function getPricingSettings(supabase: ReturnType<typeof createClient>) {

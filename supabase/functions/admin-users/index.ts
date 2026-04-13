@@ -328,46 +328,17 @@ Deno.serve(async (req) => {
           return json({ error: "充值参数不正确。" }, 400);
         }
 
-        const now = new Date().toISOString();
-        const { error: ensureBalanceError } = await supabase.from("user_balances").upsert(
-          {
-            user_id: userId,
-            balance: 0,
-            total_recharged: 0,
-            total_consumed: 0,
-            updated_at: now,
-          },
-          { onConflict: "user_id" },
-        );
-        if (ensureBalanceError) throw ensureBalanceError;
-
-        const { data: currentBalanceRow, error: currentBalanceError } = await supabase
-          .from("user_balances")
-          .select("balance,total_recharged")
-          .eq("user_id", userId)
-          .single();
-        if (currentBalanceError) throw currentBalanceError;
-
-        const nextBalance = Number(currentBalanceRow.balance || 0) + amount;
-        const nextRecharged = Number(currentBalanceRow.total_recharged || 0) + amount;
-
-        const { error: updateBalanceError } = await supabase
-          .from("user_balances")
-          .update({
-            balance: nextBalance,
-            total_recharged: nextRecharged,
-            updated_at: now,
-          })
-          .eq("user_id", userId);
-        if (updateBalanceError) throw updateBalanceError;
-
-        const { error: rechargeInsertError } = await supabase.from("recharge_records").insert({
-          user_id: userId,
-          amount,
-          payment_method: "admin_manual",
-          notes: notes || "管理员手动补充积分",
+        const { data: rechargeResult, error: rechargeError } = await supabase.rpc("add_balance", {
+          p_user_id: userId,
+          p_amount: amount,
+          p_payment_method: "admin_manual",
+          p_notes: notes || "管理员手动补充积分",
         });
-        if (rechargeInsertError) throw rechargeInsertError;
+        if (rechargeError) throw rechargeError;
+
+        const nextBalance = Array.isArray(rechargeResult)
+          ? Number(rechargeResult[0]?.new_balance || 0)
+          : Number((rechargeResult as { new_balance?: number } | null)?.new_balance || 0);
 
         return json({ result: { new_balance: nextBalance } });
       }
