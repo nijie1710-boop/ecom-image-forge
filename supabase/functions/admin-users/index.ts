@@ -114,6 +114,8 @@ async function resolveCurrentUser(
     return { currentUser: null, isAdmin: false };
   }
 
+  const ADMIN_EMAIL_ALLOWLIST = ["nijie1710@gmail.com"];
+
   const currentUser = {
     id: user.id,
     email: user.email?.toLowerCase() || null,
@@ -128,7 +130,9 @@ async function resolveCurrentUser(
 
   if (error) {
     console.error("load admin role failed:", error);
-    return { currentUser, isAdmin: false };
+    // 数据库查询失败时，用邮箱兜底
+    const normalizedEmail = currentUser.email?.toLowerCase();
+    return { currentUser, isAdmin: Boolean(normalizedEmail && ADMIN_EMAIL_ALLOWLIST.includes(normalizedEmail)) };
   }
 
   return { currentUser, isAdmin: Boolean(data) };

@@ -22,6 +22,8 @@ const AuthContext = createContext<AuthContextType>({
 
 export const useAuth = () => useContext(AuthContext);
 
+const ADMIN_EMAIL_ALLOWLIST = ["nijie1710@gmail.com"];
+
 async function checkAdminRole(user: User | null | undefined) {
   if (!user?.id) return false;
 
@@ -34,7 +36,9 @@ async function checkAdminRole(user: User | null | undefined) {
 
   if (error) {
     console.error("load admin role failed:", error);
-    return false;
+    // 数据库查询失败时，用邮箱兜底
+    const email = user.email?.toLowerCase();
+    return Boolean(email && ADMIN_EMAIL_ALLOWLIST.includes(email));
   }
 
   return Boolean(data);
