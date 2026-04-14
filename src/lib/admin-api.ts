@@ -1,4 +1,4 @@
-import { supabase } from "@/integrations/supabase/client";
+import { apiPost, isSelfHosted, getStoredToken } from "@/lib/api-client";
 
 function normalizeAdminErrorMessage(message?: string) {
   const text = String(message || "").trim();
@@ -24,44 +24,35 @@ function normalizeAdminErrorMessage(message?: string) {
   return text;
 }
 
-async function readInvokeError(error: Error & { context?: Response | string }) {
-  const context = error.context;
+export async function callAdminApi(body: Record<string, unknown>) {
+  if (isSelfHosted) {
+    const token = getStoredToken();
+    if (!token) {
+      throw new Error("登录状态已失效，请重新登录后再进入后台。");
+    }
+  } else {
+    const { supabase } = await import("@/integrations/supabase/client");
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
 
-  if (context instanceof Response) {
-    try {
-      const text = await context.text();
-      try {
-        const payload = JSON.parse(text);
-        return normalizeAdminErrorMessage(payload?.error || error.message);
-      } catch {
-        return normalizeAdminErrorMessage(text || error.message);
-      }
-    } catch {
-      return normalizeAdminErrorMessage(error.message);
+    if (!session?.user) {
+      throw new Error("登录状态已失效，请重新登录后再进入后台。");
     }
   }
 
-  if (typeof context === "string") {
-    return normalizeAdminErrorMessage(context || error.message);
+  const res = await apiPost<Record<string, unknown>>("admin-users", body);
+
+  if (!res.ok) {
+    const errorMessage = typeof res.data?.error === "string"
+      ? res.data.error
+      : typeof res.data?.message === "string"
+      ? res.data.message
+      : res.rawText || `HTTP_${res.status}`;
+    throw new Error(normalizeAdminErrorMessage(errorMessage));
   }
 
-  return normalizeAdminErrorMessage(error.message);
-}
-
-export async function callAdminApi(body: Record<string, unknown>) {
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  if (!session?.user) {
-    throw new Error("登录状态已失效，请重新登录后再进入后台。");
-  }
-
-  const { data, error } = await supabase.functions.invoke("admin-users", { body });
-
-  if (error) {
-    throw new Error(await readInvokeError(error as Error & { context?: Response | string }));
-  }
+  const data = res.data;
 
   if (data?.error) {
     throw new Error(normalizeAdminErrorMessage(String(data.error)));

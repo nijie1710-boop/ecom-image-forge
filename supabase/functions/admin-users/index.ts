@@ -1,32 +1,17 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { corsHeaders, handleOptions } from "../_shared/cors.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-admin-email",
-};
 
-const ADMIN_EMAIL_ALLOWLIST = ["nijie1710@gmail.com"];
+let _currentReq: Request | undefined;
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
-      ...corsHeaders,
+      ...(_currentReq ? corsHeaders(_currentReq) : {}),
       "Content-Type": "application/json",
     },
   });
-}
-
-function parseJwtPayload(token: string): Record<string, unknown> | null {
-  try {
-    const parts = token.split(".");
-    if (parts.length !== 3) return null;
-    const payload = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-    const padded = payload + "=".repeat((4 - (payload.length % 4)) % 4);
-    return JSON.parse(atob(padded));
-  } catch {
-    return null;
-  }
 }
 
 function mapTaskType(operationType: string | null) {
@@ -114,44 +99,34 @@ async function resolveCurrentUser(
 ) {
   const authHeader = req.headers.get("Authorization") || "";
   const token = authHeader.replace("Bearer ", "").trim();
-  const adminEmailHeader = (req.headers.get("x-admin-email") || "").trim().toLowerCase();
 
-  let currentUser: { id: string; email?: string | null } | null = null;
-
-  if (token) {
-    const payload = parseJwtPayload(token);
-    const sub = typeof payload?.sub === "string" ? payload.sub : "";
-    const email = typeof payload?.email === "string" ? payload.email.toLowerCase() : null;
-
-    if (sub) {
-      currentUser = { id: sub, email };
-    }
-
-    try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser(token);
-      if (user?.id) {
-        currentUser = { id: user.id, email: user.email?.toLowerCase() || email };
-      }
-    } catch (error) {
-      console.warn("admin-users getUser fallback to JWT payload:", error);
-    }
-  }
-
-  if (!currentUser && adminEmailHeader && ADMIN_EMAIL_ALLOWLIST.includes(adminEmailHeader)) {
-    return { currentUser: null, isAdmin: true };
-  }
-
-  if (!currentUser) {
+  if (!token) {
     return { currentUser: null, isAdmin: false };
   }
 
-  const normalizedEmail = currentUser.email?.toLowerCase();
-  if (normalizedEmail && ADMIN_EMAIL_ALLOWLIST.includes(normalizedEmail)) {
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser(token);
+
+  if (authError || !user?.id) {
+    console.warn("admin-users auth validation failed:", authError);
+    return { currentUser: null, isAdmin: false };
+  }
+
+  const ADMIN_EMAIL_ALLOWLIST = ["nijie1710@gmail.com"];
+
+  const currentUser = {
+    id: user.id,
+    email: user.email?.toLowerCase() || null,
+  };
+
+  // 邮箱优先匹配
+  if (currentUser.email && ADMIN_EMAIL_ALLOWLIST.includes(currentUser.email)) {
     return { currentUser, isAdmin: true };
   }
 
+  // 再查数据库
   const { data, error } = await supabase
     .from("user_roles")
     .select("role")
@@ -169,8 +144,10 @@ async function resolveCurrentUser(
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    return handleOptions(req);
   }
+
+  _currentReq = req;
 
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
@@ -188,13 +165,21 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json().catch(() => ({}));
+    const VALID_ACTIONS = [
+      "list_users", "list_tasks", "list_images", "delete_image",
+      "delete_images", "add_credits", "get_settings", "save_settings",
+    ];
     const action = typeof body.action === "string" ? body.action : "";
+    if (!VALID_ACTIONS.includes(action)) {
+      return json({ error: "未知后台操作。" }, 400);
+    }
     const userId = typeof body.userId === "string" ? body.userId : "";
     const imageIds = Array.isArray(body.imageIds)
       ? body.imageIds.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
       : [];
-    const amount = typeof body.amount === "number" ? body.amount : Number(body.amount || 0);
-    const notes = typeof body.notes === "string" ? body.notes : "";
+    const rawAmount = typeof body.amount === "number" ? body.amount : Number(body.amount || 0);
+    const amount = Number.isFinite(rawAmount) && rawAmount > 0 && rawAmount <= 999999 ? rawAmount : 0;
+    const notes = typeof body.notes === "string" ? body.notes.slice(0, 500) : "";
 
     switch (action) {
       case "list_users": {
@@ -354,46 +339,17 @@ Deno.serve(async (req) => {
           return json({ error: "充值参数不正确。" }, 400);
         }
 
-        const now = new Date().toISOString();
-        const { error: ensureBalanceError } = await supabase.from("user_balances").upsert(
-          {
-            user_id: userId,
-            balance: 0,
-            total_recharged: 0,
-            total_consumed: 0,
-            updated_at: now,
-          },
-          { onConflict: "user_id" },
-        );
-        if (ensureBalanceError) throw ensureBalanceError;
-
-        const { data: currentBalanceRow, error: currentBalanceError } = await supabase
-          .from("user_balances")
-          .select("balance,total_recharged")
-          .eq("user_id", userId)
-          .single();
-        if (currentBalanceError) throw currentBalanceError;
-
-        const nextBalance = Number(currentBalanceRow.balance || 0) + amount;
-        const nextRecharged = Number(currentBalanceRow.total_recharged || 0) + amount;
-
-        const { error: updateBalanceError } = await supabase
-          .from("user_balances")
-          .update({
-            balance: nextBalance,
-            total_recharged: nextRecharged,
-            updated_at: now,
-          })
-          .eq("user_id", userId);
-        if (updateBalanceError) throw updateBalanceError;
-
-        const { error: rechargeInsertError } = await supabase.from("recharge_records").insert({
-          user_id: userId,
-          amount,
-          payment_method: "admin_manual",
-          notes: notes || "管理员手动补充积分",
+        const { data: rechargeResult, error: rechargeError } = await supabase.rpc("add_balance", {
+          p_user_id: userId,
+          p_amount: amount,
+          p_payment_method: "admin_manual",
+          p_notes: notes || "管理员手动补充积分",
         });
-        if (rechargeInsertError) throw rechargeInsertError;
+        if (rechargeError) throw rechargeError;
+
+        const nextBalance = Array.isArray(rechargeResult)
+          ? Number(rechargeResult[0]?.new_balance || 0)
+          : Number((rechargeResult as { new_balance?: number } | null)?.new_balance || 0);
 
         return json({ result: { new_balance: nextBalance } });
       }

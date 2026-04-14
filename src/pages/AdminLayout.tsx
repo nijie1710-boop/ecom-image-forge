@@ -44,7 +44,7 @@ const AdminLayout = () => {
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,_hsl(var(--primary)/0.07),_transparent_34%)]">
       <header className="sticky top-0 z-30 border-b border-border bg-background/94 backdrop-blur-xl">
-        <div className="mx-auto flex h-16 max-w-[1480px] items-center justify-between px-4 md:px-6">
+        <div className="mx-auto flex h-16 max-w-[1680px] items-center justify-between px-4 md:px-6">
           <div className="min-w-0">
             <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-xs font-medium text-primary">
               <Shield className="h-3.5 w-3.5" />
@@ -66,8 +66,8 @@ const AdminLayout = () => {
         </div>
       </header>
 
-      <div className="mx-auto grid max-w-[1480px] gap-6 px-4 py-6 md:px-6 xl:grid-cols-[280px_minmax(0,1fr)]">
-        <aside className="xl:sticky xl:top-24 xl:self-start">
+      <div className="mx-auto grid max-w-[1680px] gap-6 px-4 py-6 md:px-6 lg:grid-cols-[260px_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,1fr)]">
+        <aside className="lg:sticky lg:top-24 lg:self-start">
           <div className="rounded-3xl border border-border bg-card p-4 shadow-sm">
             <div className="mb-4 text-sm font-semibold text-foreground">后台导航</div>
             <div className="space-y-2">

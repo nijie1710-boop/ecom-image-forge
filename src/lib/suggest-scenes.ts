@@ -1,8 +1,4 @@
-import {
-  SUPABASE_PUBLISHABLE_KEY,
-  SUPABASE_URL,
-  supabase,
-} from "@/integrations/supabase/client";
+import { buildApiUrl, getOptionalAuthHeaders } from "@/lib/api-client";
 import { normalizeUserErrorMessage } from "@/lib/error-messages";
 
 export type SceneSuggestion = {
@@ -23,21 +19,12 @@ export type SuggestScenesResponse = {
 };
 
 async function getInvokeHeaders() {
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  return {
-    apikey: SUPABASE_PUBLISHABLE_KEY,
-    ...(session?.access_token
-      ? { Authorization: `Bearer ${session.access_token}` }
-      : {}),
-  };
+  return getOptionalAuthHeaders();
 }
 
 export async function suggestScenes(imageBase64: string, imageType: string) {
   const headers = await getInvokeHeaders();
-  const response = await fetch(`${SUPABASE_URL}/functions/v1/suggest-scenes`, {
+  const response = await fetch(buildApiUrl("suggest-scenes"), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

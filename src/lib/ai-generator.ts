@@ -1,8 +1,4 @@
-import {
-  SUPABASE_PUBLISHABLE_KEY,
-  SUPABASE_URL,
-  supabase,
-} from "@/integrations/supabase/client";
+import { buildApiUrl, getAuthHeaders } from "@/lib/api-client";
 import { normalizeUserErrorMessage } from "@/lib/error-messages";
 import type { GenerationModel } from "@/lib/gemini-models";
 
@@ -11,6 +7,18 @@ export type { GenerationModel } from "@/lib/gemini-models";
 export type OutputResolution = "0.5k" | "1k" | "2k" | "4k";
 export type ModelMode = "none" | "with_model";
 export type FidelityMode = "normal" | "strict";
+export type FidelityCategory = "phone-case" | "printed-product" | "packaging" | "general";
+
+export interface FidelityContext {
+  categoryHint?: FidelityCategory;
+  preservePattern?: boolean;
+  preferProductOnly?: boolean;
+  suppressModelReference?: boolean;
+  strictReason?: string;
+  structureReferencePriority?: string[];
+  preferredAngles?: string[];
+  forbiddenAngles?: string[];
+}
 
 export interface GenerateImageParams {
   prompt: string;
@@ -27,9 +35,11 @@ export interface GenerateImageParams {
   modelMode?: ModelMode;
   modelImage?: string;
   fidelityMode?: FidelityMode;
+  fidelityContext?: FidelityContext;
   debugContext?: {
     source?: "main" | "detail" | "copy";
     screenNumber?: number;
+    retryStrategy?: "detail_rescue" | "detail_strict_rescue";
   };
   signal?: AbortSignal;
 }
@@ -69,18 +79,7 @@ function ensureNotAborted(signal?: AbortSignal) {
 }
 
 async function getInvokeHeaders() {
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  if (!session?.access_token) {
-    throw new Error("UNAUTHORIZED");
-  }
-
-  return {
-    apikey: SUPABASE_PUBLISHABLE_KEY,
-    Authorization: `Bearer ${session.access_token}`,
-  };
+  return getAuthHeaders();
 }
 
 async function invokeGenerateImage(
@@ -89,7 +88,7 @@ async function invokeGenerateImage(
 ) {
   let response: Response;
   try {
-    response = await fetch(`${SUPABASE_URL}/functions/v1/generate-image`, {
+    response = await fetch(buildApiUrl("generate-image"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -134,6 +133,60 @@ function normalizeModelLabel(model: GenerationModel | undefined): GenerationMode
 
 function normalizeResolution(resolution: OutputResolution | undefined): OutputResolution {
   return resolution || "1k";
+}
+
+function isDetailScreenRequest(params: GenerateImageParams) {
+  return params.debugContext?.source === "detail";
+}
+
+function buildDetailRescuePrompt(params: GenerateImageParams) {
+  const rescueLines = [
+    "DETAIL RESCUE MODE:",
+    "The previous generation attempt failed.",
+    "Keep the same exact product, but simplify the composition to maximize generation success.",
+    "Prefer product-only or very light scene composition.",
+    "Do not use people, complex hand-held poses, dramatic perspective, or occluding props.",
+    "If the original scene is too ambitious, simplify the scene while keeping the same screen goal.",
+  ];
+
+  if (params.fidelityMode === "strict") {
+    rescueLines.push(
+      "Strict rescue priority: preserve the exact product silhouette, openings, buttons, border thickness, proportions, and printed artwork.",
+    );
+  }
+
+  return `${params.prompt.trim()}\n\n${rescueLines.join("\n")}`;
+}
+
+function buildDetailRescueParams(params: GenerateImageParams): GenerateImageParams {
+  const isStrictPhoneCase =
+    params.fidelityMode === "strict" && params.fidelityContext?.categoryHint === "phone-case";
+
+  return {
+    ...params,
+    prompt: buildDetailRescuePrompt(params),
+    model: "gemini-3.1-flash-image-preview",
+    resolution: "1k",
+    referenceGallery: (params.referenceGallery || []).slice(0, isStrictPhoneCase ? 4 : 3),
+    styleReferenceImage: undefined,
+    styleReferenceText: undefined,
+    modelMode: "none",
+    modelImage: undefined,
+    fidelityContext: params.fidelityContext
+      ? {
+          ...params.fidelityContext,
+          preferProductOnly: true,
+          suppressModelReference: true,
+          strictReason: isStrictPhoneCase
+            ? "detail-strict-rescue-phone-case"
+            : "detail-rescue",
+        }
+      : params.fidelityContext,
+    debugContext: {
+      ...params.debugContext,
+      retryStrategy: isStrictPhoneCase ? "detail_strict_rescue" : "detail_rescue",
+    },
+  };
 }
 
 function isFatalError(message: string | undefined): boolean {
@@ -277,6 +330,7 @@ async function generateSingleImageRaw(
       modelMode: params.modelMode || "none",
       modelImage: params.modelImage || undefined,
       fidelityMode: params.fidelityMode || "normal",
+      fidelityContext: params.fidelityContext || undefined,
       debugContext: {
         ...params.debugContext,
         promptLength: params.prompt.length,
@@ -346,7 +400,7 @@ async function generateSingleImageStable(
 ): Promise<{ url: string | null; error: string | null; meta?: GenerateImageMeta }> {
   let lastError: string | null = null;
   let lastMeta: GenerateImageMeta | undefined;
-  const isDetailScreen = params.debugContext?.source === "detail";
+  const isDetailScreen = isDetailScreenRequest(params);
   const retryCount = isDetailScreen ? 4 : 2;
 
   for (let attempt = 0; attempt < retryCount; attempt += 1) {
@@ -369,6 +423,47 @@ async function generateSingleImageStable(
     }
 
     await sleep((isDetailScreen ? 2200 : 1200) * (attempt + 1));
+  }
+
+  if (
+    isDetailScreen &&
+    !params.debugContext?.retryStrategy &&
+    !isFatalError(lastError || undefined)
+  ) {
+    const rescueParams = buildDetailRescueParams(params);
+    const rescueRetryCount = 2;
+
+    console.warn("generateImage detail rescue retry starting:", {
+      screenNumber: params.debugContext?.screenNumber,
+      fidelityMode: params.fidelityMode,
+      categoryHint: params.fidelityContext?.categoryHint,
+      previousError: lastError,
+      rescueRetryCount,
+      rescueGalleryCount: rescueParams.referenceGallery?.length || 0,
+    });
+
+    for (let attempt = 0; attempt < rescueRetryCount; attempt += 1) {
+      ensureNotAborted(params.signal);
+      const attemptLabel = `batch-${batchIndex}-rescue-${attempt + 1}`;
+      const result = await generateSingleImageRaw(rescueParams, attemptLabel);
+
+      if (result.url) {
+        return result;
+      }
+
+      lastError = result.error;
+      lastMeta = result.meta;
+
+      if (isFatalError(result.error || undefined)) {
+        return { url: null, error: result.error, meta: result.meta };
+      }
+
+      if (!isRetryableError(result.error || undefined) || attempt >= rescueRetryCount - 1) {
+        break;
+      }
+
+      await sleep(1800 * (attempt + 1));
+    }
   }
 
   return {

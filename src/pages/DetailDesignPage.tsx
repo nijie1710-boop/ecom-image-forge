@@ -40,6 +40,8 @@ import {
 } from "@/lib/detail-plan";
 import { errorHintFromMessage, normalizeUserErrorMessage } from "@/lib/error-messages";
 import {
+  type FidelityCategory,
+  type FidelityContext,
   type GenerationModel,
   type FidelityMode,
   type OutputResolution,
@@ -123,6 +125,96 @@ const allResolutionOptions: { value: OutputResolution; label: string }[] = [
   { value: "2k", label: "2K 高清" },
   { value: "4k", label: "4K 超清" },
 ];
+
+const PHONE_CASE_KEYWORDS = [
+  "手机壳",
+  "手机套",
+  "保护壳",
+  "保护套",
+  "phone case",
+  "iphone case",
+  "magsafe",
+  "镜头孔",
+  "camera cutout",
+];
+
+const PRINTED_PRODUCT_KEYWORDS = ["印花", "图案", "pattern", "graphic", "printed", "插画", "壳面"];
+const PACKAGING_KEYWORDS = ["包装", "包装盒", "礼盒", "瓶", "袋", "box", "bottle", "pouch", "label"];
+
+function includesKeyword(text: string, keywords: string[]) {
+  return keywords.some((keyword) => text.includes(keyword));
+}
+
+function detectFidelityCategory(texts: Array<string | undefined>): FidelityCategory {
+  const combined = texts
+    .map((value) => String(value || "").toLowerCase())
+    .join("\n");
+
+  if (includesKeyword(combined, PHONE_CASE_KEYWORDS)) return "phone-case";
+  if (includesKeyword(combined, PACKAGING_KEYWORDS)) return "packaging";
+  if (includesKeyword(combined, PRINTED_PRODUCT_KEYWORDS)) return "printed-product";
+  return "general";
+}
+
+function buildStrictFidelityContext(args: {
+  categoryHint: FidelityCategory;
+  productInfo: string;
+  productSummary: string;
+  visibleText: string;
+}): FidelityContext {
+  const { categoryHint, productInfo, productSummary, visibleText } = args;
+  const preservePattern =
+    categoryHint === "phone-case" ||
+    categoryHint === "printed-product" ||
+    includesKeyword(`${productInfo}\n${productSummary}\n${visibleText}`.toLowerCase(), PRINTED_PRODUCT_KEYWORDS);
+
+  if (categoryHint === "phone-case") {
+    return {
+      categoryHint,
+      preservePattern,
+      preferProductOnly: true,
+      suppressModelReference: true,
+      strictReason: "phone-case-detail-lock",
+      structureReferencePriority: ["front", "back", "side", "camera-cutout-closeup"],
+      preferredAngles: ["front", "mild-3-4", "flat-lay", "camera-closeup", "simple-desktop"],
+      forbiddenAngles: ["dramatic-tilt", "heavy-handheld", "model-shot", "prop-occlusion"],
+    };
+  }
+
+  if (categoryHint === "printed-product") {
+    return {
+      categoryHint,
+      preservePattern,
+      preferProductOnly: true,
+      strictReason: "printed-detail-lock",
+      structureReferencePriority: ["front", "back", "pattern-closeup"],
+      preferredAngles: ["front", "mild-3-4", "flat-lay", "pattern-closeup"],
+      forbiddenAngles: ["extreme-perspective", "heavy-occlusion"],
+    };
+  }
+
+  if (categoryHint === "packaging") {
+    return {
+      categoryHint,
+      preservePattern,
+      preferProductOnly: true,
+      strictReason: "packaging-detail-lock",
+      structureReferencePriority: ["front", "back", "side", "label-closeup"],
+      preferredAngles: ["front", "mild-3-4", "desktop", "label-closeup"],
+      forbiddenAngles: ["fisheye", "heavy-handheld", "prop-occlusion"],
+    };
+  }
+
+  return {
+    categoryHint,
+    preservePattern,
+    preferProductOnly: false,
+    strictReason: "general-detail-lock",
+    structureReferencePriority: ["front", "side", "detail-closeup"],
+    preferredAngles: ["front", "mild-3-4", "clean-desktop"],
+    forbiddenAngles: ["extreme-perspective", "heavy-occlusion"],
+  };
+}
 
 /** 每个模型可用的分辨率 */
 const modelResolutionMap: Record<GenerationModel, OutputResolution[]> = {
@@ -266,6 +358,7 @@ function buildScreenPrompt(args: {
   targetPlatform: string;
   targetLanguage: string;
   fidelityMode: FidelityMode;
+  fidelityContext?: FidelityContext;
   screenIdea?: string;
 }): string {
   const {
@@ -277,12 +370,40 @@ function buildScreenPrompt(args: {
     targetPlatform,
     targetLanguage,
     fidelityMode,
+    fidelityContext,
     screenIdea,
   } =
     args;
+  const strictCategory = fidelityContext?.categoryHint || "general";
+  const strictPhoneCaseMode = fidelityMode === "strict" && strictCategory === "phone-case";
+  const strictPrintedMode = fidelityMode === "strict" && fidelityContext?.preservePattern;
+  const strictPackagingMode = fidelityMode === "strict" && strictCategory === "packaging";
+  const strictHumanPresence =
+    strictPhoneCaseMode
+      ? "Avoid people, hands, or model shots by default. Only allow a tiny non-occluding hand interaction when it is necessary to explain use, and never let it cover camera holes, edge thickness, printed artwork, or button cutouts."
+      : fidelityMode === "strict"
+      ? "Prefer product-only or light-scene composition. If any human presence is used, keep it secondary, small, and away from the product's key structure."
+      : screen.humanModelSuggested
+      ? "A human model, hands, or natural usage action may help."
+      : "Prefer product-only display.";
   const strictFidelityRules =
     fidelityMode === "strict"
-      ? "STRICT FIDELITY MODE: prioritize product faithfulness over creativity. Preserve phone-case camera cutout count, size, position, button holes, border thickness, corner radius, printed pattern layout, pattern scale, and pattern position. Do not redesign the artwork, do not create a similar new product, avoid strong perspective distortion, avoid complex hand occlusion, and keep the product front/structure clearly visible."
+      ? [
+          "STRICT FIDELITY MODE: product fidelity has higher priority than creativity, storytelling, or scene drama.",
+          "Preserve the same product silhouette, size ratio, structure, surface materials, and visible construction details from the uploaded product references.",
+          strictPhoneCaseMode
+            ? "PHONE CASE LOCK: keep the exact outer contour, width-height ratio, corner radius, camera cutout count, camera cutout positions, hole spacing, lens ring size relation, edge thickness, raised lip, side buttons, speaker/charging openings, and printed artwork layout exactly aligned with the original case."
+            : "",
+          strictPrintedMode
+            ? "PRINT LOCK: preserve the original artwork itself, including layout, scale, placement, typography arrangement, and motif proportions. Do not repaint, restyle, simplify, or redesign the artwork."
+            : "",
+          strictPackagingMode
+            ? "PACKAGING LOCK: preserve the package silhouette, label panel placement, cap or seal structure, folds, seams, and printed panel proportions."
+            : "",
+          "Do not turn the product into a similar new SKU, do not invent a refreshed version, and do not change key structure to fit the scene.",
+          "Avoid dramatic perspective distortion, extreme tilt, strong foreshortening, fisheye framing, or heavy foreground occlusion.",
+          "Structure-lock references are more important than style references. Style may change only after the product itself stays exact.",
+        ].filter(Boolean).join(" ")
       : "";
 
   if (targetLanguage === "en") {
@@ -334,7 +455,7 @@ Current screen:
 - Key selling points: ${compactPromptText(screen.copyPoints.join("; "), 120)}
 - Suggested English headline: ${compactPromptText(screen.overlayTitle || screen.title, 32)}
 - Suggested English short lines: ${compactPromptText(screen.overlayBodyLines?.join("; ") || screen.copyPoints.join("; "), 60)}
-- Human presence: ${screen.humanModelSuggested ? "A human model, hands, or natural usage action may help." : "Prefer product-only display."}${screen.humanModelReason ? ` Reason: ${screen.humanModelReason}` : ""}
+- Human presence: ${strictHumanPresence}${screen.humanModelReason ? ` Reason: ${screen.humanModelReason}` : ""}
 - User screen idea: ${compactPromptText(screenIdea?.trim(), 120)}
 
 Generation requirements:
@@ -348,7 +469,10 @@ Generation requirements:
 8. If human presence is suggested, add it naturally as supporting context only; the product must remain the hero.
 9. If product-only display is suggested, do not add a model unless a tiny hand interaction clearly improves the use explanation.
 10. Keep the result realistic, sellable, and suitable for an e-commerce detail page.
-${fidelityMode === "strict" ? "11. In strict fidelity mode, prefer product-only or light-scene composition. Avoid dramatic angles, strong perspective, complex hand-held poses, or people covering the product." : ""}
+${fidelityMode === "strict" ? "11. In strict fidelity mode, every screen must still show the same exact product rather than a creatively reinterpreted product." : ""}
+${fidelityMode === "strict" ? "12. Use conservative views first: front, mild three-quarter, flat lay, controlled detail close-up, or simple desktop scenes." : ""}
+${strictPhoneCaseMode ? "13. For phone cases, do not default to model shots, heavy hand-held gestures, strong diagonal angles, or props that cover the camera area, side buttons, or border thickness." : ""}
+${strictPrintedMode ? "14. For printed or artwork-led products, the printed design is a first-class selling point. Keep the exact artwork unchanged while building the scene around it." : ""}
 `.trim();
   }
 
@@ -391,7 +515,7 @@ ${targetPlatform}
 - 重点卖点：${compactPromptText(screen.copyPoints.join("；"), 120)}
 - 建议画面标题：${compactPromptText(screen.overlayTitle || screen.title, 32)}
 - 建议短句：${compactPromptText(screen.overlayBodyLines?.join("；") || screen.copyPoints.join("；"), 60)}
-- 人物建议：${screen.humanModelSuggested ? "建议人物出镜" : "建议纯商品展示"}${screen.humanModelReason ? `；原因：${screen.humanModelReason}` : ""}
+- 人物建议：${strictPhoneCaseMode ? "严格保真手机壳模式下默认纯商品展示，不鼓励人物或复杂手持；只有在确实需要说明使用方式时，才允许非常轻微且不遮挡结构的手部辅助。" : fidelityMode === "strict" ? "严格保真模式下优先纯商品或轻场景构图，人物只能做很轻的辅助说明，不能压住商品结构。" : screen.humanModelSuggested ? "建议人物出镜" : "建议纯商品展示"}${screen.humanModelReason ? `；原因：${screen.humanModelReason}` : ""}
 - 用户补充的分屏构思：${compactPromptText(screenIdea?.trim(), 120)}
 
 生成要求：
@@ -405,7 +529,10 @@ ${targetPlatform}
 8. 如果当前分屏建议人物出镜，可以自然加入真人模特、手部交互或使用动作，但人物只能辅助解释卖点，不能盖住商品主体。
 9. 如果当前分屏建议纯商品展示，就不要额外加入真人模特，除非只是极轻微的手部辅助且明显更利于说明使用方式。
 10. 保持商品真实、可售、适合电商详情页，不做无关艺术化改造。
-${fidelityMode === "strict" ? "11. 严格保真模式下优先纯商品或轻场景构图，不使用大角度斜拍、复杂手持、人物压住商品主体或遮挡开孔图案的画面。" : ""}
+${fidelityMode === "strict" ? "11. 严格保真模式下，每一屏都必须围绕同一件商品展开展示，不能把商品重新创作成相似新款。" : ""}
+${fidelityMode === "strict" ? "12. 严格保真模式优先使用正面、轻 3/4、平铺、细节局部特写、简单桌面场景等保守视角，不使用大角度斜拍和明显透视畸变。" : ""}
+${strictPhoneCaseMode ? "13. 手机壳类目下必须保留外轮廓、长宽比例、四角弧度、镜头孔数量与位置、边框厚度、按键位和开孔位；默认不鼓励人物出镜、复杂手持、强场景遮挡。" : ""}
+${strictPrintedMode ? "14. 对印花/图案是卖点本身的商品，图案保真优先级与商品外形同级，禁止重画、重排、改比例、改位置。" : ""}
 `.trim();
 }
 
@@ -531,6 +658,43 @@ const DetailDesignPage = () => {
   const planningErrorHint = error ? errorHintFromMessage(error) : null;
   const generationErrorHint = generationError ? errorHintFromMessage(generationError) : null;
   const previewAspectRatio = useMemo(() => toCssAspectRatio(selectedRatio), [selectedRatio]);
+  const strictCategoryHint = useMemo(
+    () =>
+      detectFidelityCategory([
+        productInfo,
+        productSummary,
+        visibleText,
+        styleReferenceText,
+        ...screenIdeas,
+        ...productImages,
+      ]),
+    [
+      productImages,
+      productInfo,
+      productSummary,
+      screenIdeas,
+      styleReferenceText,
+      visibleText,
+    ],
+  );
+  const strictFidelityContext = useMemo(
+    () =>
+      buildStrictFidelityContext({
+        categoryHint: strictCategoryHint,
+        productInfo,
+        productSummary,
+        visibleText,
+      }),
+    [productInfo, productSummary, strictCategoryHint, visibleText],
+  );
+  const strictModeDescription =
+    strictCategoryHint === "phone-case"
+      ? "严格保真手机壳模式：后端会优先锁定外轮廓、镜头孔、边框厚度、按键位和壳面图案，详情图默认更保守，弱化人物和复杂手持。"
+      : strictCategoryHint === "printed-product"
+      ? "严格保真印花模式：图案布局、比例和位置会被当成核心结构一起锁定，场景变化不能压过商品本身。"
+      : strictCategoryHint === "packaging"
+      ? "严格保真包装模式：包装外形、封口、标签区和印刷面板会被优先锁定，构图更偏向清晰展示。"
+      : "严格保真模式：优先锁定商品结构、比例与关键卖点，详情图更偏向同一件商品的保守展示。";
 
   const activePlan = useMemo(
     () => planOptions[selectedOptionIndex] || null,
@@ -879,13 +1043,29 @@ const DetailDesignPage = () => {
     }
     chunks.push(
       language === "en"
-        ? "Human model strategy: let AI decide per screen whether a real model, hands, or product-only composition best explains the selling point. Add people only when wearing effect, hand-held use, scale comparison, or lifestyle context helps; never let people overpower the product."
+        ? strictCategoryHint === "phone-case" && fidelityMode === "strict"
+          ? "Human model strategy: strict phone-case mode defaults to product-only composition. Do not freely add people, hand-held gestures, or body interaction unless a tiny unobstructed hand is absolutely necessary to explain use."
+          : "Human model strategy: let AI decide per screen whether a real model, hands, or product-only composition best explains the selling point. Add people only when wearing effect, hand-held use, scale comparison, or lifestyle context helps; never let people overpower the product."
+        : strictCategoryHint === "phone-case" && fidelityMode === "strict"
+        ? "人物策略：严格保真手机壳模式默认纯商品展示，不鼓励 AI 自由加人物或复杂手持；只有在必须解释使用方式时，才允许极轻微且不遮挡结构的手部辅助。"
         : "人物策略：由 AI 根据当前商品品类和每一屏的卖点表达，自行判断是否需要真人模特、手部出镜或纯商品展示。只有在上身效果、手持演示、尺寸对比或生活场景更能说明卖点时才加入人物，并且人物不能喧宾夺主。",
     );
     if (fidelityMode === "strict") {
       chunks.push(
         language === "en"
-          ? "Strict fidelity mode: prioritize product structure, cutouts, printed artwork, proportions, and packaging shape over creative variation. Prefer product-only or light-scene composition."
+          ? strictCategoryHint === "phone-case"
+            ? "Strict fidelity mode for phone cases: lock silhouette, camera cutouts, side buttons, edge thickness, and printed artwork before scene creativity. Prefer front view, mild 3/4 view, flat lay, camera-cutout close-up, or simple desktop setups."
+            : strictCategoryHint === "printed-product"
+            ? "Strict fidelity mode for printed products: preserve the original artwork layout, scale, and placement with the same priority as the product form. Prefer clean product-led compositions."
+            : strictCategoryHint === "packaging"
+            ? "Strict fidelity mode for packaging: preserve package silhouette, label panel positions, edges, folds, and sealing structure. Use conservative scenes that keep packaging readable."
+            : "Strict fidelity mode: prioritize product structure, cutouts, printed artwork, proportions, and packaging shape over creative variation. Prefer product-only or light-scene composition."
+          : strictCategoryHint === "phone-case"
+          ? "严格保真手机壳模式：优先锁定外轮廓、镜头孔、侧边按键位、边框厚度和壳面图案，再考虑场景创意。优先正面、轻 3/4、平铺、镜头孔特写和简单桌面场景。"
+          : strictCategoryHint === "printed-product"
+          ? "严格保真印花模式：图案布局、比例和位置与商品外形同级锁定，优先纯商品或轻场景构图。"
+          : strictCategoryHint === "packaging"
+          ? "严格保真包装模式：优先锁定包装外形、标签区、折边和封口结构，场景表达保持保守，确保包装结构清晰可见。"
           : "严格保真模式：优先锁定商品结构、开孔、印花图案、比例和包装外形，创意变化保持保守，优先纯商品或轻场景表达。",
       );
     }
@@ -1112,6 +1292,7 @@ const DetailDesignPage = () => {
         targetPlatform,
         targetLanguage: generationLanguage,
         fidelityMode,
+        fidelityContext: fidelityMode === "strict" ? strictFidelityContext : undefined,
         screenIdea: useScreenIdeas ? screenIdeas[screen.screen - 1] : "",
       });
       const existingPrompt = current?.prompt?.trim() || "";
@@ -1178,6 +1359,7 @@ const DetailDesignPage = () => {
       model: selectedModel,
       resolution: selectedResolution,
       fidelityMode,
+      fidelityContext: fidelityMode === "strict" ? strictFidelityContext : undefined,
       productImages,
       styleReferenceImage: styleReferenceImage || undefined,
       styleReferenceText: styleReferenceText.trim() || undefined,
@@ -1271,6 +1453,7 @@ const DetailDesignPage = () => {
       targetPlatform,
       targetLanguage: generationLanguage,
       fidelityMode,
+      fidelityContext: fidelityMode === "strict" ? strictFidelityContext : undefined,
       screenIdea: useScreenIdeas ? screenIdeas[screen.screen - 1] : "",
     });
     updateGeneratedScreen(screen.screen, (current) => ({
@@ -1380,7 +1563,7 @@ const DetailDesignPage = () => {
   };
 
   return (
-    <div className="mx-auto max-w-[1480px] space-y-5 px-3 py-4 sm:px-4 sm:py-5 md:space-y-6 md:px-6 md:py-6">
+    <div className="space-y-5 py-1 md:space-y-6">
       <WorkspaceHeader
         icon={LayoutPanelTop}
         badge="AI 详情图"
@@ -1391,7 +1574,7 @@ const DetailDesignPage = () => {
 
       <WorkspaceShell
         sidebar={
-        <div className="space-y-5 rounded-3xl border border-border bg-card p-5 pb-24 shadow-sm xl:max-h-[calc(100vh-7rem)] xl:overflow-y-auto xl:pb-6">
+        <div className="space-y-5 rounded-3xl border border-border bg-card p-3 pb-24 shadow-sm sm:p-4 md:p-5 lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto lg:pb-6">
           <section className="rounded-2xl border border-border bg-background/70 p-4">
             <div className="mb-4 flex items-center justify-between">
               <div>
@@ -1616,7 +1799,7 @@ const DetailDesignPage = () => {
               </div>
               {fidelityMode === "strict" && (
                 <p className="mt-3 rounded-xl bg-background/80 px-3 py-2 text-xs leading-5 text-primary">
-                  严格保真模式会优先保证商品外形、开孔和图案一致性，创意变化会相对保守。已优先使用 Nano Banana 2 和 1K 标准生成。
+                  {strictModeDescription} 已优先使用 Nano Banana 2 和 1K 标准生成。
                 </p>
               )}
             </div>
