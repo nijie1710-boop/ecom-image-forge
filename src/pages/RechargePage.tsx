@@ -61,8 +61,8 @@ interface CreditRules {
     nanoBananaPro: number;
   };
   translation: {
-    basic: number;
-    refined: number;
+    nanoBanana2: number;
+    nanoBananaPro: number;
   };
 }
 
@@ -92,7 +92,7 @@ const DEFAULT_PACKAGES: RechargePackage[] = [
 const DEFAULT_RULES: CreditRules = {
   generation: { nanoBanana: 5, nanoBanana2: 7, nanoBananaPro: 12 },
   detail: { planning: 2, nanoBanana: 6, nanoBanana2: 8, nanoBananaPro: 14 },
-  translation: { basic: 4, refined: 6 },
+  translation: { nanoBanana2: 7, nanoBananaPro: 12 },
 };
 
 function formatDate(dateStr?: string | null) {
@@ -549,8 +549,9 @@ export default function RechargePage() {
               <div className="rounded-2xl border border-border bg-muted/20 p-4">
                 <div className="mb-3 font-medium text-foreground">图文翻译</div>
                 <div className="space-y-2 text-sm text-muted-foreground">
-                  <div> 基础翻译：{creditRules.translation.basic} 积分/张</div>
-                  <div> 精修翻译：{creditRules.translation.refined} 积分/张</div>
+                  <div>Nano Banana 2：{creditRules.translation.nanoBanana2} 积分/张</div>
+                  <div>Nano Banana Pro：{creditRules.translation.nanoBananaPro} 积分/张</div>
+                  <div className="pt-1 text-xs text-muted-foreground/70">以上为 1K 分辨率，2K / 4K 消耗更多</div>
                 </div>
               </div>
             </CardContent>
