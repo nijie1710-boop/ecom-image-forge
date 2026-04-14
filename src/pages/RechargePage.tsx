@@ -49,21 +49,9 @@ interface RechargePackage {
 }
 
 interface CreditRules {
-  generation: {
-    nanoBanana: number;
-    nanoBanana2: number;
-    nanoBananaPro: number;
-  };
-  detail: {
-    planning: number;
-    nanoBanana: number;
-    nanoBanana2: number;
-    nanoBananaPro: number;
-  };
-  translation: {
-    nanoBanana2: number;
-    nanoBananaPro: number;
-  };
+  generation: Record<string, number>;
+  detail: Record<string, number>;
+  translation: Record<string, number>;
 }
 
 interface RechargeOrder {
@@ -91,9 +79,49 @@ const DEFAULT_PACKAGES: RechargePackage[] = [
 
 const DEFAULT_RULES: CreditRules = {
   generation: { nanoBanana: 5, nanoBanana2: 7, nanoBananaPro: 12 },
-  detail: { planning: 2, nanoBanana: 6, nanoBanana2: 8, nanoBananaPro: 14 },
+  detail: { planning: 1, nanoBanana: 7, nanoBanana2: 9, nanoBananaPro: 14 },
   translation: { nanoBanana2: 7, nanoBananaPro: 12 },
 };
+
+/* ── 完整积分扣费明细表（与 detail-credits.ts 一致） ──────────── */
+const PRICING_SECTIONS: {
+  title: string;
+  unit: string;
+  note?: string;
+  cols: string[];
+  rows: { model: string; values: (number | string)[] }[];
+}[] = [
+  {
+    title: "AI 主图",
+    unit: "积分/张",
+    cols: ["1K", "2K", "4K"],
+    rows: [
+      { model: "Nano Banana",     values: [5,  "-", "-"] },
+      { model: "Nano Banana 2",   values: [7,  9,   14] },
+      { model: "Nano Banana Pro", values: [12, 14,  24] },
+    ],
+  },
+  {
+    title: "AI 详情图",
+    unit: "积分/屏",
+    note: "方案策划固定 1 积分/次",
+    cols: ["1K", "2K", "4K"],
+    rows: [
+      { model: "Nano Banana",     values: [7,  "-", "-"] },
+      { model: "Nano Banana 2",   values: [9,  14,  18] },
+      { model: "Nano Banana Pro", values: [14, 16,  30] },
+    ],
+  },
+  {
+    title: "图文翻译",
+    unit: "积分/张",
+    cols: ["1K", "2K", "4K"],
+    rows: [
+      { model: "Nano Banana 2",   values: [7,  9,  14] },
+      { model: "Nano Banana Pro", values: [12, 14, 24] },
+    ],
+  },
+];
 
 function formatDate(dateStr?: string | null) {
   if (!dateStr) return "-";
@@ -209,7 +237,7 @@ export default function RechargePage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [balance, setBalance] = useState<BalanceInfo | null>(null);
   const [packages, setPackages] = useState<RechargePackage[]>(DEFAULT_PACKAGES);
-  const [creditRules, setCreditRules] = useState<CreditRules>(DEFAULT_RULES);
+  const [, setCreditRules] = useState<CreditRules>(DEFAULT_RULES);
   const [rechargeHistory, setRechargeHistory] = useState<RechargeRecord[]>([]);
   const [consumptionHistory, setConsumptionHistory] = useState<ConsumptionRecord[]>([]);
   const [orders, setOrders] = useState<RechargeOrder[]>([]);
@@ -524,35 +552,50 @@ export default function RechargePage() {
                 </div>
                 <div>
                   <CardTitle className="text-lg">积分扣费规则</CardTitle>
-                  <CardDescription>实际扣费会以后台配置为准，下面展示当前生效的默认规则。</CardDescription>
+                  <CardDescription>不同功能、模型和分辨率对应不同的积分消耗，下表展示完整明细。</CardDescription>
                 </div>
               </div>
             </CardHeader>
-            <CardContent className="grid gap-4 lg:grid-cols-3">
-              <div className="rounded-2xl border border-border bg-muted/20 p-4">
-                <div className="mb-3 font-medium text-foreground">AI 主图</div>
-                <div className="space-y-2 text-sm text-muted-foreground">
-                  <div> Nano Banana：{creditRules.generation.nanoBanana} 积分/张</div>
-                  <div> Nano Banana 2：{creditRules.generation.nanoBanana2} 积分/张</div>
-                  <div> Nano Banana Pro：{creditRules.generation.nanoBananaPro} 积分/张</div>
+            <CardContent className="space-y-5">
+              {PRICING_SECTIONS.map((section) => (
+                <div key={section.title} className="rounded-2xl border border-border bg-muted/20 overflow-hidden">
+                  <div className="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-border bg-muted/30">
+                    <span className="font-medium text-foreground">{section.title}</span>
+                    <Badge variant="secondary" className="text-xs">{section.unit}</Badge>
+                    {section.note && <span className="text-xs text-muted-foreground">({section.note})</span>}
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-border text-muted-foreground">
+                          <th className="px-4 py-2.5 text-left font-medium">模型</th>
+                          {section.cols.map((col) => (
+                            <th key={col} className="px-4 py-2.5 text-center font-medium whitespace-nowrap">{col}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {section.rows.map((row, idx) => (
+                          <tr key={row.model} className={idx < section.rows.length - 1 ? "border-b border-border/50" : ""}>
+                            <td className="px-4 py-2.5 text-foreground whitespace-nowrap">{row.model}</td>
+                            {row.values.map((val, ci) => (
+                              <td key={section.cols[ci]} className="px-4 py-2.5 text-center tabular-nums">
+                                {val === "-" ? (
+                                  <span className="text-muted-foreground/40">-</span>
+                                ) : (
+                                  <span className="font-medium text-foreground">{val}</span>
+                                )}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-              </div>
-              <div className="rounded-2xl border border-border bg-muted/20 p-4">
-                <div className="mb-3 font-medium text-foreground">AI 详情图</div>
-                <div className="space-y-2 text-sm text-muted-foreground">
-                  <div> 方案策划：{creditRules.detail.planning} 积分/次</div>
-                  <div> Nano Banana：{creditRules.detail.nanoBanana} 积分/屏</div>
-                  <div> Nano Banana 2：{creditRules.detail.nanoBanana2} 积分/屏</div>
-                  <div> Nano Banana Pro：{creditRules.detail.nanoBananaPro} 积分/屏</div>
-                </div>
-              </div>
-              <div className="rounded-2xl border border-border bg-muted/20 p-4">
-                <div className="mb-3 font-medium text-foreground">图文翻译</div>
-                <div className="space-y-2 text-sm text-muted-foreground">
-                  <div>Nano Banana 2：{creditRules.translation.nanoBanana2} 积分/张</div>
-                  <div>Nano Banana Pro：{creditRules.translation.nanoBananaPro} 积分/张</div>
-                  <div className="pt-1 text-xs text-muted-foreground/70">以上为 1K 分辨率，2K / 4K 消耗更多</div>
-                </div>
+              ))}
+              <div className="text-xs text-muted-foreground leading-relaxed">
+                Nano Banana 仅支持 1K 分辨率，"-" 表示该分辨率不可选。实际扣费以操作时页面显示为准。
               </div>
             </CardContent>
           </Card>
