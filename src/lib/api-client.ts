@@ -210,6 +210,32 @@ export async function selfHostedSignOut() {
   clearStoredToken();
 }
 
+export async function selfHostedResetRequest(email: string): Promise<{ success: boolean; message: string }> {
+  const res = await fetch(`${SELF_HOSTED_API_URL}/api/auth/reset-request`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.message || "发送验证码失败");
+  return data;
+}
+
+export async function selfHostedResetPassword(
+  email: string,
+  code: string,
+  password: string,
+): Promise<{ success: boolean; message: string }> {
+  const res = await fetch(`${SELF_HOSTED_API_URL}/api/auth/reset-password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, code, password }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.message || "重置密码失败");
+  return data;
+}
+
 // ─── Image upload helper ──────────────────────────────────────
 
 /**

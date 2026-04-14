@@ -12,7 +12,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { getAuthCallbackUrl } from "@/lib/app-config";
 import { normalizeUserErrorMessage } from "@/lib/error-messages";
-import { isSelfHosted, selfHostedLogin, selfHostedRegister } from "@/lib/api-client";
+import { isSelfHosted, selfHostedLogin, selfHostedRegister, selfHostedResetRequest, selfHostedResetPassword } from "@/lib/api-client";
 
 type AuthMode = "login" | "signup" | "reset";
 
@@ -274,18 +274,23 @@ export default function AuthPage() {
     setSendingCode(true);
 
     try {
-      const { error } = await withAuthTimeout(
-        supabase.auth.signInWithOtp({
-          email: normalizedEmail,
-          options: {
-            shouldCreateUser: mode === "signup",
-            emailRedirectTo: getAuthCallbackUrl(),
-            data: mode === "signup" && displayName.trim() ? { display_name: displayName.trim() } : undefined,
-          },
-        }),
-      );
+      if (isSelfHosted && mode === "reset") {
+        // Self-hosted: send reset code via our API
+        await withAuthTimeout(selfHostedResetRequest(normalizedEmail));
+      } else {
+        const { error } = await withAuthTimeout(
+          supabase.auth.signInWithOtp({
+            email: normalizedEmail,
+            options: {
+              shouldCreateUser: mode === "signup",
+              emailRedirectTo: getAuthCallbackUrl(),
+              data: mode === "signup" && displayName.trim() ? { display_name: displayName.trim() } : undefined,
+            },
+          }),
+        );
 
-      if (error) throw error;
+        if (error) throw error;
+      }
 
       setCodeSent(true);
       setCooldown(OTP_COOLDOWN_SECONDS);
@@ -294,7 +299,9 @@ export default function AuthPage() {
         description:
           mode === "signup"
             ? `请使用本次邮件中的 ${OTP_LENGTH} 位验证码完成注册。`
-            : `请使用本次邮件中的 ${OTP_LENGTH} 位验证码完成密码重置。`,
+            : isSelfHosted
+              ? "请查收邮件中的 6 位验证码完成密码重置。"
+              : `请使用本次邮件中的 ${OTP_LENGTH} 位验证码完成密码重置。`,
       });
     } catch (error) {
       setCodeSent(false);
@@ -404,12 +411,17 @@ export default function AuthPage() {
     setSubmitting(true);
 
     try {
-      await verifyOtpByEmail(normalizedEmail, otpCode.trim());
+      if (isSelfHosted) {
+        // Self-hosted: verify code + set new password in one call
+        await withAuthTimeout(selfHostedResetPassword(normalizedEmail, otpCode.trim(), password));
+      } else {
+        await verifyOtpByEmail(normalizedEmail, otpCode.trim());
 
-      const { error } = await supabase.auth.updateUser({ password });
-      if (error) throw error;
+        const { error } = await supabase.auth.updateUser({ password });
+        if (error) throw error;
 
-      await supabase.auth.signOut({ scope: "local" });
+        await supabase.auth.signOut({ scope: "local" });
+      }
 
       toast({
         title: "密码已重置",
@@ -485,7 +497,7 @@ export default function AuthPage() {
               <p className="mt-2 text-center text-sm text-muted-foreground">{pageDescription}</p>
             </div>
 
-            <div className={`mb-6 grid ${isSelfHosted ? "grid-cols-2" : "grid-cols-3"} gap-2 rounded-2xl border border-border/70 bg-muted/30 p-1`}>
+            <div className="mb-6 grid grid-cols-3 gap-2 rounded-2xl border border-border/70 bg-muted/30 p-1">
               <button
                 type="button"
                 onClick={() => switchMode("login")}
@@ -504,17 +516,15 @@ export default function AuthPage() {
               >
                 注册
               </button>
-              {!isSelfHosted && (
-                <button
-                  type="button"
-                  onClick={() => switchMode("reset")}
-                  className={`rounded-xl px-4 py-2 text-sm font-medium transition ${
-                    mode === "reset" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"
-                  }`}
-                >
-                  找回密码
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => switchMode("reset")}
+                className={`rounded-xl px-4 py-2 text-sm font-medium transition ${
+                  mode === "reset" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"
+                }`}
+              >
+                找回密码
+              </button>
             </div>
 
             <div className="space-y-4">
@@ -547,15 +557,13 @@ export default function AuthPage() {
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">密码</label>
-                      {!isSelfHosted && (
-                        <button
-                          type="button"
-                          onClick={() => switchMode("reset")}
-                          className="text-xs text-primary hover:underline"
-                        >
-                          忘记密码?
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => switchMode("reset")}
+                        className="text-xs text-primary hover:underline"
+                      >
+                        忘记密码?
+                      </button>
                     </div>
                     <Input
                       type="password"
@@ -624,7 +632,9 @@ export default function AuthPage() {
                       {mode === "signup" ? "邮箱验证码注册" : "邮箱验证码重置密码"}
                     </div>
                     <p className="mt-2 leading-relaxed">
-                      当前邮件验证码一般为 {OTP_LENGTH} 位数字。发送后请使用本次邮件中的最新验证码，旧验证码会失效。
+                      {isSelfHosted && mode === "reset"
+                        ? "点击发送验证码后，请查收邮件中的 6 位数字验证码，15 分钟内有效。"
+                        : `当前邮件验证码一般为 ${OTP_LENGTH} 位数字。发送后请使用本次邮件中的最新验证码，旧验证码会失效。`}
                     </p>
                   </div>
 
@@ -650,7 +660,7 @@ export default function AuthPage() {
                     <Input
                       value={otpCode}
                       onChange={(event) => setOtpCode(event.target.value.replace(/\s+/g, ""))}
-                      placeholder={`请输入 ${OTP_LENGTH} 位验证码`}
+                      placeholder={isSelfHosted && mode === "reset" ? "请输入 6 位验证码" : `请输入 ${OTP_LENGTH} 位验证码`}
                       inputMode="numeric"
                       className="h-11"
                     />
