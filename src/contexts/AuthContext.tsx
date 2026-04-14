@@ -50,16 +50,23 @@ async function checkAdminRole(user: User | null | undefined) {
 }
 
 async function resolveActiveUser() {
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
+  try {
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.getUser();
 
-  if (error || !user) {
+    if (error || !user) {
+      // 服务端确认 session 无效，清除本地缓存避免下次仍短暂显示已登录
+      await supabase.auth.signOut({ scope: "local" }).catch(() => {});
+      return null;
+    }
+
+    return user;
+  } catch {
+    // 网络异常（如 Supabase 不可用），不主动清除缓存
     return null;
   }
-
-  return user;
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {

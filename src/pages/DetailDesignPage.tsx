@@ -1563,7 +1563,7 @@ const DetailDesignPage = () => {
   };
 
   return (
-    <div className="mx-auto max-w-[1680px] space-y-5 px-3 py-4 sm:px-4 sm:py-5 md:space-y-6 md:px-6 md:py-6">
+    <div className="space-y-5 py-1 md:space-y-6">
       <WorkspaceHeader
         icon={LayoutPanelTop}
         badge="AI 详情图"

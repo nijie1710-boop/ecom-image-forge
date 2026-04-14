@@ -351,7 +351,7 @@ const MyImagesPage = () => {
   const selectedImages = filteredImages.filter((item) => selectedIds.includes(item.id));
 
   return (
-    <div className="mx-auto max-w-7xl px-3 py-4 sm:px-4 sm:py-5 md:p-6">
+    <div className="py-1">
       <div className="mb-5 rounded-3xl border border-border bg-card p-3 shadow-sm sm:mb-8 sm:p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>

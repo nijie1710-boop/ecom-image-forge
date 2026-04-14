@@ -8,6 +8,7 @@ import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { getAuthCallbackUrl } from "@/lib/app-config";
 import { normalizeUserErrorMessage } from "@/lib/error-messages";
@@ -114,6 +115,14 @@ async function verifyOtpByEmail(email: string, token: string) {
 export default function AuthPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { user, loading } = useAuth();
+
+  // 已登录状态直接跳转到工作台，避免重复展示登录页
+  useEffect(() => {
+    if (!loading && user) {
+      navigate("/dashboard", { replace: true });
+    }
+  }, [loading, user, navigate]);
 
   const [mode, setMode] = useState<AuthMode>("login");
   const [email, setEmail] = useState("");
