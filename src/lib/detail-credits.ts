@@ -175,10 +175,8 @@ export async function deductCredits(
       };
     }
 
-    const result =
-      payload?.result && typeof payload.result === "object"
-        ? (payload.result as Record<string, unknown>)
-        : null;
+    // Self-hosted backend returns { success, new_balance, ... } directly (no "result" wrapper)
+    const result = payload as Record<string, unknown> | null;
 
     if (!result?.success) {
       return {
@@ -205,12 +203,12 @@ export async function deductCredits(
 export async function getUserBalance(userId: string): Promise<number> {
   if (isSelfHosted) {
     try {
-      const res = await apiPost<{ result?: { balance?: number } }>("manage-balance", { action: "get" });
-      if (!res.ok || !res.data?.result) {
+      const res = await apiPost<{ balance?: number; user_id?: string }>("manage-balance", { action: "get" });
+      if (!res.ok || res.data?.balance === undefined) {
         console.error("getUserBalance (self-hosted) failed:", res.rawText);
         return 0;
       }
-      return Number(res.data.result.balance ?? 0);
+      return Number(res.data.balance ?? 0);
     } catch (error) {
       console.error("getUserBalance (self-hosted) failed:", error);
       return 0;
