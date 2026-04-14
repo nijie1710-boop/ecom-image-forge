@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { isSelfHosted, apiPost, uploadImageToServer } from "@/lib/api-client";
 import {
   errorHintFromMessage,
   normalizeUserErrorMessage,
@@ -736,7 +737,18 @@ export default function TranslateImagePage() {
   const persistTranslatedImage = useCallback(async (job: TranslationJob, imageUrl: string) => {
     let permanentUrl = imageUrl;
 
-    if (!imageUrl.startsWith("data:") && !imageUrl.includes("/storage/")) {
+    if (isSelfHosted) {
+      // Self-hosted: upload via API if it's a data URL or relative path
+      if (imageUrl.startsWith("data:")) {
+        try {
+          permanentUrl = await uploadImageToServer(imageUrl, "translated");
+        } catch (error) {
+          console.warn("upload translated image failed:", error);
+        }
+      }
+      // If it's a relative server URL like /uploads/translated/xxx.png, make it absolute
+      // The server already returns absolute-ish URLs, keep as-is
+    } else if (!imageUrl.startsWith("data:") && !imageUrl.includes("/storage/")) {
       try {
         const response = await fetch(imageUrl);
         const blob = await response.blob();
@@ -794,20 +806,35 @@ export default function TranslateImagePage() {
     }
 
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (user) {
-        await supabase.from("generated_images").insert({
-          user_id: user.id,
-          image_url: permanentUrl,
-          prompt: `图文翻译 · ${job.fileName}`,
-          style: "翻译",
-          scene: "translate",
-          image_type: "图文翻译",
-          aspect_ratio: "original",
+      if (isSelfHosted) {
+        await apiPost("user-images", {
+          action: "save",
+          record: {
+            image_url: permanentUrl,
+            prompt: `图文翻译 · ${job.fileName}`,
+            style: "翻译",
+            scene: "translate",
+            image_type: "图文翻译",
+            aspect_ratio: "original",
+            task_kind: "translate",
+          },
         });
+      } else {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+
+        if (user) {
+          await supabase.from("generated_images").insert({
+            user_id: user.id,
+            image_url: permanentUrl,
+            prompt: `图文翻译 · ${job.fileName}`,
+            style: "翻译",
+            scene: "translate",
+            image_type: "图文翻译",
+            aspect_ratio: "original",
+          });
+        }
       }
     } catch (error) {
       console.warn("save translated record failed:", error);
@@ -889,12 +916,24 @@ export default function TranslateImagePage() {
       updateJob(job.id, (current) => ({ ...current, status: "ocring", error: null, hint: null }));
 
       try {
-        const { data, error } = await supabase.functions.invoke("translate-image", {
-          body: { imageUrl: job.originalImage, step: "ocr", targetLanguage },
-        });
-        if (error) throw new Error(await readInvokeError(error));
+        let nextTranslations: TranslationItem[] = [];
 
-        const nextTranslations = Array.isArray(data?.translations) ? data.translations : [];
+        if (isSelfHosted) {
+          const resp = await apiPost<{ translations: TranslationItem[] }>("translate-image", {
+            imageUrl: job.originalImage,
+            step: "ocr",
+            targetLanguage,
+          });
+          if (!resp.ok || !resp.data) throw new Error(resp.rawText || "OCR failed");
+          nextTranslations = Array.isArray(resp.data.translations) ? resp.data.translations : [];
+        } else {
+          const { data, error } = await supabase.functions.invoke("translate-image", {
+            body: { imageUrl: job.originalImage, step: "ocr", targetLanguage },
+          });
+          if (error) throw new Error(await readInvokeError(error));
+          nextTranslations = Array.isArray(data?.translations) ? data.translations : [];
+        }
+
         if (!nextTranslations.length) throw new Error("未检测到可翻译的文字内容");
 
         updateJob(job.id, (current) => ({
@@ -904,7 +943,7 @@ export default function TranslateImagePage() {
           error: null,
           hint: null,
         }));
-        return nextTranslations as TranslationItem[];
+        return nextTranslations;
       } catch (error) {
         const message = normalizeUserErrorMessage(error, "文字识别失败");
         updateJob(job.id, (current) => ({
@@ -930,20 +969,35 @@ export default function TranslateImagePage() {
 
         if (renderStrategy === "ai") {
           try {
-            const { data, error } = await supabase.functions.invoke("translate-image", {
-              body: {
+            if (isSelfHosted) {
+              const resp = await apiPost<{ imageUrl: string; model?: string }>("translate-image", {
                 imageUrl: job.originalImage,
                 step: "replace",
                 translations: job.translations,
                 targetLanguage,
                 preferredModel: replaceModel,
-              },
-            });
-            if (error) throw new Error(await readInvokeError(error));
-            if (!data?.imageUrl) throw new Error("AI 精修替换没有返回可用图片");
-            outputImage = data.imageUrl;
-            outputMode = "ai";
-            outputModel = typeof data?.model === "string" ? data.model : replaceModel;
+              });
+              if (!resp.ok || !resp.data) throw new Error(resp.rawText || "AI replace failed");
+              if (!resp.data.imageUrl) throw new Error("AI 精修替换没有返回可用图片");
+              outputImage = resp.data.imageUrl;
+              outputMode = "ai";
+              outputModel = typeof resp.data.model === "string" ? resp.data.model : replaceModel;
+            } else {
+              const { data, error } = await supabase.functions.invoke("translate-image", {
+                body: {
+                  imageUrl: job.originalImage,
+                  step: "replace",
+                  translations: job.translations,
+                  targetLanguage,
+                  preferredModel: replaceModel,
+                },
+              });
+              if (error) throw new Error(await readInvokeError(error));
+              if (!data?.imageUrl) throw new Error("AI 精修替换没有返回可用图片");
+              outputImage = data.imageUrl;
+              outputMode = "ai";
+              outputModel = typeof data?.model === "string" ? data.model : replaceModel;
+            }
           } catch (replaceError) {
             console.warn("ai replace failed, fallback to stable renderer:", replaceError);
           }

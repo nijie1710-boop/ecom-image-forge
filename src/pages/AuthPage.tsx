@@ -12,6 +12,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { getAuthCallbackUrl } from "@/lib/app-config";
 import { normalizeUserErrorMessage } from "@/lib/error-messages";
+import { isSelfHosted, selfHostedLogin, selfHostedRegister } from "@/lib/api-client";
 
 type AuthMode = "login" | "signup" | "reset";
 
@@ -115,7 +116,7 @@ async function verifyOtpByEmail(email: string, token: string) {
 export default function AuthPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { user, loading } = useAuth();
+  const { user, loading, refreshUser } = useAuth();
 
   // 已登录状态直接跳转到工作台，避免重复展示登录页
   useEffect(() => {
@@ -311,14 +312,18 @@ export default function AuthPage() {
     setSubmitting(true);
 
     try {
-      const { error } = await withAuthTimeout(
-        supabase.auth.signInWithPassword({
-          email: normalizedEmail,
-          password,
-        }),
-      );
-
-      if (error) throw error;
+      if (isSelfHosted) {
+        await withAuthTimeout(selfHostedLogin(normalizedEmail, password));
+        await refreshUser();
+      } else {
+        const { error } = await withAuthTimeout(
+          supabase.auth.signInWithPassword({
+            email: normalizedEmail,
+            password,
+          }),
+        );
+        if (error) throw error;
+      }
 
       toast({
         title: "登录成功",
@@ -333,6 +338,30 @@ export default function AuthPage() {
   };
 
   const handleSignup = async () => {
+    if (isSelfHosted) {
+      // Self-hosted: direct email+password registration (no OTP)
+      if (!ensureEmail()) return;
+      if (!displayName.trim()) {
+        toast({ title: "请输入昵称", description: "注册账号前请先填写昵称。", variant: "destructive" });
+        return;
+      }
+      if (!ensurePassword(true)) return;
+
+      setSubmitting(true);
+      try {
+        await withAuthTimeout(selfHostedRegister(normalizedEmail, password, displayName.trim()));
+        await refreshUser();
+        toast({ title: "注册成功", description: "正在进入工作台。" });
+        navigate("/dashboard");
+      } catch (error) {
+        showError(error);
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
+
+    // Supabase mode: OTP verification flow
     if (!ensureEmail() || !ensureOtpReady()) return;
     if (!displayName.trim()) {
       toast({
@@ -456,7 +485,7 @@ export default function AuthPage() {
               <p className="mt-2 text-center text-sm text-muted-foreground">{pageDescription}</p>
             </div>
 
-            <div className="mb-6 grid grid-cols-3 gap-2 rounded-2xl border border-border/70 bg-muted/30 p-1">
+            <div className={`mb-6 grid ${isSelfHosted ? "grid-cols-2" : "grid-cols-3"} gap-2 rounded-2xl border border-border/70 bg-muted/30 p-1`}>
               <button
                 type="button"
                 onClick={() => switchMode("login")}
@@ -475,15 +504,17 @@ export default function AuthPage() {
               >
                 注册
               </button>
-              <button
-                type="button"
-                onClick={() => switchMode("reset")}
-                className={`rounded-xl px-4 py-2 text-sm font-medium transition ${
-                  mode === "reset" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"
-                }`}
-              >
-                找回密码
-              </button>
+              {!isSelfHosted && (
+                <button
+                  type="button"
+                  onClick={() => switchMode("reset")}
+                  className={`rounded-xl px-4 py-2 text-sm font-medium transition ${
+                    mode === "reset" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"
+                  }`}
+                >
+                  找回密码
+                </button>
+              )}
             </div>
 
             <div className="space-y-4">
@@ -516,13 +547,15 @@ export default function AuthPage() {
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">密码</label>
-                      <button
-                        type="button"
-                        onClick={() => switchMode("reset")}
-                        className="text-xs text-primary hover:underline"
-                      >
-                        忘记密码?
-                      </button>
+                      {!isSelfHosted && (
+                        <button
+                          type="button"
+                          onClick={() => switchMode("reset")}
+                          className="text-xs text-primary hover:underline"
+                        >
+                          忘记密码?
+                        </button>
+                      )}
                     </div>
                     <Input
                       type="password"
@@ -543,6 +576,46 @@ export default function AuthPage() {
                     {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "邮箱登录"}
                   </Button>
                 </form>
+              ) : isSelfHosted && mode === "signup" ? (
+                /* Self-hosted signup: simple email + password, no OTP */
+                <>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">设置密码</label>
+                    <Input
+                      type="password"
+                      value={password}
+                      onChange={(event) => setPassword(event.target.value)}
+                      placeholder="至少 6 位字符"
+                      minLength={6}
+                      className="h-11"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">确认密码</label>
+                    <Input
+                      type="password"
+                      value={confirmPassword}
+                      onChange={(event) => setConfirmPassword(event.target.value)}
+                      placeholder="再次输入密码"
+                      minLength={6}
+                      className="h-11"
+                    />
+                  </div>
+
+                  <Button
+                    type="button"
+                    className="h-11 w-full bg-gradient-to-r from-primary to-violet-600 font-semibold text-white hover:opacity-90"
+                    disabled={submitting}
+                    onClick={handleSignup}
+                  >
+                    {submitting ? (
+                      <span className="inline-flex items-center"><Loader2 className="h-4 w-4 animate-spin" /></span>
+                    ) : (
+                      <span>注册</span>
+                    )}
+                  </Button>
+                </>
               ) : (
                 <>
                   <div className="rounded-2xl border border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">

@@ -1,26 +1,13 @@
-import {
-  SUPABASE_PUBLISHABLE_KEY,
-  SUPABASE_URL,
-  supabase,
-} from "@/integrations/supabase/client";
+import { buildApiUrl, getOptionalAuthHeaders } from "@/lib/api-client";
 import { normalizeUserErrorMessage } from "@/lib/error-messages";
 
 async function getOptionalInvokeHeaders() {
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  return {
-    apikey: SUPABASE_PUBLISHABLE_KEY,
-    ...(session?.access_token
-      ? { Authorization: `Bearer ${session.access_token}` }
-      : {}),
-  };
+  return getOptionalAuthHeaders();
 }
 
 async function invokeEdgeJson<T>(functionName: string, body: Record<string, unknown>, fallback: string): Promise<T> {
   const headers = await getOptionalInvokeHeaders();
-  const response = await fetch(`${SUPABASE_URL}/functions/v1/${functionName}`, {
+  const response = await fetch(buildApiUrl(functionName), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

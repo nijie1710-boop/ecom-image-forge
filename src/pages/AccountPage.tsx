@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { normalizeUserErrorMessage } from "@/lib/error-messages";
+import { isSelfHosted, apiPost } from "@/lib/api-client";
 
 type HistoryImage = {
   id: string;
@@ -53,6 +54,12 @@ async function loadBalanceFallback(userId: string): Promise<BalanceInfo> {
 }
 
 async function loadCloudImages(userId: string): Promise<HistoryImage[]> {
+  if (isSelfHosted) {
+    const resp = await apiPost<{ images: HistoryImage[] }>("user-images", { action: "list", limit: 8, offset: 0 });
+    if (!resp.ok || !resp.data) throw new Error(resp.rawText || "Failed to load images");
+    return (resp.data.images || []).map((item) => ({ ...item, source: "cloud" as const }));
+  }
+
   const { data, error } = await supabase
     .from("generated_images")
     .select("id,image_url,created_at")
@@ -69,6 +76,8 @@ async function loadCloudImages(userId: string): Promise<HistoryImage[]> {
 }
 
 async function loadProfileDisplayName(userId: string): Promise<string> {
+  if (isSelfHosted) return ""; // Self-hosted uses user_metadata from AuthContext
+
   const { data, error } = await supabase.from("profiles").select("display_name").eq("user_id", userId).maybeSingle();
 
   if (!error) return data?.display_name || "";
@@ -87,6 +96,12 @@ async function loadProfileDisplayName(userId: string): Promise<string> {
 }
 
 async function loadBalanceInfo(userId: string): Promise<BalanceInfo> {
+  if (isSelfHosted) {
+    const resp = await apiPost<{ balance: BalanceInfo }>("manage-balance", { action: "get" });
+    if (!resp.ok || !resp.data) throw new Error(resp.rawText || "Failed to load balance");
+    return { ...EMPTY_BALANCE, ...(resp.data.balance || {}) } as BalanceInfo;
+  }
+
   try {
     const { data, error: invokeError } = await supabase.functions.invoke("manage-balance", { body: { action: "get" } });
     if (invokeError) throw invokeError;

@@ -1,8 +1,4 @@
-import {
-  SUPABASE_PUBLISHABLE_KEY,
-  SUPABASE_URL,
-  supabase,
-} from "@/integrations/supabase/client";
+import { buildApiUrl, getAuthHeaders } from "@/lib/api-client";
 import { normalizeUserErrorMessage } from "@/lib/error-messages";
 import type { GenerationModel } from "@/lib/gemini-models";
 
@@ -83,18 +79,7 @@ function ensureNotAborted(signal?: AbortSignal) {
 }
 
 async function getInvokeHeaders() {
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  if (!session?.access_token) {
-    throw new Error("UNAUTHORIZED");
-  }
-
-  return {
-    apikey: SUPABASE_PUBLISHABLE_KEY,
-    Authorization: `Bearer ${session.access_token}`,
-  };
+  return getAuthHeaders();
 }
 
 async function invokeGenerateImage(
@@ -103,7 +88,7 @@ async function invokeGenerateImage(
 ) {
   let response: Response;
   try {
-    response = await fetch(`${SUPABASE_URL}/functions/v1/generate-image`, {
+    response = await fetch(buildApiUrl("generate-image"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

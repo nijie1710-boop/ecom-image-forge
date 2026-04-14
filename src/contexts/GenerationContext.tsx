@@ -10,6 +10,7 @@ import {
 import { overlayTextOnImage, type OverlayStyle } from "@/lib/image-text-overlay";
 import { supabase } from "@/integrations/supabase/client";
 import { deductCredits } from "@/lib/detail-credits";
+import { isSelfHosted, uploadImageToServer, apiPost } from "@/lib/api-client";
 
 export type GenerationJobKind = "copy" | "image" | "detail";
 export type GenerationJobStatus = "running" | "done" | "error" | "canceled";
@@ -273,6 +274,26 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const uploadToStorage = useCallback(async (source: string, id: string, signal?: AbortSignal): Promise<string> => {
     try {
+      if (signal?.aborted) throw new JobCanceledError();
+
+      if (isSelfHosted) {
+        // Self-hosted: upload via API
+        let dataUrl = source;
+        if (!source.startsWith("data:")) {
+          // Convert remote URL to data URL first
+          const blob = await blobFromDataUrlOrRemote(source, signal);
+          const reader = new FileReader();
+          dataUrl = await new Promise<string>((resolve, reject) => {
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = () => reject(new Error("Failed to read blob"));
+            reader.readAsDataURL(blob);
+          });
+        }
+        if (signal?.aborted) throw new JobCanceledError();
+        return await uploadImageToServer(dataUrl, "images");
+      }
+
+      // Supabase mode
       const blob = await blobFromDataUrlOrRemote(source, signal);
       const fileName = `generated/${id}.png`;
       const { error } = await supabase.storage
@@ -292,6 +313,7 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       if (error instanceof DOMException && error.name === "AbortError") {
         throw new JobCanceledError();
       }
+      if (error instanceof JobCanceledError) throw error;
       console.error("upload generated image unexpected error:", error);
       return source;
     }
@@ -326,7 +348,6 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       if (!userId || !permanentUrls.length) return;
       try {
         const records = permanentUrls.map((url) => ({
-          user_id: userId,
           image_url: url,
           prompt: payload.prompt,
           aspect_ratio: payload.aspectRatio,
@@ -334,9 +355,18 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           style: payload.style || null,
           scene: payload.scene || null,
         }));
-        const { error } = await supabase.from("generated_images").insert(records);
-        if (error) {
-          console.error("save cloud history failed:", error);
+
+        if (isSelfHosted) {
+          const resp = await apiPost("user-images", { action: "save", records });
+          if (!resp.ok) {
+            console.error("save cloud history failed:", resp.rawText);
+          }
+        } else {
+          const supabaseRecords = records.map((r) => ({ ...r, user_id: userId }));
+          const { error } = await supabase.from("generated_images").insert(supabaseRecords);
+          if (error) {
+            console.error("save cloud history failed:", error);
+          }
         }
       } catch (error) {
         console.error("save cloud history unexpected error:", error);

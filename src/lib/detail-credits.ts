@@ -1,9 +1,5 @@
 import type { GenerationModel, OutputResolution } from "@/lib/ai-generator";
-import {
-  SUPABASE_PUBLISHABLE_KEY,
-  SUPABASE_URL,
-  supabase,
-} from "@/integrations/supabase/client";
+import { buildApiUrl, getAuthHeaders, apiPost, isSelfHosted } from "@/lib/api-client";
 import { normalizeUserErrorMessage } from "@/lib/error-messages";
 
 const DETAIL_SCREEN_COST_TABLE: Record<string, Record<string, number>> = {
@@ -133,19 +129,8 @@ function normalizeManageBalanceError(
   }
 }
 
-async function getAuthHeaders() {
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  if (!session?.access_token) {
-    throw new Error("未登录，请先登录。");
-  }
-
-  return {
-    apikey: SUPABASE_PUBLISHABLE_KEY,
-    Authorization: `Bearer ${session.access_token}`,
-  };
+async function getAuthHeadersLocal() {
+  return getAuthHeaders();
 }
 
 export async function deductCredits(
@@ -154,8 +139,8 @@ export async function deductCredits(
   description: string,
 ): Promise<DeductResult> {
   try {
-    const headers = await getAuthHeaders();
-    const response = await fetch(`${SUPABASE_URL}/functions/v1/manage-balance`, {
+    const headers = await getAuthHeadersLocal();
+    const response = await fetch(buildApiUrl("manage-balance"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -218,6 +203,21 @@ export async function deductCredits(
 }
 
 export async function getUserBalance(userId: string): Promise<number> {
+  if (isSelfHosted) {
+    try {
+      const res = await apiPost<{ result?: { balance?: number } }>("manage-balance", { action: "get" });
+      if (!res.ok || !res.data?.result) {
+        console.error("getUserBalance (self-hosted) failed:", res.rawText);
+        return 0;
+      }
+      return Number(res.data.result.balance ?? 0);
+    } catch (error) {
+      console.error("getUserBalance (self-hosted) failed:", error);
+      return 0;
+    }
+  }
+
+  const { supabase } = await import("@/integrations/supabase/client");
   const { data, error } = await supabase
     .from("user_balances")
     .select("balance")

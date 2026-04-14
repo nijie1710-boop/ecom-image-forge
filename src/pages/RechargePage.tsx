@@ -11,6 +11,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { getAppOrigin } from "@/lib/app-config";
 import { useAuth } from "@/contexts/AuthContext";
 import { normalizeUserErrorMessage } from "@/lib/error-messages";
+import { isSelfHosted, apiPost } from "@/lib/api-client";
 
 interface BalanceInfo {
   balance: number;
@@ -139,6 +140,10 @@ function getOrderStatusVariant(status: string): "default" | "secondary" | "destr
 }
 
 async function loadBalanceFallback(userId: string): Promise<BalanceInfo> {
+  if (isSelfHosted) {
+    // In self-hosted mode, the manage-balance API is the primary path, fallback is meaningless
+    throw new Error("Balance API unavailable");
+  }
   const [balanceResp, rechargeResp, consumptionResp] = await Promise.all([
     supabase.from("user_balances").select("balance,total_recharged,total_consumed").eq("user_id", userId).maybeSingle(),
     supabase.from("recharge_records").select("id", { count: "exact", head: true }).eq("user_id", userId),
@@ -159,6 +164,9 @@ async function loadBalanceFallback(userId: string): Promise<BalanceInfo> {
 }
 
 async function loadHistoryFallback(userId: string) {
+  if (isSelfHosted) {
+    throw new Error("History API unavailable");
+  }
   const [rechargesResp, consumptionsResp] = await Promise.all([
     supabase.from("recharge_records").select("*").eq("user_id", userId).order("created_at", { ascending: false }).limit(50),
     supabase.from("consumption_records").select("*").eq("user_id", userId).order("created_at", { ascending: false }).limit(50),
@@ -174,6 +182,9 @@ async function loadHistoryFallback(userId: string) {
 }
 
 async function loadPricingFallback() {
+  if (isSelfHosted) {
+    return { packages: DEFAULT_PACKAGES, creditRules: DEFAULT_RULES };
+  }
   try {
     const { data, error } = await supabase.from("admin_settings").select("key,value").in("key", ["recharge_packages", "credit_rules"]);
     if (error) throw error;
@@ -214,6 +225,13 @@ export default function RechargePage() {
   );
 
   const invokeManageBalance = useCallback(async (body: Record<string, unknown>) => {
+    if (isSelfHosted) {
+      const resp = await apiPost<Record<string, unknown>>("manage-balance", body);
+      if (!resp.ok) throw new Error(resp.rawText || "manage-balance failed");
+      if (resp.data?.error) throw new Error(String(resp.data.error));
+      return resp.data;
+    }
+
     const { data, error } = await supabase.functions.invoke("manage-balance", { body });
     if (error) throw error;
     if (data?.error) throw new Error(String(data.error));
@@ -221,6 +239,13 @@ export default function RechargePage() {
   }, []);
 
   const invokePaymentApi = useCallback(async (body: Record<string, unknown>) => {
+    if (isSelfHosted) {
+      const resp = await apiPost<Record<string, unknown>>("alipay-order", body);
+      if (!resp.ok) throw new Error(resp.rawText || "支付接口暂时不可用，请稍后再试");
+      if (resp.data?.error) throw new Error(String(resp.data.message || resp.data.error));
+      return resp.data;
+    }
+
     const {
       data: { session },
     } = await supabase.auth.getSession();

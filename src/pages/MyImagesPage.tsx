@@ -28,6 +28,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
+import { isSelfHosted, apiPost } from "@/lib/api-client";
 import {
   loadCuratedImageLibrary,
   markCuratedBest,
@@ -109,8 +110,22 @@ const MyImagesPage = () => {
     initialPageParam: 0,
     queryFn: async ({ pageParam }) => {
       const from = pageParam * CLOUD_PAGE_SIZE;
-      const to = from + CLOUD_PAGE_SIZE - 1;
 
+      if (isSelfHosted) {
+        const resp = await apiPost<{ images: ImageRecord[] }>("user-images", {
+          action: "list",
+          limit: CLOUD_PAGE_SIZE,
+          offset: from,
+        });
+        if (!resp.ok || !resp.data) throw new Error(resp.rawText || "Failed to load images");
+        const items = (resp.data.images || []).map((image) => ({ ...image, source: "cloud" as const }));
+        return {
+          items,
+          nextPage: items.length === CLOUD_PAGE_SIZE ? pageParam + 1 : undefined,
+        };
+      }
+
+      const to = from + CLOUD_PAGE_SIZE - 1;
       const { data, error } = await supabase
         .from("generated_images")
         .select(
@@ -224,6 +239,11 @@ const MyImagesPage = () => {
 
   const deleteCloudMutation = useMutation({
     mutationFn: async (ids: string[]) => {
+      if (isSelfHosted) {
+        const resp = await apiPost("user-images", { action: "delete", ids });
+        if (!resp.ok) throw new Error(resp.rawText || "Delete failed");
+        return;
+      }
       const { error } = await supabase.from("generated_images").delete().in("id", ids);
       if (error) throw error;
     },
