@@ -97,9 +97,17 @@ async function loadProfileDisplayName(userId: string): Promise<string> {
 
 async function loadBalanceInfo(userId: string): Promise<BalanceInfo> {
   if (isSelfHosted) {
-    const resp = await apiPost<{ balance: BalanceInfo }>("manage-balance", { action: "get" });
+    const resp = await apiPost<{ balance: number; total_recharged?: number; total_consumed?: number }>(
+      "manage-balance",
+      { action: "get" },
+    );
     if (!resp.ok || !resp.data) throw new Error(resp.rawText || "Failed to load balance");
-    return { ...EMPTY_BALANCE, ...(resp.data.balance || {}) } as BalanceInfo;
+    return {
+      ...EMPTY_BALANCE,
+      balance: Number(resp.data.balance ?? 0),
+      total_recharged: Number(resp.data.total_recharged ?? 0),
+      total_consumed: Number(resp.data.total_consumed ?? 0),
+    } as BalanceInfo;
   }
 
   try {
