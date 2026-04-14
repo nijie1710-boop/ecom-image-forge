@@ -24,11 +24,9 @@ interface BalanceInfo {
 interface RechargeRecord {
   id: string;
   amount: number;
-  payment_method: string | null;
-  status: string;
+  payment_method?: string | null;
   notes?: string | null;
   created_at: string;
-  completed_at?: string | null;
 }
 
 interface ConsumptionRecord {
@@ -661,11 +659,12 @@ export default function RechargePage() {
                         <div key={record.id} className="rounded-2xl border border-border bg-muted/10 p-4">
                           <div className="flex items-center justify-between gap-3">
                             <div className="font-medium text-foreground">+{record.amount} 积分</div>
-                            <Badge variant={record.status === "completed" ? "default" : "secondary"}>{record.status === "completed" ? "已到账" : record.status}</Badge>
+                            <Badge variant="default">已到账</Badge>
                           </div>
                           <div className="mt-2 text-sm text-muted-foreground">
                             <div>时间：{formatDate(record.created_at)}</div>
                             <div>方式：{record.payment_method || "后台手动补充"}</div>
+                            {record.notes && <div>备注：{record.notes}</div>}
                           </div>
                         </div>
                       ))}
