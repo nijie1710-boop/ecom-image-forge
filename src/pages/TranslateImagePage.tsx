@@ -32,6 +32,9 @@ import {
   normalizeUserErrorMessage,
 } from "@/lib/error-messages";
 import { upsertCuratedImage } from "@/lib/image-library";
+import { deductCredits, getGenerateImageUnitCost, getUserBalance } from "@/lib/detail-credits";
+import type { GenerationModel, OutputResolution } from "@/lib/ai-generator";
+import { useAuth } from "@/contexts/AuthContext";
 import { WorkspaceHeader, WorkspaceShell } from "@/components/workspace/WorkspaceShell";
 import {
   WorkspaceEmptyState,
@@ -97,9 +100,14 @@ const TRANSLATION_RENDER_MODES = [
 
 const AI_REPLACE_MODELS = [
   { value: "gemini-3.1-flash-image-preview", label: "Nano Banana 2" },
-  { value: "gemini-3-pro-image-preview", label: "Nano Banana Pro" },
-  { value: "gemini-2.5-flash-image", label: "Nano Banana" },
+  { value: "nano-banana-pro-preview", label: "Nano Banana Pro" },
 ];
+
+const TRANSLATE_RESOLUTIONS = [
+  { value: "1k", label: "1K" },
+  { value: "2k", label: "2K" },
+  { value: "4k", label: "4K" },
+] as const;
 
 const STATUS_META: Record<JobStatus, { label: string; className: string }> = {
   uploaded: { label: "待处理", className: "bg-muted text-muted-foreground" },
@@ -706,8 +714,27 @@ export default function TranslateImagePage() {
   const [targetLanguage, setTargetLanguage] = useState("en");
   const [renderStrategy, setRenderStrategy] = useState<"ai" | "stable">("ai");
   const [replaceModel, setReplaceModel] = useState("gemini-3.1-flash-image-preview");
+  const [selectedResolution, setSelectedResolution] = useState<OutputResolution>("1k");
+  const [userBalance, setUserBalance] = useState<number | null>(null);
   const [compareRatio, setCompareRatio] = useState(50);
   const [selectedTranslationIndex, setSelectedTranslationIndex] = useState<number | null>(null);
+  const { user } = useAuth();
+
+  // Cost calculation
+  const unitCost = renderStrategy === "ai"
+    ? getGenerateImageUnitCost(replaceModel as GenerationModel, selectedResolution)
+    : 0;
+
+  // Load balance
+  useEffect(() => {
+    if (!user?.id) return;
+    getUserBalance(user.id).then(setUserBalance).catch(() => setUserBalance(null));
+  }, [user?.id]);
+
+  const refreshBalance = useCallback(() => {
+    if (!user?.id) return;
+    getUserBalance(user.id).then(setUserBalance).catch(() => {});
+  }, [user?.id]);
 
   const activeJob = jobs.find((job) => job.id === activeJobId) || jobs[0] || null;
   const activeJobError = activeJob?.status === "error" ? activeJob.error : null;
@@ -969,6 +996,19 @@ export default function TranslateImagePage() {
 
         if (renderStrategy === "ai") {
           try {
+            // Deduct credits before AI replace
+            const cost = getGenerateImageUnitCost(replaceModel as GenerationModel, selectedResolution);
+            const modelLabel = AI_REPLACE_MODELS.find((m) => m.value === replaceModel)?.label || replaceModel;
+            const deductResult = await deductCredits(
+              cost,
+              "translate_image",
+              `图文翻译（${modelLabel} ${selectedResolution}，${cost} 积分）`,
+            );
+            if (!deductResult.success) {
+              throw new Error(deductResult.error || "积分不足，请充值后重试");
+            }
+            refreshBalance();
+
             if (isSelfHosted) {
               const resp = await apiPost<{ imageUrl: string; model?: string }>("translate-image", {
                 imageUrl: job.originalImage,
@@ -976,6 +1016,7 @@ export default function TranslateImagePage() {
                 translations: job.translations,
                 targetLanguage,
                 preferredModel: replaceModel,
+                resolution: selectedResolution,
               });
               if (!resp.ok || !resp.data) throw new Error(resp.rawText || "AI replace failed");
               if (!resp.data.imageUrl) throw new Error("AI 精修替换没有返回可用图片");
@@ -990,6 +1031,7 @@ export default function TranslateImagePage() {
                   translations: job.translations,
                   targetLanguage,
                   preferredModel: replaceModel,
+                  resolution: selectedResolution,
                 },
               });
               if (error) throw new Error(await readInvokeError(error));
@@ -1056,7 +1098,7 @@ export default function TranslateImagePage() {
         throw error;
       }
     },
-    [persistTranslatedImage, replaceModel, renderStrategy, targetLanguage, updateJob],
+    [persistTranslatedImage, replaceModel, selectedResolution, renderStrategy, targetLanguage, updateJob, refreshBalance],
   );
 
   const handleRecognize = useCallback(async () => {
@@ -1228,7 +1270,7 @@ export default function TranslateImagePage() {
               </Select>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-3 sm:grid-cols-3">
               <div className="space-y-2">
                 <div className="text-sm font-medium text-foreground">生成模式</div>
                 <Select value={renderStrategy} onValueChange={(value: "ai" | "stable") => setRenderStrategy(value)}>
@@ -1259,7 +1301,34 @@ export default function TranslateImagePage() {
                   </SelectContent>
                 </Select>
               </div>
+              <div className="space-y-2">
+                <div className="text-sm font-medium text-foreground">输出分辨率</div>
+                <Select value={selectedResolution} onValueChange={(v) => setSelectedResolution(v as OutputResolution)} disabled={renderStrategy !== "ai"}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="选择分辨率" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TRANSLATE_RESOLUTIONS.map((item) => (
+                      <SelectItem key={item.value} value={item.value}>
+                        {item.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
+            {renderStrategy === "ai" && (
+              <div className="flex items-center justify-between rounded-xl bg-muted/50 px-3 py-2 text-sm">
+                <span className="text-muted-foreground">
+                  单张消耗 <span className="font-semibold text-foreground">{unitCost}</span> 积分
+                </span>
+                {userBalance !== null && (
+                  <span className="text-muted-foreground">
+                    余额 <span className={`font-semibold ${userBalance < unitCost ? "text-destructive" : "text-foreground"}`}>{userBalance}</span> 积分
+                  </span>
+                )}
+              </div>
+            )}
 
             <label className="flex cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-primary/30 bg-primary/5 px-4 py-5 text-center transition hover:border-primary/50 hover:bg-primary/10 sm:py-6">
               <div className="rounded-2xl bg-primary/10 p-3 text-primary">
