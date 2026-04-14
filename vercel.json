@@ -18,9 +18,8 @@
     }
   ],
   "rewrites": [
-    { "source": "/gemini-proxy/:path*", "destination": "https://generativelanguage.googleapis.com/:path*" },
     { "source": "/api/:path*", "destination": "http://101.32.186.47/api/:path*" },
     { "source": "/uploads/:path*", "destination": "http://101.32.186.47/uploads/:path*" },
-    { "source": "/((?!api/|uploads/|gemini-proxy/|assets/|favicon\\.png|robots\\.txt|sitemap\\.xml).*)", "destination": "/index.html" }
+    { "source": "/((?!api/|uploads/|assets/|favicon\\.png|robots\\.txt|sitemap\\.xml).*)", "destination": "/index.html" }
   ]
 }
