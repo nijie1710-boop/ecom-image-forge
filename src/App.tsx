@@ -27,6 +27,8 @@ import AdminLayout from "./pages/AdminLayout";
 import AdminTasksPage from "./pages/AdminTasksPage";
 import AdminImagesPage from "./pages/AdminImagesPage";
 import AdminConfigPage from "./pages/AdminConfigPage";
+import TermsPage from "./pages/TermsPage";
+import PrivacyPage from "./pages/PrivacyPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -44,6 +46,8 @@ const App = () => (
               <Route path="/" element={<LandingPage />} />
               <Route path="/auth" element={<AuthPage />} />
               <Route path="/auth/callback" element={<AuthCallbackPage />} />
+              <Route path="/terms" element={<TermsPage />} />
+              <Route path="/privacy" element={<PrivacyPage />} />
               <Route
                 path="/dashboard"
                 element={

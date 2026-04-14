@@ -331,15 +331,26 @@ export default function RechargePage() {
         invokeManageBalance({ action: "history" }).catch(() => loadHistoryFallback(user.id)),
       ]);
 
-      setPackages(pricingResponse.packages || DEFAULT_PACKAGES);
-      setCreditRules(pricingResponse.creditRules || DEFAULT_RULES);
+      // get_pricing returns { settings: { recharge_packages, credit_rules } } or fallback { packages, creditRules }
+      const resolvedPackages =
+        pricingResponse.settings?.recharge_packages ||
+        pricingResponse.packages ||
+        DEFAULT_PACKAGES;
+      const resolvedRules =
+        pricingResponse.settings?.credit_rules ||
+        pricingResponse.creditRules ||
+        DEFAULT_RULES;
+
+      setPackages(resolvedPackages as RechargePackage[]);
+      setCreditRules(resolvedRules as CreditRules);
       setBalance(balanceResponse || null);
       setRechargeHistory((historyResponse.recharges || []) as RechargeRecord[]);
       setConsumptionHistory((historyResponse.consumptions || []) as ConsumptionRecord[]);
       setSelectedPackageId((current) => {
         if (current) return current;
-        const highlighted = (pricingResponse.packages || []).find((item: RechargePackage) => item.highlight);
-        return highlighted?.id || pricingResponse.packages?.[0]?.id || DEFAULT_PACKAGES[0].id;
+        const pkgs = resolvedPackages as RechargePackage[];
+        const highlighted = pkgs.find((item: RechargePackage) => item.highlight);
+        return highlighted?.id || pkgs[0]?.id || DEFAULT_PACKAGES[0].id;
       });
 
       await loadOrders();

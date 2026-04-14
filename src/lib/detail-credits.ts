@@ -203,12 +203,17 @@ export async function deductCredits(
 export async function getUserBalance(userId: string): Promise<number> {
   if (isSelfHosted) {
     try {
-      const res = await apiPost<{ balance?: number; user_id?: string }>("manage-balance", { action: "get" });
+      const res = await apiPost<{ balance?: { balance: number } | number; user_id?: string }>("manage-balance", { action: "get" });
       if (!res.ok || res.data?.balance === undefined) {
         console.error("getUserBalance (self-hosted) failed:", res.rawText);
         return 0;
       }
-      return Number(res.data.balance ?? 0);
+      // Backend returns { balance: { balance: 200, ... } } (nested object)
+      const raw = res.data.balance;
+      if (typeof raw === "object" && raw !== null) {
+        return Number((raw as { balance: number }).balance ?? 0);
+      }
+      return Number(raw ?? 0);
     } catch (error) {
       console.error("getUserBalance (self-hosted) failed:", error);
       return 0;

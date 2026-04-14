@@ -3,6 +3,7 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import { corsMiddleware } from "./middleware/cors.js";
+import { securityHeaders, authLimiter, alipayNotifyLimiter, apiLimiter } from "./middleware/security.js";
 
 // Routes
 import authRoutes from "./routes/auth.js";
@@ -15,6 +16,7 @@ import optimizeProductInfoRoutes from "./routes/optimize-product-info.js";
 import manageBalanceRoutes from "./routes/manage-balance.js";
 import alipayOrderRoutes from "./routes/alipay-order.js";
 import adminUsersRoutes from "./routes/admin-users.js";
+import alipayNotifyRoutes from "./routes/alipay-notify.js";
 import uploadImageRoutes from "./routes/upload-image.js";
 import userImagesRoutes from "./routes/user-images.js";
 
@@ -28,8 +30,12 @@ fs.mkdirSync(path.join(uploadDir, "images"), { recursive: true });
 
 // Middleware
 app.use(corsMiddleware);
+app.use(securityHeaders);
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+
+// Global rate limit for all API routes
+app.use("/api/", apiLimiter);
 
 // Serve uploaded files
 app.use("/uploads", express.static(uploadDir));
@@ -40,7 +46,7 @@ app.get("/health", (_req, res) => {
 });
 
 // API Routes
-app.use("/api/auth", authRoutes);
+app.use("/api/auth", authLimiter, authRoutes);
 app.use("/api/generate-image", generateImageRoutes);
 app.use("/api/suggest-scenes", suggestScenesRoutes);
 app.use("/api/detail-plan", detailPlanRoutes);
@@ -49,6 +55,7 @@ app.use("/api/generate-copy", generateCopyRoutes);
 app.use("/api/optimize-product-info", optimizeProductInfoRoutes);
 app.use("/api/manage-balance", manageBalanceRoutes);
 app.use("/api/alipay-order", alipayOrderRoutes);
+app.use("/api/alipay-notify", alipayNotifyLimiter, alipayNotifyRoutes);
 app.use("/api/admin-users", adminUsersRoutes);
 app.use("/api/upload-image", uploadImageRoutes);
 app.use("/api/user-images", userImagesRoutes);

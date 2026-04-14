@@ -97,17 +97,25 @@ async function loadProfileDisplayName(userId: string): Promise<string> {
 
 async function loadBalanceInfo(userId: string): Promise<BalanceInfo> {
   if (isSelfHosted) {
-    const resp = await apiPost<{ balance: number; total_recharged?: number; total_consumed?: number }>(
+    const resp = await apiPost<{ balance: BalanceInfo | number; user_id?: string }>(
       "manage-balance",
       { action: "get" },
     );
     if (!resp.ok || !resp.data) throw new Error(resp.rawText || "Failed to load balance");
-    return {
-      ...EMPTY_BALANCE,
-      balance: Number(resp.data.balance ?? 0),
-      total_recharged: Number(resp.data.total_recharged ?? 0),
-      total_consumed: Number(resp.data.total_consumed ?? 0),
-    } as BalanceInfo;
+
+    // Backend returns { balance: { balance, total_recharged, ... } }
+    const raw = resp.data.balance;
+    if (typeof raw === "object" && raw !== null) {
+      return {
+        balance: Number((raw as BalanceInfo).balance ?? 0),
+        total_recharged: Number((raw as BalanceInfo).total_recharged ?? 0),
+        total_consumed: Number((raw as BalanceInfo).total_consumed ?? 0),
+        recharge_count: Number((raw as BalanceInfo).recharge_count ?? 0),
+        consumption_count: Number((raw as BalanceInfo).consumption_count ?? 0),
+      };
+    }
+    // Fallback: old format where balance is a plain number
+    return { ...EMPTY_BALANCE, balance: Number(raw ?? 0) };
   }
 
   try {

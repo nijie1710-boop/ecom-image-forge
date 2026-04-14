@@ -204,6 +204,15 @@ const LandingPage = () => {
             <img src={logo} alt="PicSpark AI" className="w-7 h-7 object-contain" />
             <span className="font-display font-bold text-hero-foreground">{brandName}</span>
           </div>
+          <div className="flex items-center justify-center gap-4 mb-3">
+            <Link to="/terms" className="text-sm text-hero-foreground/50 hover:text-hero-foreground/80 transition-colors">
+              用户协议
+            </Link>
+            <span className="text-hero-foreground/20">|</span>
+            <Link to="/privacy" className="text-sm text-hero-foreground/50 hover:text-hero-foreground/80 transition-colors">
+              隐私政策
+            </Link>
+          </div>
           <p className="text-sm text-hero-foreground/40">{t("footer.rights")}</p>
         </div>
       </footer>

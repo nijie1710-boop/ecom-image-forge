@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { ArrowLeft, Loader2, Mail } from "lucide-react";
 
 import logo from "@/assets/logo.png";
@@ -711,6 +711,14 @@ export default function AuthPage() {
                 </>
               )}
             </div>
+
+            {/* Terms & Privacy hint */}
+            <p className="mt-6 text-center text-xs text-muted-foreground/70">
+              注册或登录即表示您同意{" "}
+              <Link to="/terms" className="text-primary/80 hover:text-primary hover:underline">用户协议</Link>
+              {" "}和{" "}
+              <Link to="/privacy" className="text-primary/80 hover:text-primary hover:underline">隐私政策</Link>
+            </p>
           </div>
         </div>
       </div>
