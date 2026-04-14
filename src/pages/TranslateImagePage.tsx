@@ -69,7 +69,7 @@ interface TranslationJob {
   status: JobStatus;
   error: string | null;
   hint: string | null;
-  renderMode?: "stable" | "ai";
+  renderMode?: "ai";
   renderModel?: string;
 }
 
@@ -92,11 +92,6 @@ const TARGET_LANGUAGES = [
   { value: "th", label: "ไทย" },
   { value: "vi", label: "Tiếng Việt" },
 ];
-
-const TRANSLATION_RENDER_MODES = [
-  { value: "ai", label: "AI 精修替换" },
-  { value: "stable", label: "稳定替换" },
-] as const;
 
 const AI_REPLACE_MODELS = [
   { value: "gemini-3.1-flash-image-preview", label: "Nano Banana 2" },
@@ -154,11 +149,6 @@ const compressImageForTranslation = (file: File) =>
     reader.readAsDataURL(file);
   });
 
-function clampPercent(value?: number, fallback = 0) {
-  if (typeof value !== "number" || Number.isNaN(value)) return fallback;
-  return Math.min(100, Math.max(0, value));
-}
-
 function clampNumber(value: number, min: number, max: number) {
   if (Number.isNaN(value)) return min;
   return Math.min(max, Math.max(min, value));
@@ -195,300 +185,6 @@ function inferBoxFromPosition(item: TranslationItem, index: number, total: numbe
 
 function resolveTranslationBox(item: TranslationItem, index: number, total: number) {
   return hasRenderableBox(item) ? item : { ...item, ...inferBoxFromPosition(item, index, total) };
-}
-
-function parseColor(color?: string) {
-  if (!color) return null;
-  const normalized = color.trim().toLowerCase();
-  if (!normalized || normalized === "transparent" || normalized === "none") return null;
-
-  const hex = normalized.replace("#", "");
-  if (/^[0-9a-f]{6}$/i.test(hex)) {
-    return {
-      r: Number.parseInt(hex.slice(0, 2), 16),
-      g: Number.parseInt(hex.slice(2, 4), 16),
-      b: Number.parseInt(hex.slice(4, 6), 16),
-      a: 1,
-    };
-  }
-
-  const rgbaMatch = normalized.match(/rgba?\(([^)]+)\)/);
-  if (rgbaMatch) {
-    const [r = 255, g = 255, b = 255, a = 1] = rgbaMatch[1]
-      .split(",")
-      .map((part) => Number(part.trim()));
-    return { r, g, b, a: Number.isFinite(a) ? a : 1 };
-  }
-
-  return null;
-}
-
-function rgbaString(color: { r: number; g: number; b: number; a?: number }) {
-  return `rgba(${Math.round(color.r)}, ${Math.round(color.g)}, ${Math.round(color.b)}, ${color.a ?? 1})`;
-}
-
-function luminance(color: { r: number; g: number; b: number }) {
-  return 0.299 * color.r + 0.587 * color.g + 0.114 * color.b;
-}
-
-function pickFontStack(language: string) {
-  switch (language) {
-    case "ja":
-      return `"Noto Sans JP","Hiragino Sans","Yu Gothic","Microsoft YaHei",sans-serif`;
-    case "ko":
-      return `"Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic","Microsoft YaHei",sans-serif`;
-    case "zh":
-    case "zh_tw":
-      return `"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif`;
-    default:
-      return `"Inter","Noto Sans","Segoe UI","Arial",sans-serif`;
-  }
-}
-
-function drawRoundedBox(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  radius: number,
-) {
-  const safeRadius = Math.max(0, Math.min(radius, width / 2, height / 2));
-  if (typeof ctx.roundRect === "function") {
-    ctx.beginPath();
-    ctx.roundRect(x, y, width, height, safeRadius);
-    ctx.fill();
-    return;
-  }
-
-  ctx.beginPath();
-  ctx.moveTo(x + safeRadius, y);
-  ctx.lineTo(x + width - safeRadius, y);
-  ctx.quadraticCurveTo(x + width, y, x + width, y + safeRadius);
-  ctx.lineTo(x + width, y + height - safeRadius);
-  ctx.quadraticCurveTo(x + width, y + height, x + width - safeRadius, y + height);
-  ctx.lineTo(x + safeRadius, y + height);
-  ctx.quadraticCurveTo(x, y + height, x, y + height - safeRadius);
-  ctx.lineTo(x, y + safeRadius);
-  ctx.quadraticCurveTo(x, y, x + safeRadius, y);
-  ctx.closePath();
-  ctx.fill();
-}
-
-function sampleRegionColor(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-) {
-  const sx = Math.max(0, Math.floor(x));
-  const sy = Math.max(0, Math.floor(y));
-  const sw = Math.max(1, Math.floor(width));
-  const sh = Math.max(1, Math.floor(height));
-
-  try {
-    const imageData = ctx.getImageData(sx, sy, sw, sh).data;
-    let r = 0;
-    let g = 0;
-    let b = 0;
-    let count = 0;
-
-    for (let i = 0; i < imageData.length; i += 4) {
-      const alpha = imageData[i + 3] / 255;
-      if (alpha < 0.1) continue;
-      r += imageData[i];
-      g += imageData[i + 1];
-      b += imageData[i + 2];
-      count += 1;
-    }
-
-    if (!count) return { r: 255, g: 255, b: 255, a: 0.96 };
-    return { r: r / count, g: g / count, b: b / count, a: 0.96 };
-  } catch {
-    return { r: 255, g: 255, b: 255, a: 0.96 };
-  }
-}
-
-async function renderTranslatedImageLocally(
-  imageUrl: string,
-  translations: TranslationItem[],
-  language: string,
-) {
-  const image = new Image();
-  image.decoding = "async";
-
-  await new Promise<void>((resolve, reject) => {
-    image.onload = () => resolve();
-    image.onerror = () => reject(new Error("原图加载失败，无法本地生成翻译图"));
-    image.src = imageUrl;
-  });
-
-  const canvas = document.createElement("canvas");
-  canvas.width = image.naturalWidth || image.width;
-  canvas.height = image.naturalHeight || image.height;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("浏览器画布初始化失败，无法本地生成翻译图");
-
-  ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-
-  const renderQueue = translations.map((item, index) =>
-    resolveTranslationBox(item, index, translations.length),
-  );
-
-  for (const item of renderQueue) {
-    const offsetXPct = clampNumber(item.offsetX ?? 0, -20, 20);
-    const offsetYPct = clampNumber(item.offsetY ?? 0, -20, 20);
-    const scale = clampNumber(item.scale ?? 1, 0.7, 1.8);
-    const backgroundOpacity = clampNumber(item.bgOpacity ?? 0.96, 0.15, 1);
-
-    const x = (clampPercent((item.x ?? 12) + offsetXPct, 12) / 100) * canvas.width;
-    const y = (clampPercent((item.y ?? 12) + offsetYPct, 12) / 100) * canvas.height;
-    const width = ((clampPercent(item.width, 24) * scale) / 100) * canvas.width;
-    const height = ((clampPercent(item.height, 8) * scale) / 100) * canvas.height;
-    const expandX = Math.max(6, width * 0.06);
-    const expandY = Math.max(4, height * 0.18);
-    const padding = Math.max(8, Math.round(Math.min(width, height) * 0.1));
-    const boxX = Math.max(0, x - expandX / 2);
-    const boxY = Math.max(0, y - expandY / 2);
-    const boxW = Math.max(28, Math.min(canvas.width - boxX, width + expandX));
-    const boxH = Math.max(20, Math.min(canvas.height - boxY, height + expandY));
-    const sampledBackground = sampleRegionColor(ctx, boxX, boxY, boxW, boxH);
-    const explicitBackground = parseColor(item.backgroundColor);
-    const background = { ...(explicitBackground || sampledBackground), a: backgroundOpacity };
-    const explicitText = parseColor(item.textColor);
-    const foreground =
-      explicitText ||
-      (luminance(background) < 150
-        ? { r: 255, g: 255, b: 255, a: 1 }
-        : { r: 18, g: 18, b: 18, a: 1 });
-    const radius = Math.max(8, Math.min(boxH / 2.4, 18));
-
-    ctx.save();
-    ctx.fillStyle = rgbaString(background);
-    drawRoundedBox(ctx, boxX, boxY, boxW, boxH, radius);
-
-    const maxFont = Math.max(14, Math.floor(boxH * 0.42));
-    let fontSize = maxFont;
-    const maxWidth = boxW - padding * 2;
-    const lines = (size: number) => {
-      ctx.font = `600 ${size}px ${pickFontStack(language)}`;
-      const words = item.translated.split(/\s+/).filter(Boolean);
-      if (words.length <= 1) {
-        const chars = item.translated.split("");
-        const rows: string[] = [];
-        let current = "";
-        for (const char of chars) {
-          const candidate = current + char;
-          if (ctx.measureText(candidate).width > maxWidth && current) {
-            rows.push(current);
-            current = char;
-          } else {
-            current = candidate;
-          }
-        }
-        if (current) rows.push(current);
-        return rows;
-      }
-
-      const rows: string[] = [];
-      let current = "";
-      for (const word of words) {
-        const candidate = current ? `${current} ${word}` : word;
-        if (ctx.measureText(candidate).width > maxWidth && current) {
-          rows.push(current);
-          current = word;
-        } else {
-          current = candidate;
-        }
-      }
-      if (current) rows.push(current);
-      return rows;
-    };
-
-    let wrapped = lines(fontSize);
-    while (fontSize > 12 && wrapped.length * fontSize * 1.3 > boxH - padding * 2) {
-      fontSize -= 1;
-      wrapped = lines(fontSize);
-    }
-
-    ctx.font = `600 ${fontSize}px ${pickFontStack(language)}`;
-    ctx.fillStyle = rgbaString(foreground);
-    ctx.textBaseline = "middle";
-    ctx.textAlign = item.align || "center";
-
-    const lineHeight = fontSize * 1.28;
-    const totalHeight = wrapped.length * lineHeight;
-    let textY = boxY + boxH / 2 - totalHeight / 2 + lineHeight / 2;
-    const textX =
-      item.align === "left"
-        ? boxX + padding
-        : item.align === "right"
-          ? boxX + boxW - padding
-          : boxX + boxW / 2;
-
-    for (const line of wrapped) {
-      ctx.fillText(line, textX, textY, maxWidth);
-      textY += lineHeight;
-    }
-    ctx.restore();
-  }
-
-  return canvas.toDataURL("image/png");
-}
-
-async function renderTranslatedImageSimple(
-  imageUrl: string,
-  translations: TranslationItem[],
-  language: string,
-) {
-  const image = new Image();
-  image.decoding = "async";
-
-  await new Promise<void>((resolve, reject) => {
-    image.onload = () => resolve();
-    image.onerror = () => reject(new Error("原图加载失败，无法生成翻译图"));
-    image.src = imageUrl;
-  });
-
-  const canvas = document.createElement("canvas");
-  canvas.width = image.naturalWidth || image.width;
-  canvas.height = image.naturalHeight || image.height;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("浏览器画布初始化失败，无法生成翻译图");
-
-  ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-
-  translations
-    .map((item, index) => resolveTranslationBox(item, index, translations.length))
-    .forEach((item) => {
-      const x = (clampPercent(item.x, 12) / 100) * canvas.width;
-      const y = (clampPercent(item.y, 12) / 100) * canvas.height;
-      const width = (clampPercent(item.width, 48) / 100) * canvas.width;
-      const height = (clampPercent(item.height, 10) / 100) * canvas.height;
-      const padding = Math.max(8, Math.round(height * 0.18));
-      const foreground = parseColor(item.textColor) || { r: 18, g: 18, b: 18, a: 1 };
-      const background = parseColor(item.backgroundColor) || { r: 255, g: 255, b: 255, a: 0.88 };
-
-      ctx.save();
-      ctx.fillStyle = rgbaString(background);
-      ctx.fillRect(x, y, width, height);
-      const fontSize = Math.max(12, Math.floor(height * 0.42));
-      ctx.font = `600 ${fontSize}px ${pickFontStack(language)}`;
-      ctx.fillStyle = rgbaString(foreground);
-      ctx.textBaseline = "middle";
-      ctx.textAlign = item.align || "center";
-      const textX =
-        item.align === "left"
-          ? x + padding
-          : item.align === "right"
-            ? x + width - padding
-            : x + width / 2;
-      ctx.fillText(item.translated, textX, y + height / 2, width - padding * 2);
-      ctx.restore();
-    });
-
-  return canvas.toDataURL("image/png");
 }
 
 async function readInvokeError(error: any) {
@@ -634,7 +330,7 @@ function ComparePreview({
           <div className="font-medium text-foreground">原图 / 结果对比</div>
           <div className="mt-1 text-sm text-muted-foreground">拖动滑块，快速查看当前替换效果是否自然。</div>
         </div>
-        <Badge variant="secondary" className="w-fit">稳定替换</Badge>
+        <Badge variant="secondary" className="w-fit">AI 精修</Badge>
       </div>
       <div className="overflow-hidden rounded-2xl bg-muted/30">
         <div ref={frameRef} className="relative mx-auto w-full max-w-[420px] sm:max-w-[520px]">
@@ -712,7 +408,6 @@ export default function TranslateImagePage() {
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [isBatchRunning, setIsBatchRunning] = useState(false);
   const [targetLanguage, setTargetLanguage] = useState("en");
-  const [renderStrategy, setRenderStrategy] = useState<"ai" | "stable">("ai");
   const [replaceModel, setReplaceModel] = useState("gemini-3.1-flash-image-preview");
   const [selectedResolution, setSelectedResolution] = useState<OutputResolution>("1k");
   const [userBalance, setUserBalance] = useState<number | null>(null);
@@ -721,9 +416,7 @@ export default function TranslateImagePage() {
   const { user } = useAuth();
 
   // Cost calculation
-  const unitCost = renderStrategy === "ai"
-    ? getGenerateImageUnitCost(replaceModel as GenerationModel, selectedResolution)
-    : 0;
+  const unitCost = getGenerateImageUnitCost(replaceModel as GenerationModel, selectedResolution);
 
   // Load balance
   useEffect(() => {
@@ -991,76 +684,49 @@ export default function TranslateImagePage() {
 
       try {
         let outputImage = "";
-        let outputMode: "stable" | "ai" = "stable";
         let outputModel: string | undefined;
 
-        if (renderStrategy === "ai") {
-          try {
-            // Deduct credits before AI replace
-            const cost = getGenerateImageUnitCost(replaceModel as GenerationModel, selectedResolution);
-            const modelLabel = AI_REPLACE_MODELS.find((m) => m.value === replaceModel)?.label || replaceModel;
-            const deductResult = await deductCredits(
-              cost,
-              "translate_image",
-              `图文翻译（${modelLabel} ${selectedResolution}，${cost} 积分）`,
-            );
-            if (!deductResult.success) {
-              throw new Error(deductResult.error || "积分不足，请充值后重试");
-            }
-            refreshBalance();
-
-            if (isSelfHosted) {
-              const resp = await apiPost<{ imageUrl: string; model?: string }>("translate-image", {
-                imageUrl: job.originalImage,
-                step: "replace",
-                translations: job.translations,
-                targetLanguage,
-                preferredModel: replaceModel,
-                resolution: selectedResolution,
-              });
-              if (!resp.ok || !resp.data) throw new Error(resp.rawText || "AI replace failed");
-              if (!resp.data.imageUrl) throw new Error("AI 精修替换没有返回可用图片");
-              outputImage = resp.data.imageUrl;
-              outputMode = "ai";
-              outputModel = typeof resp.data.model === "string" ? resp.data.model : replaceModel;
-            } else {
-              const { data, error } = await supabase.functions.invoke("translate-image", {
-                body: {
-                  imageUrl: job.originalImage,
-                  step: "replace",
-                  translations: job.translations,
-                  targetLanguage,
-                  preferredModel: replaceModel,
-                  resolution: selectedResolution,
-                },
-              });
-              if (error) throw new Error(await readInvokeError(error));
-              if (!data?.imageUrl) throw new Error("AI 精修替换没有返回可用图片");
-              outputImage = data.imageUrl;
-              outputMode = "ai";
-              outputModel = typeof data?.model === "string" ? data.model : replaceModel;
-            }
-          } catch (replaceError) {
-            console.warn("ai replace failed, fallback to stable renderer:", replaceError);
-          }
+        // Deduct credits before AI replace
+        const cost = getGenerateImageUnitCost(replaceModel as GenerationModel, selectedResolution);
+        const modelLabel = AI_REPLACE_MODELS.find((m) => m.value === replaceModel)?.label || replaceModel;
+        const deductResult = await deductCredits(
+          cost,
+          "translate_image",
+          `图文翻译（${modelLabel} ${selectedResolution}，${cost} 积分）`,
+        );
+        if (!deductResult.success) {
+          throw new Error(deductResult.error || "积分不足，请充值后重试");
         }
+        refreshBalance();
 
-        if (!outputImage) {
-          try {
-            outputImage = await renderTranslatedImageLocally(
-              job.originalImage,
-              job.translations,
+        if (isSelfHosted) {
+          const resp = await apiPost<{ imageUrl: string; model?: string }>("translate-image", {
+            imageUrl: job.originalImage,
+            step: "replace",
+            translations: job.translations,
+            targetLanguage,
+            preferredModel: replaceModel,
+            resolution: selectedResolution,
+          });
+          if (!resp.ok || !resp.data) throw new Error(resp.rawText || "AI replace failed");
+          if (!resp.data.imageUrl) throw new Error("AI 精修替换没有返回可用图片");
+          outputImage = resp.data.imageUrl;
+          outputModel = typeof resp.data.model === "string" ? resp.data.model : replaceModel;
+        } else {
+          const { data, error } = await supabase.functions.invoke("translate-image", {
+            body: {
+              imageUrl: job.originalImage,
+              step: "replace",
+              translations: job.translations,
               targetLanguage,
-            );
-          } catch (advancedRenderError) {
-            console.warn("advanced translation render failed, fallback to simple renderer:", advancedRenderError);
-            outputImage = await renderTranslatedImageSimple(
-              job.originalImage,
-              job.translations,
-              targetLanguage,
-            );
-          }
-          outputMode = "stable";
+              preferredModel: replaceModel,
+              resolution: selectedResolution,
+            },
+          });
+          if (error) throw new Error(await readInvokeError(error));
+          if (!data?.imageUrl) throw new Error("AI 精修替换没有返回可用图片");
+          outputImage = data.imageUrl;
+          outputModel = typeof data?.model === "string" ? data.model : replaceModel;
         }
 
         updateJob(job.id, (current) => ({
@@ -1069,7 +735,7 @@ export default function TranslateImagePage() {
           status: "done",
           error: null,
           hint: null,
-          renderMode: outputMode,
+          renderMode: "ai",
           renderModel: outputModel,
         }));
 
@@ -1098,7 +764,7 @@ export default function TranslateImagePage() {
         throw error;
       }
     },
-    [persistTranslatedImage, replaceModel, selectedResolution, renderStrategy, targetLanguage, updateJob, refreshBalance],
+    [persistTranslatedImage, replaceModel, selectedResolution, targetLanguage, updateJob, refreshBalance],
   );
 
   const handleRecognize = useCallback(async () => {
@@ -1270,25 +936,10 @@ export default function TranslateImagePage() {
               </Select>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-3">
-              <div className="space-y-2">
-                <div className="text-sm font-medium text-foreground">生成模式</div>
-                <Select value={renderStrategy} onValueChange={(value: "ai" | "stable") => setRenderStrategy(value)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="选择模式" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {TRANSLATION_RENDER_MODES.map((item) => (
-                      <SelectItem key={item.value} value={item.value}>
-                        {item.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+            <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-2">
                 <div className="text-sm font-medium text-foreground">精修模型</div>
-                <Select value={replaceModel} onValueChange={setReplaceModel} disabled={renderStrategy !== "ai"}>
+                <Select value={replaceModel} onValueChange={setReplaceModel}>
                   <SelectTrigger>
                     <SelectValue placeholder="选择模型" />
                   </SelectTrigger>
@@ -1303,7 +954,7 @@ export default function TranslateImagePage() {
               </div>
               <div className="space-y-2">
                 <div className="text-sm font-medium text-foreground">输出分辨率</div>
-                <Select value={selectedResolution} onValueChange={(v) => setSelectedResolution(v as OutputResolution)} disabled={renderStrategy !== "ai"}>
+                <Select value={selectedResolution} onValueChange={(v) => setSelectedResolution(v as OutputResolution)}>
                   <SelectTrigger>
                     <SelectValue placeholder="选择分辨率" />
                   </SelectTrigger>
@@ -1317,18 +968,16 @@ export default function TranslateImagePage() {
                 </Select>
               </div>
             </div>
-            {renderStrategy === "ai" && (
-              <div className="flex items-center justify-between rounded-xl bg-muted/50 px-3 py-2 text-sm">
+            <div className="flex items-center justify-between rounded-xl bg-muted/50 px-3 py-2 text-sm">
+              <span className="text-muted-foreground">
+                单张消耗 <span className="font-semibold text-foreground">{unitCost}</span> 积分
+              </span>
+              {userBalance !== null && (
                 <span className="text-muted-foreground">
-                  单张消耗 <span className="font-semibold text-foreground">{unitCost}</span> 积分
+                  余额 <span className={`font-semibold ${userBalance < unitCost ? "text-destructive" : "text-foreground"}`}>{userBalance}</span> 积分
                 </span>
-                {userBalance !== null && (
-                  <span className="text-muted-foreground">
-                    余额 <span className={`font-semibold ${userBalance < unitCost ? "text-destructive" : "text-foreground"}`}>{userBalance}</span> 积分
-                  </span>
-                )}
-              </div>
-            )}
+              )}
+            </div>
 
             <label className="flex cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-primary/30 bg-primary/5 px-4 py-5 text-center transition hover:border-primary/50 hover:bg-primary/10 sm:py-6">
               <div className="rounded-2xl bg-primary/10 p-3 text-primary">
@@ -1376,9 +1025,7 @@ export default function TranslateImagePage() {
                           {job.translations.length ? `${job.translations.length} 处文字` : "待识别"}
                         </span>
                         {job.status === "done" && (
-                          <span className="text-xs text-emerald-700">
-                            {job.renderMode === "ai" ? "AI 精修替换" : "稳定替换"}
-                          </span>
+                          <span className="text-xs text-emerald-700">AI 精修替换</span>
                         )}
                       </div>
                       {job.status === "error" && job.error && (
@@ -1436,9 +1083,7 @@ export default function TranslateImagePage() {
                   <div className="mb-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
                     <div className="font-medium">当前任务已完成</div>
                     <div className="mt-1">
-                      {activeJob.renderMode === "ai"
-                        ? `当前结果使用 AI 精修替换生成${activeJob.renderModel ? `（${AI_REPLACE_MODELS.find((item) => item.value === activeJob.renderModel)?.label || activeJob.renderModel}）` : ""}，会优先保留原海报版式和视觉关系。`
-                        : "当前结果使用稳定替换模式生成，优先保证版位正确和整体可用性。你可以通过下方对比快速检查哪里还需要继续优化。"}
+                      {`当前结果使用 AI 精修替换生成${activeJob.renderModel ? `（${AI_REPLACE_MODELS.find((item) => item.value === activeJob.renderModel)?.label || activeJob.renderModel}）` : ""}，会优先保留原海报版式和视觉关系。`}
                     </div>
                   </div>
                 )}
@@ -1448,9 +1093,7 @@ export default function TranslateImagePage() {
                       title="结果图"
                       subtitle={
                         activeJob.translatedImage
-                          ? activeJob.renderMode === "ai"
-                            ? "已自动加入图片库，当前为 AI 精修替换结果"
-                            : "已自动加入图片库，当前为稳定替换结果"
+                          ? "已自动加入图片库，当前为 AI 精修替换结果"
                           : "生成后会自动存入图片库"
                       }
                       image={activeJob.translatedImage}
