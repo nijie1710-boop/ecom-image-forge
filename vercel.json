@@ -1,4 +1,11 @@
 {
+  "functions": {
+    "api/gemini-proxy.js": {
+      "maxDuration": 60,
+      "memory": 1024,
+      "regions": ["hnd1"]
+    }
+  },
   "headers": [
     {
       "source": "/(.*)",
