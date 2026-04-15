@@ -61,7 +61,7 @@ export function WorkspaceHeader({
 export function WorkspaceShell({
   sidebar,
   content,
-  sidebarWidthClassName = "lg:grid-cols-[340px_minmax(0,1fr)] xl:grid-cols-[400px_minmax(0,1fr)] 2xl:grid-cols-[440px_minmax(0,1fr)]",
+  sidebarWidthClassName = "lg:grid-cols-[320px_minmax(0,1fr)] xl:grid-cols-[360px_minmax(0,1fr)] 2xl:grid-cols-[400px_minmax(0,1fr)]",
 }: {
   sidebar: ReactNode;
   content: ReactNode;
