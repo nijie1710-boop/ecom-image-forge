@@ -3,7 +3,6 @@ import { LayoutDashboard } from "lucide-react";
 
 import AppSidebar from "@/components/AppSidebar";
 import BottomNav from "@/components/BottomNav";
-import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { matchDashboardNavItem, topLevelNavItems } from "@/lib/dashboard-nav";
@@ -37,7 +36,6 @@ const DashboardLayout = () => {
 
                 <div className="flex items-center gap-2">
                   <ThemeSwitcher />
-                  <LanguageSwitcher />
                 </div>
               </div>
             </header>
