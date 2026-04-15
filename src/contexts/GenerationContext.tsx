@@ -647,6 +647,11 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             assertJobExecutionActive(jobId, runId);
 
             if (result.error) {
+              // If we already have some successful results, don't abort the whole task
+              if (results.length > 0) {
+                console.warn(`[generate] Image ${index + 1}/${params.n} failed, continuing with ${results.length} successful results`);
+                break;
+              }
               updateJob(jobId, { status: "error", error: result.error, results });
               return;
             }
