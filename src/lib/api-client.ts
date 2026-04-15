@@ -266,4 +266,3 @@ export async function uploadImageToServer(
   }
   return data.url;
 }
-// staging env
