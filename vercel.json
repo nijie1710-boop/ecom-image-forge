@@ -25,8 +25,8 @@
     }
   ],
   "rewrites": [
-    { "source": "/api/((?!gemini-proxy).*)", "destination": "http://101.32.186.47/api/$1" },
-    { "source": "/uploads/:path*", "destination": "http://101.32.186.47/uploads/:path*" },
+    { "source": "/api/((?!gemini-proxy).*)", "destination": "http://101.32.186.47/staging-api/$1" },
+    { "source": "/uploads/:path*", "destination": "http://101.32.186.47/staging-uploads/:path*" },
     { "source": "/((?!api/|uploads/|assets/|favicon\\.png|robots\\.txt|sitemap\\.xml).*)", "destination": "/index.html" }
   ]
 }
