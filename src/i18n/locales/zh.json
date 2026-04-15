@@ -1,68 +1,118 @@
 {
   "nav": {
-    "features": "功能",
-    "gallery": "案例展示",
+    "features": "核心功能",
+    "howItWorks": "使用流程",
+    "gallery": "效果展示",
     "pricing": "价格",
-    "openStudio": "进入工作台"
+    "openStudio": "免费开始"
   },
   "brand": {
-    "name": "Picspark AI"
+    "name": "PicSpark AI"
   },
   "hero": {
-    "badge": "AI 驱动的电商摄影",
-    "title1": "AI 秒级生成",
-    "title2": "电商产品图 - 测试版",
-    "subtitle": "只需上传一张产品图，即可无限生成专业商品主图、买家秀、场景图，适用于淘宝、天猫、京东、拼多多、小红书等平台。",
-    "cta": "开始生成",
-    "viewGallery": "查看案例"
+    "badge": "电商卖家的 AI 视觉助手",
+    "title1": "告别高价外包设计",
+    "title2": "AI 3分钟生成电商图片",
+    "subtitle": "上传商品图，AI 自动生成主图、整套详情页、多语言图文翻译。覆盖淘宝、Amazon、Shopify 等 20+ 电商平台，从创意到上架一站完成。",
+    "cta": "免费体验",
+    "viewGallery": "查看效果"
+  },
+  "platforms": {
+    "title": "覆盖 20+ 主流电商平台",
+    "list": ["淘宝/天猫", "京东", "拼多多", "小红书", "抖音", "Amazon", "Shopify", "TikTok Shop", "eBay", "AliExpress", "Shopee", "Lazada", "Temu", "Etsy", "Walmart", "Ozon"]
   },
   "features": {
-    "sectionTitle": "电商图片生成，一站搞定",
-    "sectionSubtitle": "从自动抠图到逼真买家秀，全流程 AI 处理。",
+    "sectionTitle": "三大核心功能，覆盖电商全场景",
+    "sectionSubtitle": "不是通用 AI 作图工具，而是专为电商设计的完整视觉工作流。",
     "items": [
-      { "title": "一键上传", "desc": "上传一张产品图 — 支持 JPG、PNG、WEBP 格式。" },
-      { "title": "AI 自动抠图", "desc": "智能去除背景，生成透明底图。" },
-      { "title": "智能裁剪", "desc": "自动适配淘宝、抖音、小红书等平台尺寸。" },
-      { "title": "多场景生成", "desc": "生成客厅、厨房、户外等 10+ 热门场景。" },
-      { "title": "批量生成", "desc": "一次上传 10 张，批量生成海量图片。" },
-      { "title": "AI 文案", "desc": "自动生成产品标题、描述、Tags。" },
-      { "title": "高清下载", "desc": "所有图片支持高清下载（1024–2048px）。" },
-      { "title": "会员权益", "desc": "免费版每天 5 张，付费版无限生成。" }
+      {
+        "title": "AI 主图生成",
+        "desc": "上传一张商品图，一次生成多张不同风格的电商主图。支持场景图、白底图、模特图，风格参考一键复刻。",
+        "highlights": ["多风格批量生成", "风格参考复刻", "20+ 平台尺寸适配"]
+      },
+      {
+        "title": "AI 详情页生成",
+        "desc": "AI 先策划整套详情页方案，再逐屏生成高质量详情图。告别零散出图，一次搞定完整详情页。",
+        "highlights": ["AI 自动策划方案", "逐屏精准生成", "分屏构思引导"]
+      },
+      {
+        "title": "AI 图文翻译",
+        "desc": "一键将商品图上的文字翻译成 13 种语言，图片风格保持不变。跨境电商必备，省去重新设计的成本。",
+        "highlights": ["13 种语言支持", "保留原图风格", "跨境电商刚需"]
+      }
+    ]
+  },
+  "howItWorks": {
+    "sectionTitle": "3 步完成，极致简单",
+    "sectionSubtitle": "无需设计基础，上传商品图即可开始。",
+    "steps": [
+      { "title": "上传商品图", "desc": "拍一张商品照片上传，支持 JPG/PNG/WebP。多角度素材效果更好。" },
+      { "title": "选择平台和风格", "desc": "选目标电商平台，AI 自动适配尺寸。可上传风格参考图，生成效果更精准。" },
+      { "title": "AI 生成，下载上架", "desc": "AI 秒级生成高清电商图片，直接下载上架到店铺。支持 1K~4K 多种分辨率。" }
+    ]
+  },
+  "stats": {
+    "items": [
+      { "value": "20+", "label": "覆盖电商平台" },
+      { "value": "13", "label": "支持语言" },
+      { "value": "4K", "label": "最高分辨率" },
+      { "value": "3min", "label": "整套详情页" }
     ]
   },
   "gallery": {
-    "sectionTitle": "一图上传，多风格输出",
-    "sectionSubtitle": "看看 AI 如何把一张产品图变成多种电商图片。",
-    "labels": ["白底图", "场景图", "买家秀", "品牌质感", "办公场景"]
+    "sectionTitle": "AI 生成效果展示",
+    "sectionSubtitle": "真实商品图 AI 生成案例，多风格多场景。",
+    "labels": ["白底主图", "生活场景", "买家秀", "品牌质感", "办公场景"]
   },
   "pricing": {
-    "sectionTitle": "简单透明的定价",
-    "sectionSubtitle": "免费开始，按需升级。",
-    "mostPopular": "最受欢迎",
+    "sectionTitle": "按需充值，用多少算多少",
+    "sectionSubtitle": "注册即送体验积分，无月费、无隐藏费用。",
+    "creditUnit": "积分",
     "plans": [
       {
-        "name": "免费版",
-        "price": "¥0",
-        "features": ["每天 5 张图片", "基础风格", "标准分辨率", "带水印"],
-        "cta": "免费开始"
+        "name": "体验包",
+        "price": "¥19.9",
+        "credits": "200",
+        "features": ["约生成 28 张主图", "约生成 22 屏详情图", "全部功能可用", "高清分辨率"],
+        "cta": "立即充值",
+        "badge": ""
       },
       {
-        "name": "专业版",
+        "name": "常用包",
+        "price": "¥49.9",
+        "credits": "520",
+        "features": ["约生成 74 张主图", "约生成 57 屏详情图", "全部功能可用", "4K 超清分辨率"],
+        "cta": "立即充值",
+        "badge": "推荐"
+      },
+      {
+        "name": "进阶包",
         "price": "¥99",
-        "features": ["每月 200 张图片", "全部风格和场景", "高清分辨率", "无水印", "买家秀图片", "优先生成"],
-        "cta": "开始专业版试用"
+        "credits": "1080",
+        "features": ["约生成 154 张主图", "约生成 120 屏详情图", "全部功能可用", "单价更省"],
+        "cta": "立即充值",
+        "badge": "单价更省"
       },
       {
-        "name": "企业版",
-        "price": "¥299",
-        "features": ["无限生成", "所有专业版功能", "批量生成", "API 接口", "自定义模板", "优先客服支持"],
-        "cta": "联系销售"
+        "name": "商用包",
+        "price": "¥199",
+        "credits": "2280",
+        "features": ["约生成 325 张主图", "约生成 253 屏详情图", "全部功能可用", "批量创作首选"],
+        "cta": "立即充值",
+        "badge": "高频创作"
       }
-    ],
-    "period": "/月"
+    ]
+  },
+  "cta": {
+    "title": "准备好提升你的电商视觉了吗？",
+    "subtitle": "注册即可免费体验，无需绑定信用卡。",
+    "button": "免费开始使用"
   },
   "footer": {
-    "rights": "© 2026 Picspark AI. 保留所有权利。"
+    "rights": "© 2026 PicSpark AI. 保留所有权利。",
+    "slogan": "AI 点燃商品图片创意",
+    "terms": "用户协议",
+    "privacy": "隐私政策"
   },
   "sidebar": {
     "dashboard": "仪表盘",
