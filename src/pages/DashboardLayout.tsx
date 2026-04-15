@@ -15,7 +15,7 @@ const DashboardLayout = () => {
 
   return (
     <SidebarProvider defaultOpen>
-      <div className="min-h-screen bg-[radial-gradient(circle_at_top,_hsl(var(--primary)/0.08),_transparent_34%)] bg-background">
+      <div className="min-h-screen w-full bg-[radial-gradient(circle_at_top,_hsl(var(--primary)/0.08),_transparent_34%)] bg-background">
         <div className="flex min-h-screen">
           <AppSidebar />
 
