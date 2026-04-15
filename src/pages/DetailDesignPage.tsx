@@ -1755,6 +1755,69 @@ const DetailDesignPage = () => {
             </div>
           </section>
           <section className="rounded-2xl border border-border bg-background/70 p-4">
+            <button
+              type="button"
+              onClick={() => setShowScreenIdeas((current) => !current)}
+              className="flex w-full items-start justify-between gap-3 text-left"
+            >
+              <div>
+                <h2 className="text-base font-semibold text-foreground">分屏构思</h2>
+                <p className="text-xs text-muted-foreground">
+                  可选项。有明确想法时再展开填写，没有也可以直接继续。
+                </p>
+              </div>
+              {showScreenIdeas ? (
+                <ChevronUp className="mt-1 h-4 w-4 text-muted-foreground" />
+              ) : (
+                <ChevronDown className="mt-1 h-4 w-4 text-muted-foreground" />
+              )}
+            </button>
+
+            {showScreenIdeas && (
+              <div className="mt-4 space-y-4 border-t border-border pt-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="text-xs text-muted-foreground">
+                    启用后，AI 会优先参考你对某几屏的指定构思。
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setUseScreenIdeas((current) => !current)}
+                    className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+                      useScreenIdeas
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-muted text-muted-foreground"
+                    }`}
+                  >
+                    {useScreenIdeas ? "已启用" : "点击启用"}
+                  </button>
+                </div>
+
+                <div className="space-y-3">
+                  {Array.from({ length: Number(screenCount) || 4 }, (_, index) => (
+                    <div key={`screen-idea-${index}`} className="space-y-1.5">
+                      <label className="text-xs font-medium text-foreground">第 {index + 1} 屏</label>
+                      <input
+                        type="text"
+                        value={screenIdeas[index] || ""}
+                        onChange={(event) => updateScreenIdea(index, event.target.value)}
+                        disabled={!useScreenIdeas}
+                        placeholder={
+                          index === 0
+                            ? "例如：首屏突出高级材质和主视觉氛围"
+                            : index === 1
+                              ? "例如：第二屏放大材质细节和工艺说明"
+                              : "例如：补充这一屏希望呈现的重点"
+                        }
+                        className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none transition focus:ring-2 focus:ring-primary/25 disabled:cursor-not-allowed disabled:opacity-60"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </section>
+
+          <section className="rounded-2xl border border-border bg-background/70 p-4">
             <div className="mb-4">
               <h2 className="text-base font-semibold text-foreground">策划参数</h2>
               <p className="text-xs text-muted-foreground">AI 会先根据商品信息生成整套详情页方案，再按屏生成完整内容。</p>
@@ -1838,69 +1901,6 @@ const DetailDesignPage = () => {
                 <span className="ml-2 text-destructive">（余额不足，请先充值）</span>
               )}
             </div>
-          </section>
-
-          <section className="rounded-2xl border border-border bg-background/70 p-4">
-            <button
-              type="button"
-              onClick={() => setShowScreenIdeas((current) => !current)}
-              className="flex w-full items-start justify-between gap-3 text-left"
-            >
-              <div>
-                <h2 className="text-base font-semibold text-foreground">分屏构思</h2>
-                <p className="text-xs text-muted-foreground">
-                  可选项。有明确想法时再展开填写，没有也可以直接继续。
-                </p>
-              </div>
-              {showScreenIdeas ? (
-                <ChevronUp className="mt-1 h-4 w-4 text-muted-foreground" />
-              ) : (
-                <ChevronDown className="mt-1 h-4 w-4 text-muted-foreground" />
-              )}
-            </button>
-
-            {showScreenIdeas && (
-              <div className="mt-4 space-y-4 border-t border-border pt-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="text-xs text-muted-foreground">
-                    启用后，AI 会优先参考你对某几屏的指定构思。
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setUseScreenIdeas((current) => !current)}
-                    className={`rounded-full px-3 py-1 text-xs font-medium transition ${
-                      useScreenIdeas
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted text-muted-foreground"
-                    }`}
-                  >
-                    {useScreenIdeas ? "已启用" : "点击启用"}
-                  </button>
-                </div>
-
-                <div className="space-y-3">
-                  {Array.from({ length: Number(screenCount) || 4 }, (_, index) => (
-                    <div key={`screen-idea-${index}`} className="space-y-1.5">
-                      <label className="text-xs font-medium text-foreground">第 {index + 1} 屏</label>
-                      <input
-                        type="text"
-                        value={screenIdeas[index] || ""}
-                        onChange={(event) => updateScreenIdea(index, event.target.value)}
-                        disabled={!useScreenIdeas}
-                        placeholder={
-                          index === 0
-                            ? "例如：首屏突出高级材质和主视觉氛围"
-                            : index === 1
-                              ? "例如：第二屏放大材质细节和工艺说明"
-                              : "例如：补充这一屏希望呈现的重点"
-                        }
-                        className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none transition focus:ring-2 focus:ring-primary/25 disabled:cursor-not-allowed disabled:opacity-60"
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </section>
 
           {activePlan && (
