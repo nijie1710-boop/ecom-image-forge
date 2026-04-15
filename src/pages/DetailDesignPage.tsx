@@ -1754,22 +1754,30 @@ const DetailDesignPage = () => {
               </div>
             </div>
           </section>
-          <section className="rounded-2xl border border-border bg-background/70 p-4">
+          <section className="rounded-2xl border border-primary/20 bg-primary/[0.03] p-4">
             <button
               type="button"
               onClick={() => setShowScreenIdeas((current) => !current)}
               className="flex w-full items-start justify-between gap-3 text-left"
             >
-              <div>
-                <h2 className="text-base font-semibold text-foreground">分屏构思</h2>
-                <p className="text-xs text-muted-foreground">
-                  可选项。有明确想法时再展开填写，没有也可以直接继续。
-                </p>
+              <div className="flex items-start gap-2.5">
+                <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <Edit3 className="h-3.5 w-3.5" />
+                </span>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-base font-semibold text-foreground">分屏构思</h2>
+                    <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">推荐填写</span>
+                  </div>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    填写后 AI 会按你的想法策划每一屏，效果更精准。
+                  </p>
+                </div>
               </div>
               {showScreenIdeas ? (
                 <ChevronUp className="mt-1 h-4 w-4 text-muted-foreground" />
               ) : (
-                <ChevronDown className="mt-1 h-4 w-4 text-muted-foreground" />
+                <ChevronDown className="mt-1 h-4 w-4 text-primary/60" />
               )}
             </button>
 
