@@ -60,7 +60,16 @@ import {
   WorkspaceStatGrid,
 } from "@/components/workspace/WorkspaceBlocks";
 
-const platformOptions = ["淘宝/天猫", "京东", "拼多多", "小红书", "抖音", "亚马逊"];
+const platformOptions = [
+  { value: "淘宝/天猫", label: "淘宝/天猫", ratio: "3:4" },
+  { value: "京东", label: "京东", ratio: "3:4" },
+  { value: "拼多多", label: "拼多多", ratio: "3:4" },
+  { value: "小红书", label: "小红书", ratio: "3:4" },
+  { value: "抖音", label: "抖音", ratio: "3:4" },
+  { value: "亚马逊", label: "Amazon", ratio: "3:4" },
+  { value: "Shopify", label: "Shopify", ratio: "3:4" },
+  { value: "TikTok Shop", label: "TikTok Shop", ratio: "9:16" },
+];
 
 const planningLanguageOptions = [
   { value: "zh", label: "中文" },
@@ -621,7 +630,7 @@ const DetailDesignPage = () => {
   const [styleReferenceImage, setStyleReferenceImage] = useState<string>("");
   const [styleReferenceText, setStyleReferenceText] = useState("");
   const [productInfo, setProductInfo] = useState("");
-  const [targetPlatform, setTargetPlatform] = useState(platformOptions[0]);
+  const [targetPlatform, setTargetPlatform] = useState(platformOptions[0].value);
   const [targetLanguage, setTargetLanguage] = useState("zh");
   const [screenCount, setScreenCount] = useState("4");
   const [useScreenIdeas, setUseScreenIdeas] = useState(false);
@@ -755,7 +764,7 @@ const DetailDesignPage = () => {
       setGenerationLanguage(draft.generationLanguage || "zh");
       setFidelityMode(draft.fidelityMode || "normal");
       setSelectedModel(draft.selectedModel || "gemini-3.1-flash-image-preview");
-      setTargetPlatform(draft.targetPlatform || platformOptions[0]);
+      setTargetPlatform(draft.targetPlatform || platformOptions[0].value);
       setTargetLanguage(draft.targetLanguage || "zh");
       setScreenCount(draft.screenCount || "4");
       setUseScreenIdeas(Boolean(draft.useScreenIdeas));
@@ -982,6 +991,8 @@ const DetailDesignPage = () => {
 
   const handleTargetPlatformChange = (value: string) => {
     setTargetPlatform(value);
+    const preset = platformOptions.find((p) => p.value === value);
+    if (preset?.ratio) setSelectedRatio(preset.ratio);
     resetPlan();
   };
 

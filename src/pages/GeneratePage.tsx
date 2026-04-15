@@ -64,6 +64,18 @@ import {
 const ADMIN_GENERATE_RETRY_DRAFT_KEY = "admin-generate-retry-draft";
 const imageTypes = ["主图", "详情图"];
 
+const platformPresets = [
+  { value: "", label: "不限平台（自选尺寸）", ratio: "" },
+  { value: "taobao", label: "淘宝/天猫", ratio: "1:1" },
+  { value: "jd", label: "京东", ratio: "1:1" },
+  { value: "pdd", label: "拼多多", ratio: "1:1" },
+  { value: "xiaohongshu", label: "小红书", ratio: "3:4" },
+  { value: "douyin", label: "抖音电商", ratio: "3:4" },
+  { value: "amazon", label: "Amazon", ratio: "1:1" },
+  { value: "shopify", label: "Shopify", ratio: "1:1" },
+  { value: "tiktok", label: "TikTok Shop", ratio: "9:16" },
+];
+
 const ratioOptions = [
   { value: "1:1", label: "1:1 正方形" },
   { value: "2:3", label: "2:3 竖版" },
@@ -293,6 +305,7 @@ const GeneratePage = () => {
   const [modelImage, setModelImage] = useState("");
   const [fidelityMode, setFidelityMode] = useState<FidelityMode>("normal");
   const [imageType, setImageType] = useState(imageTypes[0]);
+  const [selectedPlatform, setSelectedPlatform] = useState("");
   const [selectedRatio, setSelectedRatio] = useState("3:4");
   const [textLanguage, setTextLanguage] = useState("zh");
   const [selectedModel, setSelectedModel] =
@@ -1114,6 +1127,17 @@ const GeneratePage = () => {
             className="w-full resize-none rounded-lg border border-border bg-background p-3 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary/50"
           />
         </div>
+
+        <SelectField
+          label="目标平台"
+          options={platformPresets}
+          value={selectedPlatform}
+          onChange={(value) => {
+            setSelectedPlatform(value);
+            const preset = platformPresets.find((p) => p.value === value);
+            if (preset?.ratio) setSelectedRatio(preset.ratio);
+          }}
+        />
 
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <SelectField
