@@ -1104,6 +1104,7 @@ const DetailDesignPage = () => {
         targetLanguage,
         screenCount: Number(screenCount),
         screenIdeas: useScreenIdeas ? screenIdeas : [],
+        styleReferenceImage: styleReferenceImage || undefined,
       });
 
       setProductSummary(result.productSummary);

@@ -91,6 +91,7 @@ export type DetailPlanParams = {
   targetLanguage: string;
   screenCount: number;
   screenIdeas?: string[];
+  styleReferenceImage?: string;
 };
 
 export type OptimizeProductInfoParams = {
