@@ -66,9 +66,20 @@ const platformOptions = [
   { value: "拼多多", label: "拼多多", ratio: "3:4" },
   { value: "小红书", label: "小红书", ratio: "3:4" },
   { value: "抖音", label: "抖音", ratio: "3:4" },
+  { value: "1688", label: "1688", ratio: "3:4" },
   { value: "亚马逊", label: "Amazon", ratio: "3:4" },
   { value: "Shopify", label: "Shopify", ratio: "3:4" },
   { value: "TikTok Shop", label: "TikTok Shop", ratio: "9:16" },
+  { value: "eBay", label: "eBay", ratio: "3:4" },
+  { value: "AliExpress", label: "AliExpress (速卖通)", ratio: "3:4" },
+  { value: "Wish", label: "Wish", ratio: "3:4" },
+  { value: "Lazada", label: "Lazada", ratio: "3:4" },
+  { value: "Shopee", label: "Shopee (虾皮)", ratio: "3:4" },
+  { value: "Mercado Libre", label: "Mercado Libre", ratio: "3:4" },
+  { value: "Etsy", label: "Etsy", ratio: "3:4" },
+  { value: "Walmart", label: "Walmart", ratio: "3:4" },
+  { value: "Temu", label: "Temu", ratio: "3:4" },
+  { value: "Ozon", label: "Ozon (俄罗斯)", ratio: "3:4" },
 ];
 
 const planningLanguageOptions = [

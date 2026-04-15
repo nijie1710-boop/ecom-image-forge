@@ -71,9 +71,20 @@ const platformPresets = [
   { value: "pdd", label: "拼多多", ratio: "1:1" },
   { value: "xiaohongshu", label: "小红书", ratio: "3:4" },
   { value: "douyin", label: "抖音电商", ratio: "3:4" },
+  { value: "1688", label: "1688", ratio: "1:1" },
   { value: "amazon", label: "Amazon", ratio: "1:1" },
   { value: "shopify", label: "Shopify", ratio: "1:1" },
   { value: "tiktok", label: "TikTok Shop", ratio: "9:16" },
+  { value: "ebay", label: "eBay", ratio: "1:1" },
+  { value: "aliexpress", label: "AliExpress (速卖通)", ratio: "1:1" },
+  { value: "wish", label: "Wish", ratio: "1:1" },
+  { value: "lazada", label: "Lazada", ratio: "1:1" },
+  { value: "shopee", label: "Shopee (虾皮)", ratio: "1:1" },
+  { value: "mercadolibre", label: "Mercado Libre", ratio: "1:1" },
+  { value: "etsy", label: "Etsy", ratio: "4:3" },
+  { value: "walmart", label: "Walmart", ratio: "1:1" },
+  { value: "temu", label: "Temu", ratio: "1:1" },
+  { value: "ozon", label: "Ozon (俄罗斯)", ratio: "3:4" },
 ];
 
 const ratioOptions = [
