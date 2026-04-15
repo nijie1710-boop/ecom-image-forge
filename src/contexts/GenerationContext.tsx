@@ -94,6 +94,7 @@ export interface ImageGenParams {
   modelImage?: string;
   fidelityMode?: FidelityMode;
   fidelityContext?: FidelityContext;
+  negativePrompt?: string;
   userId?: string;
   onComplete?: (images: string[]) => void;
 }
@@ -125,6 +126,8 @@ interface GenerationContextType {
   clearJob: (id: string) => void;
   getLatestResults: () => string[];
   getJob: (id: string) => GenerationJob | null;
+  regenerateSingle: (jobId: string, imageIndex: number, params: ImageGenParams) => Promise<void>;
+  regeneratingIndex: number | null;
 }
 
 export const GenerationContext = createContext<GenerationContextType | null>(null);
@@ -646,9 +649,17 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
               ? `\n[VARIATION ${index + 1}/${params.n}: ${variationHints[index]}]`
               : "";
 
+            const negativeText = params.negativePrompt?.trim()
+              ? `\n[NEGATIVE: Absolutely do NOT include: ${params.negativePrompt.trim()}]`
+              : "";
+
+            const imageTypeHint = params.imageType === "详情图"
+              ? "\n[IMAGE TYPE: Detail/lifestyle image - show the product in a real usage scenario with contextual props. NOT a hero product shot.]"
+              : "";
+
             const result = await generateImage({
               ...params,
-              prompt: params.prompt + variationSuffix,
+              prompt: params.prompt + variationSuffix + negativeText + imageTypeHint,
               n: 1,
               imageBase64: primaryImage,
               referenceGallery: gallery.filter(Boolean) as string[],
@@ -674,6 +685,8 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
             if (result.images[0]) {
               results.push(result.images[0]);
+              // Progressive: update job results so UI shows each image as it completes
+              updateJob(jobId, { results: [...results] });
             }
           }
 
@@ -1041,6 +1054,57 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     return jobsRef.current.find((job) => job.id === id) || null;
   }, []);
 
+  const [regeneratingIndex, setRegeneratingIndex] = useState<number | null>(null);
+
+  const regenerateSingle = useCallback(async (
+    jobId: string,
+    imageIndex: number,
+    params: ImageGenParams,
+  ) => {
+    const job = jobsRef.current.find((j) => j.id === jobId);
+    if (!job) return;
+
+    setRegeneratingIndex(imageIndex);
+    try {
+      const variationHints = [
+        "",
+        "Use a different camera angle (e.g. slightly elevated 45-degree view). Change the lighting to warm side lighting.",
+        "Use a low-angle close-up composition. Apply cool-toned natural daylight.",
+        "Use a bird's-eye / top-down flat-lay composition. Rearrange background props differently.",
+        "Use a wide-angle environmental shot showing more context. Apply golden hour warm lighting.",
+        "Use a dramatic close-up with shallow depth of field. Apply studio rim lighting from behind.",
+        "Use a three-quarter angle with soft diffused lighting. Minimal background arrangement.",
+        "Use an eye-level straight-on composition. Apply bright, even studio lighting.",
+        "Use a dutch angle with dramatic shadows. Moody atmospheric lighting.",
+      ];
+      const variationSuffix = imageIndex > 0 && imageIndex < variationHints.length
+        ? `\n[VARIATION: ${variationHints[imageIndex]}]`
+        : "";
+      const negativeText = params.negativePrompt?.trim()
+        ? `\n[NEGATIVE: Absolutely do NOT include: ${params.negativePrompt.trim()}]`
+        : "";
+      const imageTypeHint = params.imageType === "详情图"
+        ? "\n[IMAGE TYPE: Detail/lifestyle image - show the product in a real usage scenario with contextual props. NOT a hero product shot.]"
+        : "";
+
+      const result = await generateImage({
+        ...params,
+        prompt: params.prompt + variationSuffix + negativeText + imageTypeHint,
+        n: 1,
+      });
+
+      if (result.images[0]) {
+        const currentResults = [...(jobsRef.current.find((j) => j.id === jobId)?.results || [])];
+        currentResults[imageIndex] = result.images[0];
+        updateJob(jobId, { results: currentResults });
+      }
+    } catch (error) {
+      console.error("regenerateSingle failed:", error);
+    } finally {
+      setRegeneratingIndex(null);
+    }
+  }, [updateJob]);
+
   const activeJob = useMemo(() => jobs[0] || null, [jobs]);
 
   const value = useMemo<GenerationContextType>(
@@ -1054,6 +1118,8 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       clearJob,
       getLatestResults,
       getJob,
+      regenerateSingle,
+      regeneratingIndex,
     }),
     [
       jobs,
@@ -1065,6 +1131,8 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       clearJob,
       getLatestResults,
       getJob,
+      regenerateSingle,
+      regeneratingIndex,
     ],
   );
 

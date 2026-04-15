@@ -306,6 +306,8 @@ const GeneratePage = () => {
   const generationCtx = useContext(GenerationContext);
   const startImageGeneration = generationCtx?.startImageGeneration;
   const activeJob = generationCtx?.activeJob ?? null;
+  const ctxRegenerateSingle = generationCtx?.regenerateSingle;
+  const regeneratingIndex = generationCtx?.regeneratingIndex ?? null;
 
   const [searchParams] = useSearchParams();
   const templatePrompt = searchParams.get("prompt");
@@ -316,6 +318,7 @@ const GeneratePage = () => {
   const [textPrompt, setTextPrompt] = useState("");
   const [styleReferenceImage, setStyleReferenceImage] = useState("");
   const [styleReferenceText, setStyleReferenceText] = useState("");
+  const [negativePrompt, setNegativePrompt] = useState("");
   const [modelMode, setModelMode] = useState<ModelMode>("none");
   const [modelImage, setModelImage] = useState("");
   const [fidelityMode, setFidelityMode] = useState<FidelityMode>("normal");
@@ -740,6 +743,7 @@ const GeneratePage = () => {
       modelImage: modelImage || undefined,
       fidelityMode,
       fidelityContext: fidelityMode === "strict" ? strictFidelityContext : undefined,
+      negativePrompt: negativePrompt.trim() || undefined,
       userId: user?.id,
       onComplete: (images: string[]) => {
         setResults(images);
@@ -1413,6 +1417,15 @@ const GeneratePage = () => {
                   placeholder="例如：暖色轻奢、极简留白、日落通透感。"
                   className="min-h-20 rounded-xl"
                 />
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-foreground">避免出现</label>
+                  <Textarea
+                    value={negativePrompt}
+                    onChange={(e) => setNegativePrompt(e.target.value)}
+                    placeholder="例如：文字、人物、水印、过多装饰"
+                    className="min-h-[60px] resize-none text-sm"
+                  />
+                </div>
               </div>
             </div>
           )}
@@ -1641,6 +1654,27 @@ const GeneratePage = () => {
                       </div>
                     )}
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                      <button
+                        onClick={() => {
+                          if (ctxRegenerateSingle && activeJob && lastParams) {
+                            ctxRegenerateSingle(activeJob.id, index, lastParams);
+                          }
+                        }}
+                        disabled={isGenerating || regeneratingIndex !== null}
+                        className="rounded-xl border border-primary/30 bg-primary/5 px-3 py-2 text-xs font-medium text-primary transition hover:bg-primary/10 disabled:opacity-50"
+                      >
+                        {regeneratingIndex === index ? (
+                          <>
+                            <Loader2 className="mr-1 inline h-3 w-3 animate-spin" />
+                            重新生成中...
+                          </>
+                        ) : (
+                          <>
+                            <RefreshCw className="mr-1 inline h-3 w-3" />
+                            重新生成
+                          </>
+                        )}
+                      </button>
                       <button
                         onClick={handleRegenerateSingle}
                         disabled={isGenerating}
