@@ -28,6 +28,8 @@ import {
   X,
   ZoomIn,
   Edit3,
+  Crop,
+  BarChart3,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -60,6 +62,8 @@ import {
   getGenerateImageTotalCost,
   getUserBalance,
 } from "@/lib/detail-credits";
+import { MultiPlatformCropDialog } from "@/components/MultiPlatformCropDialog";
+import { evaluateImage, type ImageEvaluation } from "@/lib/evaluate-image";
 
 const ADMIN_GENERATE_RETRY_DRAFT_KEY = "admin-generate-retry-draft";
 const imageTypes = ["主图", "详情图"];
@@ -348,6 +352,10 @@ const GeneratePage = () => {
   const [favoriteUrls, setFavoriteUrls] = useState<string[]>([]);
   const [bestImageUrl, setBestImageUrl] = useState<string | null>(null);
   const [userBalance, setUserBalance] = useState<number | null>(null);
+  const [cropDialogOpen, setCropDialogOpen] = useState(false);
+  const [cropDialogImage, setCropDialogImage] = useState("");
+  const [evaluations, setEvaluations] = useState<Record<number, ImageEvaluation>>({});
+  const [evaluatingIndex, setEvaluatingIndex] = useState<number | null>(null);
   const errorHint = errorMessage ? errorHintFromMessage(errorMessage) : null;
   const suggestionHint = suggestionError ? errorHintFromMessage(suggestionError) : null;
 
@@ -873,6 +881,24 @@ const GeneratePage = () => {
     selectedResolution;
   const selectedLanguageLabel =
     languageOptions.find((option) => option.value === textLanguage)?.label || textLanguage;
+
+  const openCropDialog = (src: string) => {
+    setCropDialogImage(src);
+    setCropDialogOpen(true);
+  };
+
+  const handleEvaluate = async (src: string, index: number) => {
+    if (evaluatingIndex !== null) return;
+    setEvaluatingIndex(index);
+    try {
+      const result = await evaluateImage(src, imageType, selectedRatio);
+      setEvaluations((prev) => ({ ...prev, [index]: result }));
+    } catch (err) {
+      console.error("evaluate error:", err);
+    } finally {
+      setEvaluatingIndex(null);
+    }
+  };
 
   const isMobile = () =>
     /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
@@ -1532,25 +1558,89 @@ const GeneratePage = () => {
                         预览
                       </button>
                     </div>
-                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                       <button
                         onClick={() => setPreviewImage(src)}
                         className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-medium text-foreground transition hover:border-primary/40 hover:text-primary"
                       >
+                        <ZoomIn className="mr-1 inline h-3 w-3" />
                         查看
                       </button>
                       <button
                         onClick={() => navigate(`/dashboard/edit?url=${encodeURIComponent(src)}`)}
                         className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-medium text-foreground transition hover:border-primary/40 hover:text-primary"
                       >
+                        <Edit3 className="mr-1 inline h-3 w-3" />
                         编辑图片
                       </button>
                       <button
                         onClick={() => downloadImage(src, `picspark-${Date.now()}-${index + 1}.jpg`)}
                         className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-medium text-foreground transition hover:border-primary/40 hover:text-primary"
                       >
+                        <Download className="mr-1 inline h-3 w-3" />
                         下载图片
                       </button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        onClick={() => openCropDialog(src)}
+                        className="rounded-xl border border-primary/30 bg-primary/5 px-3 py-2 text-xs font-medium text-primary transition hover:bg-primary/10"
+                      >
+                        <Crop className="mr-1 inline h-3 w-3" />
+                        适配多平台
+                      </button>
+                      <button
+                        onClick={() => handleEvaluate(src, index)}
+                        disabled={evaluatingIndex !== null}
+                        className={`rounded-xl border px-3 py-2 text-xs font-medium transition ${
+                          evaluations[index]
+                            ? "border-accent/30 bg-accent/5 text-accent-foreground"
+                            : "border-orange-500/30 bg-orange-500/5 text-orange-600 hover:bg-orange-500/10"
+                        } disabled:opacity-50`}
+                      >
+                        {evaluatingIndex === index ? (
+                          <>
+                            <Loader2 className="mr-1 inline h-3 w-3 animate-spin" />
+                            评估中...
+                          </>
+                        ) : evaluations[index] ? (
+                          <>
+                            <BarChart3 className="mr-1 inline h-3 w-3" />
+                            {evaluations[index].score}分 · {evaluations[index].rating}
+                          </>
+                        ) : (
+                          <>
+                            <BarChart3 className="mr-1 inline h-3 w-3" />
+                            AI 评分
+                          </>
+                        )}
+                      </button>
+                    </div>
+                    {evaluations[index] && (
+                      <div className="rounded-xl border border-border bg-muted/30 p-3 text-xs leading-5">
+                        <div className="mb-2 flex items-center gap-2">
+                          <span className="rounded-full bg-primary/10 px-2 py-0.5 font-semibold text-primary">
+                            {evaluations[index].score} / 10
+                          </span>
+                          <span className="font-medium text-foreground">
+                            {evaluations[index].usageSuggestion}
+                          </span>
+                        </div>
+                        {evaluations[index].strengths.length > 0 && (
+                          <div className="mb-1.5">
+                            <span className="font-medium text-green-600">优点：</span>
+                            <span className="text-muted-foreground">{evaluations[index].strengths.join("、")}</span>
+                          </div>
+                        )}
+                        {evaluations[index].improvements.length > 0 && (
+                          <div>
+                            <span className="font-medium text-orange-500">建议：</span>
+                            <span className="text-muted-foreground">{evaluations[index].improvements.join("、")}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                       <button
                         onClick={handleRegenerateSingle}
                         disabled={isGenerating}
@@ -1559,8 +1649,6 @@ const GeneratePage = () => {
                         <RefreshCw className="mr-1 inline h-3 w-3" />
                         基于此图再生成
                       </button>
-                    </div>
-                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                       <button
                         onClick={() => handleSaveToLibrary(src)}
                         className={`rounded-xl border px-3 py-2 text-xs font-medium transition ${
@@ -1717,6 +1805,12 @@ const GeneratePage = () => {
           {previewImage && <img src={previewImage} alt="Preview" className="w-full rounded-lg" />}
         </DialogContent>
       </Dialog>
+
+      <MultiPlatformCropDialog
+        open={cropDialogOpen}
+        onOpenChange={setCropDialogOpen}
+        imageUrl={cropDialogImage}
+      />
     </div>
   );
 };
