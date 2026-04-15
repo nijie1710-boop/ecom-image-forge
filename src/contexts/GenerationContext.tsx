@@ -627,12 +627,28 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           assertJobExecutionActive(jobId, runId);
 
           const results: string[] = [];
+          const variationHints = [
+            "", // first image uses the original prompt as-is
+            "Use a different camera angle (e.g. slightly elevated 45-degree view). Change the lighting to warm side lighting.",
+            "Use a low-angle close-up composition. Apply cool-toned natural daylight.",
+            "Use a bird's-eye / top-down flat-lay composition. Rearrange background props differently.",
+            "Use a wide-angle environmental shot showing more context. Apply golden hour warm lighting.",
+            "Use a dramatic close-up with shallow depth of field. Apply studio rim lighting from behind.",
+            "Use a three-quarter angle with soft diffused lighting. Minimal background arrangement.",
+            "Use an eye-level straight-on composition. Apply bright, even studio lighting.",
+            "Use a dutch angle with dramatic shadows. Moody atmospheric lighting.",
+          ];
           for (let index = 0; index < params.n; index += 1) {
             assertJobExecutionActive(jobId, runId);
             updateJob(jobId, { step: `生成第 ${index + 1} 张`, current: index + 1 });
 
+            const variationSuffix = index > 0 && index < variationHints.length
+              ? `\n[VARIATION ${index + 1}/${params.n}: ${variationHints[index]}]`
+              : "";
+
             const result = await generateImage({
               ...params,
+              prompt: params.prompt + variationSuffix,
               n: 1,
               imageBase64: primaryImage,
               referenceGallery: gallery.filter(Boolean) as string[],
