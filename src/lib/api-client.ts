@@ -196,12 +196,17 @@ export async function selfHostedGetMe(): Promise<SelfHostedUser | null> {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) {
-      clearStoredToken();
+      // Only clear token on 401 (actual auth failure / expired token)
+      // Other errors (500, 502, 504, network) should NOT destroy the session
+      if (res.status === 401) {
+        clearStoredToken();
+      }
       return null;
     }
     const data = await res.json();
     return data.user;
   } catch {
+    // Network error - keep token, just return null
     return null;
   }
 }
