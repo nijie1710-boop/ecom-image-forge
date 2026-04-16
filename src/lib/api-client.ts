@@ -264,14 +264,12 @@ export async function uploadImageToServer(
   }
 
   const data = await res.json();
-  // Return the full URL with server origin
-  // Staging uses a separate uploads dir exposed via www.picspark.cn/uploads-staging/
+  // Return relative /uploads/* path. Vercel rewrites handle routing:
+  //   - prod:    /uploads/* -> 101.32.186.47/uploads/*
+  //   - staging: /uploads/* -> 101.32.186.47/staging-uploads/*
+  // Same-origin requests avoid SSL/CORS issues with api-staging.picspark.cn.
   if (data.url.startsWith("/uploads/")) {
-    const isStaging = SELF_HOSTED_API_URL.includes("staging");
-    if (isStaging) {
-      return `https://www.picspark.cn/uploads-staging/${data.url.replace("/uploads/", "")}`;
-    }
-    return `${SELF_HOSTED_API_URL}${data.url}`;
+    return data.url;
   }
   if (data.url.startsWith("/")) {
     return `${SELF_HOSTED_API_URL}${data.url}`;
