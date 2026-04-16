@@ -22,7 +22,7 @@ import {
   ZoomIn,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Dialog,
   DialogContent,
@@ -1315,7 +1315,7 @@ const DetailDesignPage = () => {
         targetPlatform,
         targetLanguage: generationLanguage,
         fidelityMode,
-        fidelityContext: fidelityMode === "strict" ? strictFidelityContext : undefined,
+        fidelityContext: fidelityMode !== "normal" ? strictFidelityContext : undefined,
         screenIdea: useScreenIdeas ? screenIdeas[screen.screen - 1] : "",
       });
       const existingPrompt = current?.prompt?.trim() || "";
@@ -1382,7 +1382,7 @@ const DetailDesignPage = () => {
       model: selectedModel,
       resolution: selectedResolution,
       fidelityMode,
-      fidelityContext: fidelityMode === "strict" ? strictFidelityContext : undefined,
+      fidelityContext: fidelityMode !== "normal" ? strictFidelityContext : undefined,
       productImages,
       styleReferenceImage: styleReferenceImage || undefined,
       styleReferenceText: styleReferenceText.trim() || undefined,
@@ -1476,7 +1476,7 @@ const DetailDesignPage = () => {
       targetPlatform,
       targetLanguage: generationLanguage,
       fidelityMode,
-      fidelityContext: fidelityMode === "strict" ? strictFidelityContext : undefined,
+      fidelityContext: fidelityMode !== "normal" ? strictFidelityContext : undefined,
       screenIdea: useScreenIdeas ? screenIdeas[screen.screen - 1] : "",
     });
     updateGeneratedScreen(screen.screen, (current) => ({
@@ -1512,17 +1512,17 @@ const DetailDesignPage = () => {
     }
   }, [selectedModel, selectedResolution]);
 
-  const handleFidelityModeChange = (checked: boolean) => {
-    const nextMode: FidelityMode = checked ? "strict" : "normal";
+  const handleFidelityModeChange = (value: string) => {
+    const nextMode = value as FidelityMode;
     setFidelityMode(nextMode);
-    if (checked) {
+    if (nextMode === "strict" || nextMode === "composite") {
       setSelectedModel("gemini-3.1-flash-image-preview");
       setSelectedResolution("1k");
     }
   };
 
   useEffect(() => {
-    if (fidelityMode !== "strict") return;
+    if (fidelityMode !== "strict" && fidelityMode !== "composite") return;
     if (selectedModel !== "gemini-3.1-flash-image-preview") {
       setSelectedModel("gemini-3.1-flash-image-preview");
     }
@@ -1877,23 +1877,46 @@ const DetailDesignPage = () => {
               />
             </div>
 
-            <div className="mt-4 rounded-2xl border border-primary/20 bg-primary/5 p-3">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-sm font-semibold text-foreground">严格保真模式</div>
-                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                    适合手机壳、印花商品、包装类等对外形和图案一致性要求高的商品。开启后会优先锁定商品结构和图案，减少形变。
-                  </p>
-                </div>
-                <Switch
-                  checked={fidelityMode === "strict"}
-                  onCheckedChange={handleFidelityModeChange}
-                  aria-label="严格保真模式"
-                />
-              </div>
+            <div className="mt-4 space-y-2">
+              <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                还原模式
+              </label>
+              <RadioGroup
+                value={fidelityMode}
+                onValueChange={handleFidelityModeChange}
+                className="grid grid-cols-3 gap-2"
+              >
+                {([
+                  { value: "normal", label: "自由创意", desc: "AI 自由发挥，效果最丰富" },
+                  { value: "strict", label: "AI 保真", desc: "AI 尽力保留商品结构" },
+                  { value: "composite", label: "抠图合成", desc: "商品像素不变，只换背景" },
+                ] as const).map((opt) => (
+                  <label
+                    key={opt.value}
+                    className={`relative flex cursor-pointer flex-col items-center gap-1 rounded-xl border p-2 text-center transition-all ${
+                      fidelityMode === opt.value
+                        ? "border-primary bg-primary/10 shadow-sm"
+                        : "border-border bg-background hover:border-primary/30"
+                    }`}
+                  >
+                    <RadioGroupItem value={opt.value} className="sr-only" />
+                    <span className={`text-xs font-semibold ${fidelityMode === opt.value ? "text-primary" : "text-foreground"}`}>
+                      {opt.label}
+                    </span>
+                    <span className="text-[10px] leading-tight text-muted-foreground">
+                      {opt.desc}
+                    </span>
+                  </label>
+                ))}
+              </RadioGroup>
               {fidelityMode === "strict" && (
-                <p className="mt-3 rounded-xl bg-background/80 px-3 py-2 text-xs leading-5 text-primary">
+                <p className="rounded-xl bg-primary/5 px-3 py-2 text-[11px] leading-5 text-primary">
                   {strictModeDescription} 已优先使用 Nano Banana 2 和 1K 标准生成。
+                </p>
+              )}
+              {fidelityMode === "composite" && (
+                <p className="rounded-xl bg-amber-50 px-3 py-2 text-[11px] leading-5 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">
+                  每屏详情图都会自动抠图合成，商品像素级不变。建议上传背景干净的商品图。
                 </p>
               )}
             </div>

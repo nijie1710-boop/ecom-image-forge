@@ -830,7 +830,9 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
               chargeError: undefined,
             }));
 
-            const result = await generateImage({
+            const isDetailComposite = params.fidelityMode === "composite";
+            const detailGenerateFn = isDetailComposite ? generateCompositeImage : generateImage;
+            const result = await detailGenerateFn({
               prompt: screen.prompt,
               aspectRatio: params.aspectRatio,
               n: 1,
@@ -839,7 +841,7 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
               textLanguage: params.textLanguage,
               model: params.model,
               resolution: params.resolution,
-              referenceGallery: (gallery.filter(Boolean) as string[]).slice(
+              referenceGallery: isDetailComposite ? [] : (gallery.filter(Boolean) as string[]).slice(
                 0,
                 params.fidelityMode === "strict"
                   ? params.fidelityContext?.categoryHint === "phone-case"
@@ -847,8 +849,8 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                     : 5
                   : 1,
               ),
-              styleReferenceImage,
-              styleReferenceText: params.styleReferenceText,
+              styleReferenceImage: isDetailComposite ? undefined : styleReferenceImage,
+              styleReferenceText: isDetailComposite ? undefined : params.styleReferenceText,
               fidelityMode: params.fidelityMode,
               fidelityContext: params.fidelityContext,
               debugContext: {
