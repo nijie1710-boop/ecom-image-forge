@@ -1,7 +1,7 @@
 ﻿import { useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
@@ -430,21 +430,28 @@ const GeneratePage = () => {
     }
   }, [selectedModel, selectedResolution]);
 
-  const handleFidelityModeChange = (checked: boolean) => {
-    const nextMode: FidelityMode = checked ? "strict" : "normal";
+  const handleFidelityModeChange = (value: string) => {
+    const nextMode = value as FidelityMode;
     setFidelityMode(nextMode);
-    if (checked) {
+    if (nextMode === "strict" || nextMode === "composite") {
       setSelectedModel("gemini-3.1-flash-image-preview");
       setSelectedResolution("1k");
-      if (modelMode === "with_model") {
+      if (nextMode === "composite" && modelMode === "with_model") {
         setModelMode("none");
         setModelImage("");
       }
     }
+    // Auto-enable multi-reference when strict, auto-disable for composite (only needs 1 image)
+    if (nextMode === "strict" && !isBatchMode) {
+      setIsBatchMode(true);
+    }
+    if (nextMode === "composite" && isBatchMode) {
+      setIsBatchMode(false);
+    }
   };
 
   useEffect(() => {
-    if (fidelityMode !== "strict") return;
+    if (fidelityMode !== "strict" && fidelityMode !== "composite") return;
     if (selectedModel !== "gemini-3.1-flash-image-preview") {
       setSelectedModel("gemini-3.1-flash-image-preview");
     }
@@ -750,7 +757,7 @@ const GeneratePage = () => {
       modelMode,
       modelImage: modelImage || undefined,
       fidelityMode,
-      fidelityContext: fidelityMode === "strict" ? strictFidelityContext : undefined,
+      fidelityContext: fidelityMode !== "normal" ? strictFidelityContext : undefined,
       negativePrompt: negativePrompt.trim() || undefined,
       userId: user?.id,
       onComplete: (images: string[]) => {
@@ -974,6 +981,63 @@ const GeneratePage = () => {
           <div className="space-y-4 rounded-3xl border border-border bg-card p-3 pb-24 shadow-sm sm:space-y-5 sm:p-4 md:p-5 lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto lg:pb-6">
         <div className="rounded-2xl border border-primary/15 bg-primary/5 p-3 text-xs leading-5 text-muted-foreground">
           适合单张或多张独立图片生成，不负责整套详情页结构策划。
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            还原模式
+          </label>
+          <RadioGroup
+            value={fidelityMode}
+            onValueChange={handleFidelityModeChange}
+            className="grid grid-cols-3 gap-2"
+          >
+            {([
+              { value: "normal", label: "自由创意", desc: "AI 自由发挥，效果最丰富" },
+              { value: "strict", label: "AI 保真", desc: "AI 尽力保留商品结构" },
+              { value: "composite", label: "抠图合成", desc: "商品像素不变，只换背景" },
+            ] as const).map((opt) => (
+              <label
+                key={opt.value}
+                className={`relative flex cursor-pointer flex-col items-center gap-1 rounded-xl border p-2 text-center transition-all ${
+                  fidelityMode === opt.value
+                    ? "border-primary bg-primary/10 shadow-sm"
+                    : "border-border bg-background hover:border-primary/30"
+                }`}
+              >
+                <RadioGroupItem value={opt.value} className="sr-only" />
+                <span className={`text-xs font-semibold ${fidelityMode === opt.value ? "text-primary" : "text-foreground"}`}>
+                  {opt.label}
+                </span>
+                <span className="text-[10px] leading-tight text-muted-foreground">
+                  {opt.desc}
+                </span>
+              </label>
+            ))}
+          </RadioGroup>
+          {fidelityMode === "strict" && (
+            <div className="space-y-1.5">
+              <p className="rounded-xl bg-primary/5 px-3 py-2 text-[11px] leading-5 text-primary">
+                {strictModeDescription}
+              </p>
+              <p className="px-1 text-[10px] leading-4 text-muted-foreground">
+                建议开启"多参考图"并上传多个角度：
+                {strictCategoryHint === "phone-case"
+                  ? "正面、背面、侧边、镜头孔特写（最多 6 张）"
+                  : strictCategoryHint === "printed-product"
+                  ? "正面、背面、图案特写（最多 5 张）"
+                  : strictCategoryHint === "packaging"
+                  ? "正面、背面、侧面、标签特写（最多 5 张）"
+                  : "正面、侧面、细节特写（最多 4 张）"}
+                。角度越多，还原度越高。
+              </p>
+            </div>
+          )}
+          {fidelityMode === "composite" && (
+            <p className="rounded-xl bg-amber-50 px-3 py-2 text-[11px] leading-5 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">
+              商品将被自动抠图后贴到 AI 生成的场景上，商品本身像素级不变。建议上传背景干净的商品图以获得最佳抠图效果。
+            </p>
+          )}
         </div>
 
         <div className="space-y-2">
@@ -1245,27 +1309,6 @@ const GeneratePage = () => {
           />
         </div>
 
-        <div className="rounded-2xl border border-primary/20 bg-primary/5 p-3">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className="text-sm font-semibold text-foreground">严格保真模式</div>
-              <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                适合手机壳、印花商品、包装类等对外形和图案一致性要求高的商品。开启后会优先锁定商品结构和图案，减少形变。
-              </p>
-            </div>
-            <Switch
-              checked={fidelityMode === "strict"}
-              onCheckedChange={handleFidelityModeChange}
-              aria-label="严格保真模式"
-            />
-          </div>
-          {fidelityMode === "strict" && (
-            <p className="mt-3 rounded-xl bg-background/80 px-3 py-2 text-xs leading-5 text-primary">
-              {strictModeDescription}
-            </p>
-          )}
-        </div>
-
         {sceneSuggestions.length > 0 && sceneSuggestions[selectedSuggestionIndex] && (
           <div className="flex items-center gap-2 rounded-lg bg-primary/5 px-3 py-2 text-xs text-primary">
             <Check className="h-3.5 w-3.5 shrink-0" />
@@ -1351,9 +1394,11 @@ const GeneratePage = () => {
                     </button>
                   </div>
                 </div>
-                {fidelityMode === "strict" && (
+                {(fidelityMode === "strict" || fidelityMode === "composite") && (
                   <p className="text-[11px] leading-5 text-muted-foreground">
-                    严格保真模式下会默认减少人物和手持遮挡，因此暂不启用模特图。
+                    {fidelityMode === "composite"
+                      ? "抠图合成模式下不支持模特图，商品会直接贴到场景上。"
+                      : "AI 保真模式下会默认减少人物和手持遮挡，因此暂不启用模特图。"}
                   </p>
                 )}
 
@@ -1554,7 +1599,7 @@ const GeneratePage = () => {
                   { label: "模型", value: selectedModelLabel },
                   { label: "规格", value: `${selectedResolutionLabel} / ${selectedRatio}` },
                   { label: "文字语言", value: selectedLanguageLabel },
-                  { label: "保真模式", value: fidelityMode === "strict" ? "严格保真" : "标准" },
+                  { label: "还原模式", value: fidelityMode === "composite" ? "抠图合成" : fidelityMode === "strict" ? "AI 保真" : "自由创意" },
                 ]}
               />
             </WorkspaceSection>

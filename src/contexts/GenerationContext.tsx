@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useMemo, useRef, useStat
 import {
   type FidelityContext,
   generateImage,
+  generateCompositeImage,
   type FidelityMode,
   type GenerationModel,
   type ModelMode,
@@ -657,14 +658,17 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
               ? "\n[IMAGE TYPE: Detail/lifestyle image - show the product in a real usage scenario with contextual props. NOT a hero product shot.]"
               : "";
 
-            const result = await generateImage({
+            const isComposite = params.fidelityMode === "composite";
+            const generateFn = isComposite ? generateCompositeImage : generateImage;
+            const result = await generateFn({
               ...params,
               prompt: params.prompt + variationSuffix + negativeText + imageTypeHint,
               n: 1,
               imageBase64: primaryImage,
-              referenceGallery: gallery.filter(Boolean) as string[],
-              styleReferenceImage,
-              modelImage,
+              referenceGallery: isComposite ? [] : (gallery.filter(Boolean) as string[]),
+              styleReferenceImage: isComposite ? undefined : styleReferenceImage,
+              modelImage: isComposite ? undefined : modelImage,
+              modelMode: isComposite ? "none" : params.modelMode,
               fidelityContext: params.fidelityContext,
               debugContext: {
                 source: "main",
