@@ -265,10 +265,13 @@ export async function uploadImageToServer(
 
   const data = await res.json();
   // Return the full URL with server origin
-  // For uploads, always use the production domain since uploads are stored on
-  // the main server and staging subdomain SSL may not be accessible externally
+  // Staging uses a separate uploads dir exposed via www.picspark.cn/uploads-staging/
   if (data.url.startsWith("/uploads/")) {
-    return `https://www.picspark.cn${data.url}`;
+    const isStaging = SELF_HOSTED_API_URL.includes("staging");
+    if (isStaging) {
+      return `https://www.picspark.cn/uploads-staging/${data.url.replace("/uploads/", "")}`;
+    }
+    return `${SELF_HOSTED_API_URL}${data.url}`;
   }
   if (data.url.startsWith("/")) {
     return `${SELF_HOSTED_API_URL}${data.url}`;
