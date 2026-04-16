@@ -1053,7 +1053,21 @@ const DetailDesignPage = () => {
   };
 
   const removeImage = (index: number) => {
-    setProductImages((current) => current.filter((_, currentIndex) => currentIndex !== index));
+    setProductImages((current) => {
+      const next = current.filter((_, currentIndex) => currentIndex !== index);
+      // When user removes the LAST product image, wipe product-specific content so
+      // the next upload starts fresh. User-level preferences (platform/language/
+      // model/ratio/resolution/fidelity) are preserved on purpose.
+      if (next.length === 0) {
+        setProductInfo("");
+        setStyleReferenceImage("");
+        setStyleReferenceText("");
+        setScreenIdeas([]);
+        setUseScreenIdeas(false);
+        setShowScreenIdeas(false);
+      }
+      return next;
+    });
     resetPlan();
   };
 
