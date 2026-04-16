@@ -131,20 +131,6 @@ function normalizeModelLabel(model: GenerationModel | undefined): GenerationMode
   return model || "gemini-2.5-flash-image";
 }
 
-/**
- * gemini-2.5-flash-image (Nano Banana) has poor non-English text rendering.
- * Auto-upgrade to gemini-3.1-flash-image-preview when non-English text is needed.
- */
-function autoUpgradeModelForLanguage(
-  model: GenerationModel,
-  textLanguage: string | undefined,
-): GenerationModel {
-  if (model === "gemini-2.5-flash-image" && textLanguage && textLanguage !== "en" && textLanguage !== "pure") {
-    return "gemini-3.1-flash-image-preview";
-  }
-  return model;
-}
-
 function normalizeResolution(resolution: OutputResolution | undefined): OutputResolution {
   return resolution || "1k";
 }
@@ -336,7 +322,7 @@ async function generateSingleImageRaw(
       aspectRatio: params.aspectRatio || "1:1",
       imageType: params.imageType || "主图",
       textLanguage: params.textLanguage || "zh",
-      model: autoUpgradeModelForLanguage(normalizeModelLabel(params.model), params.textLanguage),
+      model: normalizeModelLabel(params.model),
       resolution: normalizeResolution(params.resolution),
       referenceGallery: params.referenceGallery || [],
       referenceStyleUrl: params.styleReferenceImage || undefined,

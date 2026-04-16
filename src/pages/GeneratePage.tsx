@@ -453,6 +453,14 @@ const GeneratePage = () => {
     }
   }, [fidelityMode, selectedModel, selectedResolution]);
 
+  // Nano Banana only supports English text — force language when selected
+  const isNanoBanana = selectedModel === "gemini-2.5-flash-image";
+  useEffect(() => {
+    if (isNanoBanana && textLanguage !== "en" && textLanguage !== "pure") {
+      setTextLanguage("en");
+    }
+  }, [isNanoBanana, textLanguage]);
+
   useEffect(() => {
     if (templateId && !appliedTemplate) {
       setAppliedTemplate(templateId);
@@ -1202,12 +1210,19 @@ const GeneratePage = () => {
             value={selectedCount}
             onChange={setSelectedCount}
           />
-          <SelectField
-            label="文字语言"
-            options={languageOptions}
-            value={textLanguage}
-            onChange={setTextLanguage}
-          />
+          <div className="space-y-1">
+            <SelectField
+              label="文字语言"
+              options={isNanoBanana ? languageOptions.filter((o) => o.value === "en" || o.value === "pure") : languageOptions}
+              value={textLanguage}
+              onChange={setTextLanguage}
+            />
+            {isNanoBanana && (
+              <div className="text-[10px] text-amber-600">
+                Nano Banana 仅支持英文文字，其他语言会出现乱码
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
