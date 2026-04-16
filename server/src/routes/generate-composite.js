@@ -1,16 +1,17 @@
 /**
  * generate-composite.js
  *
- * Composite generation flow:
- * 1. Remove background from product image
- * 2. Generate scene background with Gemini (no product)
- * 3. Composite product onto scene
- * 4. Save result and return URL
+ * Cutout composite flow (powered by Gemini native compositing):
+ * 1. Remove background from product image (preserves exact product pixels as reference)
+ * 2. Send transparent cutout + scene prompt to Gemini in one call.
+ *    Gemini integrates the product into a new scene with natural lighting,
+ *    shadows, reflections, and perspective — rather than a flat programmatic paste.
+ * 3. Return the generated composite.
  */
 import { Router } from "express";
 import { requireAuth } from "../middleware/auth.js";
-import { callGeminiImageWithFallback, resolveImageModelSelection, FunctionError } from "../utils/gemini.js";
-import { removeProductBackground, createShadowLayer } from "../utils/composite.js";
+import { callGeminiImageWithFallback, FunctionError } from "../utils/gemini.js";
+import { removeProductBackground } from "../utils/composite.js";
 import sharp from "sharp";
 
 const router = Router();
@@ -71,40 +72,90 @@ function normalizeTextLanguage(value) {
   return (value || "zh").toLowerCase();
 }
 
-function aspectRatioDimensions(ratio, baseSize = 1024) {
+function orientationFromAspect(ratio) {
   const [w, h] = ratio.split(":").map(Number);
-  if (!w || !h) return { width: baseSize, height: baseSize };
-  if (w >= h) {
-    return { width: baseSize, height: Math.round(baseSize * (h / w)) };
-  }
-  return { width: Math.round(baseSize * (w / h)), height: baseSize };
+  if (!w || !h || w === h) return "square";
+  return w > h ? "landscape" : "portrait";
 }
 
-function buildScenePrompt(userPrompt, aspectRatio, textLanguage) {
+/**
+ * Trim the transparent PNG to its visible pixel bbox so Gemini gets
+ * a tighter signal of what's "the product". Also upscale small cutouts
+ * slightly to give Gemini more detail to work with.
+ */
+async function normalizeCutout(pngBuffer) {
+  try {
+    const img = sharp(pngBuffer);
+    const meta = await img.metadata();
+    // trim() strips edge pixels matching the top-left corner (transparent for our PNG)
+    const trimmed = await img.trim({ threshold: 10 }).png().toBuffer();
+    const trimmedMeta = await sharp(trimmed).metadata();
+    const maxDim = Math.max(trimmedMeta.width || 0, trimmedMeta.height || 0);
+    // Ensure product is at least 1024px on longest edge for better detail
+    if (maxDim > 0 && maxDim < 1024) {
+      const scale = 1024 / maxDim;
+      return await sharp(trimmed)
+        .resize(
+          Math.round((trimmedMeta.width || 0) * scale),
+          Math.round((trimmedMeta.height || 0) * scale),
+          { fit: "inside" },
+        )
+        .png()
+        .toBuffer();
+    }
+    return trimmed;
+  } catch (err) {
+    console.warn("generate-composite: normalizeCutout failed, using raw cutout:", err.message);
+    return pngBuffer;
+  }
+}
+
+function buildCompositePrompt(userPrompt, aspectRatio, textLanguage) {
   const langMap = { zh: "Simplified Chinese", en: "English", ja: "Japanese", ko: "Korean" };
   const targetLanguage = langMap[textLanguage] || "Simplified Chinese";
-  const { width, height } = aspectRatioDimensions(aspectRatio);
-  const orientation = width > height ? "landscape" : width < height ? "portrait" : "square";
+  const orientation = orientationFromAspect(aspectRatio);
 
   return [
-    "=== BACKGROUND SCENE GENERATION ===",
-    "Generate ONLY a background scene image. Do NOT include any product, item, or object as the main subject.",
-    "The scene must have a clear, open focal area in the center where a product will be digitally composited later.",
-    `Canvas: ${aspectRatio} (${orientation}, ${width}x${height} target).`,
+    "=== CUTOUT COMPOSITE TASK ===",
+    "You are given TWO product images:",
+    "  - Reference 1: the ORIGINAL product photo (for texture, color, and detail reference)",
+    "  - Reference 2: the SAME product with its background removed (transparent PNG, shows exact silhouette)",
     "",
-    "COMPOSITION RULES:",
-    "- Leave the center ~40% of the image relatively clean and uncluttered.",
-    "- Background elements (props, surfaces, environment) should frame the empty center area.",
-    "- Use natural, professional e-commerce photography lighting.",
-    "- The surface/table/background should look realistic and high-quality.",
-    "- Do NOT place any product, box, phone, bag, or main object in the scene.",
-    "- Small decorative props at the edges are acceptable (flowers, leaves, fabric, small accessories).",
+    "Your job: place this exact product into a new scene, fully integrated.",
     "",
-    textLanguage !== "pure"
-      ? `Any text in the scene must be in ${targetLanguage}.`
-      : "Do not include any text in the scene.",
+    "=== ABSOLUTE PRODUCT PRESERVATION ===",
+    "- Copy the product's exact silhouette from Reference 2.",
+    "- Copy the product's exact colors, materials, and textures from Reference 1.",
+    "- Preserve EVERY logo, printed text, label, icon, and graphic EXACTLY — do not redraw or restyle.",
+    "- Do NOT alter the product's shape, proportions, or structure.",
+    "- Do NOT add decorative elements ON the product.",
     "",
-    `SCENE DESCRIPTION: ${userPrompt}`,
+    "=== NATURAL SCENE INTEGRATION ===",
+    "Do NOT paste the product flat onto the scene. Render the full composite as one coherent photograph:",
+    "- Light the product consistently with the scene (direction, color temperature, intensity).",
+    "- Add a realistic CONTACT shadow directly beneath/behind the product (soft, diffuse, matching the scene's dominant light direction).",
+    "- Add ambient-occlusion darkening where the product meets surfaces.",
+    "- If the scene has a glossy surface (table, floor, water), add a subtle, realistic reflection.",
+    "- Match global color grading (white balance, saturation) so the product belongs in the scene.",
+    "- Respect perspective: if the scene has a tilted/angled surface, the product's base should sit naturally on it.",
+    "",
+    "=== COMPOSITION ===",
+    `- Canvas: ${aspectRatio} (${orientation}).`,
+    "- Place the product as the hero subject, occupying roughly 45-65% of the frame.",
+    "- Use rule-of-thirds or centered hero composition appropriate for e-commerce.",
+    "- Leave breathing room around the product; do NOT crop the product.",
+    "",
+    "=== TEXT POLICY ===",
+    textLanguage === "pure"
+      ? "- Do NOT add any new scene text. Preserve existing product text exactly as-is."
+      : `- Any newly added scene text must be in ${targetLanguage}. Preserve existing product text exactly as-is.`,
+    "",
+    "=== QUALITY ===",
+    "- Professional e-commerce product photography quality.",
+    "- Sharp product, appropriate depth-of-field on the background.",
+    "- No visible compositing artifacts (halos, color fringing, hard edges).",
+    "",
+    `=== SCENE DESCRIPTION ===\n${userPrompt}`,
   ].join("\n");
 }
 
@@ -129,7 +180,9 @@ router.post("/", requireAuth, async (req, res) => {
 
     const normalizedAspectRatio = normalizeAspectRatio(body.aspectRatio);
     const normalizedTextLanguage = normalizeTextLanguage(body.textLanguage);
-    const userPrompt = String(body.prompt || "Clean white surface with soft natural lighting, suitable for e-commerce product photography");
+    const userPrompt = String(
+      body.prompt || "Clean white surface with soft natural lighting, suitable for e-commerce product photography",
+    );
     const normalizedModel = String(body.model || "gemini-3.1-flash-image-preview");
 
     console.info("generate-composite: starting", {
@@ -139,11 +192,11 @@ router.post("/", requireAuth, async (req, res) => {
       promptLength: userPrompt.length,
     });
 
-    // Step 1: Remove background from product
+    // Step 1: Remove background from product (transparent cutout)
     console.info("generate-composite: step 1 - removing background");
-    let transparentProduct;
+    let transparentProductRaw;
     try {
-      transparentProduct = await removeProductBackground(productBuffer);
+      transparentProductRaw = await removeProductBackground(productBuffer);
     } catch (err) {
       console.error("generate-composite: background removal failed:", err.message);
       return res.status(500).json({
@@ -153,38 +206,45 @@ router.post("/", requireAuth, async (req, res) => {
       });
     }
 
-    // Step 2: Generate scene background with Gemini
-    console.info("generate-composite: step 2 - generating scene background");
-    const scenePrompt = buildScenePrompt(userPrompt, normalizedAspectRatio, normalizedTextLanguage);
+    // Trim transparent padding and upscale so Gemini receives a detail-rich reference
+    const transparentProduct = await normalizeCutout(transparentProductRaw);
+    const cutoutBase64 = transparentProduct.toString("base64");
 
-    // Optionally include product image as reference (so Gemini knows what kind of scene to create)
-    const productRef = await resolveImageToBase64(productSource);
-    const sceneParts = [
-      { text: scenePrompt },
-    ];
+    // Also prepare the ORIGINAL product (for color/texture reference that survives cutout artifacts)
+    const originalRef = await resolveImageToBase64(productSource);
 
-    // Include product as a hint for scene style (but instruct NOT to include the product itself)
-    if (productRef) {
-      sceneParts.push(
-        { text: "PRODUCT REFERENCE (for context only - do NOT include this product in the scene, just use it to understand what kind of product will be placed here):" },
-        { inlineData: { mimeType: productRef.mimeType, data: productRef.base64 } },
+    // Step 2: Single Gemini call — natural scene + product composite with integrated lighting
+    console.info("generate-composite: step 2 - Gemini composite");
+    const compositePrompt = buildCompositePrompt(userPrompt, normalizedAspectRatio, normalizedTextLanguage);
+
+    const parts = [{ text: compositePrompt }];
+    if (originalRef) {
+      parts.push(
+        { text: "REFERENCE 1 — ORIGINAL product photo (use for exact colors, materials, text, logos):" },
+        { inlineData: { mimeType: originalRef.mimeType, data: originalRef.base64 } },
       );
     }
+    parts.push(
+      { text: "REFERENCE 2 — product with background removed (use for exact silhouette and outline):" },
+      { inlineData: { mimeType: "image/png", data: cutoutBase64 } },
+    );
 
-    let sceneImageUrl;
+    let imageUrl;
+    let geminiMeta = {};
     try {
-      const sceneResult = await callGeminiImageWithFallback({
+      const result = await callGeminiImageWithFallback({
         apiKey: geminiApiKey,
-        functionName: "generate-composite-scene",
+        functionName: "generate-composite",
         selectedModel: normalizedModel,
-        parts: sceneParts,
+        parts,
       });
-      sceneImageUrl = sceneResult.imageUrl;
+      imageUrl = result.imageUrl;
+      geminiMeta = result.meta;
     } catch (err) {
       if (err instanceof FunctionError) {
         return res.status(err.status).json({
           error: err.code,
-          message: "场景背景生成失败：" + err.message,
+          message: "抠图合成失败：" + err.message,
           detail: err.detail,
           meta: err.meta,
         });
@@ -192,72 +252,17 @@ router.post("/", requireAuth, async (req, res) => {
       throw err;
     }
 
-    // Convert scene data URL to buffer
-    const sceneMatch = sceneImageUrl.match(/^data:([^;]+);base64,(.+)$/i);
-    if (!sceneMatch) {
-      return res.status(500).json({ error: "SCENE_GENERATION_FAILED", message: "场景背景生成结果无效" });
-    }
-    let sceneBgBuffer = Buffer.from(sceneMatch[2], "base64");
-
-    // Resize scene to target dimensions
-    const { width: targetW, height: targetH } = aspectRatioDimensions(normalizedAspectRatio);
-    sceneBgBuffer = await sharp(sceneBgBuffer)
-      .resize(targetW, targetH, { fit: "cover" })
-      .jpeg({ quality: 95 })
-      .toBuffer();
-
-    // Step 3: Composite product onto scene
-    console.info("generate-composite: step 3 - compositing");
-
-    // Get product dimensions for shadow
-    const productMeta = await sharp(transparentProduct).metadata();
-    const productWidth = productMeta.width || 512;
-    const productHeight = productMeta.height || 512;
-    const scaleX = (targetW * 0.70) / productWidth;
-    const scaleY = (targetH * 0.70) / productHeight;
-    const scale = Math.min(scaleX, scaleY);
-    const newWidth = Math.round(productWidth * scale);
-    const newHeight = Math.round(productHeight * scale);
-    const pLeft = Math.round((targetW - newWidth) / 2);
-    const pTop = Math.round((targetH - newHeight) / 2);
-
-    // Add shadow layer
-    const shadowSvg = await createShadowLayer(targetW, targetH, {
-      left: pLeft,
-      top: pTop,
-      width: newWidth,
-      height: newHeight,
-    });
-
-    // Composite: scene → shadow → product
-    const resizedProduct = await sharp(transparentProduct)
-      .resize(newWidth, newHeight, { fit: "inside", background: { r: 0, g: 0, b: 0, alpha: 0 } })
-      .png()
-      .toBuffer();
-
-    const compositeResult = await sharp(sceneBgBuffer)
-      .composite([
-        { input: shadowSvg, left: 0, top: 0, blend: "over" },
-        { input: resizedProduct, left: Math.max(0, pLeft), top: Math.max(0, pTop), blend: "over" },
-      ])
-      .jpeg({ quality: 92 })
-      .toBuffer();
-
-    // Step 4: Return as data URL (consistent with generate-image endpoint)
-    const compositeDataUrl = `data:image/jpeg;base64,${compositeResult.toString("base64")}`;
-
     console.info("generate-composite: done", {
       userId: req.user.id,
-      outputSize: compositeResult.length,
+      modelUsed: geminiMeta?.modelUsed,
     });
 
     res.json({
-      images: [compositeDataUrl],
+      images: [imageUrl],
       meta: {
         mode: "composite",
         aspectRatio: normalizedAspectRatio,
-        productSize: { width: newWidth, height: newHeight },
-        sceneSize: { width: targetW, height: targetH },
+        ...geminiMeta,
       },
     });
   } catch (err) {
