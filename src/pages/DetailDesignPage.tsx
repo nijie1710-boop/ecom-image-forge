@@ -1143,12 +1143,44 @@ const DetailDesignPage = () => {
         styleReferenceImage: styleReferenceImage || undefined,
       });
 
-      setProductSummary(result.productSummary);
-      setVisibleText(result.visibleText);
-      setPlanOptions(result.planOptions || []);
+      // 对后端返回做防御性补全，避免下游渲染访问 undefined 崩溃
+      const safePlanOptions = (result.planOptions || []).map((plan) => ({
+        planName: plan?.planName || "方案",
+        tone: plan?.tone || "",
+        audience: plan?.audience || "",
+        summary: plan?.summary || "",
+        designSpec: {
+          mainColors: plan?.designSpec?.mainColors || [],
+          accentColors: plan?.designSpec?.accentColors || [],
+          typography: plan?.designSpec?.typography || "",
+          layoutTone: plan?.designSpec?.layoutTone || "",
+          imageStyle: plan?.designSpec?.imageStyle || "",
+          languageGuidelines: plan?.designSpec?.languageGuidelines || "",
+        },
+        screens: (plan?.screens || []).map((s) => ({
+          screen: s?.screen ?? 0,
+          title: s?.title || "",
+          goal: s?.goal || "",
+          visualDirection: s?.visualDirection || "",
+          copyPoints: s?.copyPoints || [],
+          overlayTitle: s?.overlayTitle || "",
+          overlayBodyLines: s?.overlayBodyLines || [],
+          humanModelSuggested: s?.humanModelSuggested,
+          humanModelReason: s?.humanModelReason,
+        })),
+      }));
+
+      setProductSummary(result.productSummary || "");
+      setVisibleText(result.visibleText || "");
+      setPlanOptions(safePlanOptions);
       setSelectedOptionIndex(0);
     } catch (planError) {
-      setError(normalizeUserErrorMessage(planError, "详情页策划失败，请稍后重试。"));
+      const msg = normalizeUserErrorMessage(planError, "详情页策划失败，请稍后重试。");
+      // Gemini 上游 503 等瞬时错误给出更友好的提示
+      const isUpstreamBusy = /503|overload|high demand|UPSTREAM/i.test(
+        planError instanceof Error ? planError.message : String(planError ?? ""),
+      );
+      setError(isUpstreamBusy ? "AI 服务当前繁忙（Gemini 503），请稍后 1-2 分钟再试。" : msg);
     } finally {
       setIsLoading(false);
     }

@@ -8,6 +8,21 @@ interface ErrorBoundaryProps {
 
 interface ErrorBoundaryState {
   error: Error | null;
+  componentStack: string | null;
+  autoRetried: boolean;
+}
+
+/** Transient errors that are worth auto-retrying (usually caused by Chrome
+ * auto-translate racing with React reconcile). After one silent reset they
+ * normally disappear. */
+function isTransientDomError(error: Error): boolean {
+  const name = error.name || "";
+  const message = error.message || "";
+  return (
+    name === "NotFoundError" ||
+    name === "IndexSizeError" ||
+    /removeChild|insertBefore|appendChild/.test(message)
+  );
 }
 
 /**
@@ -19,23 +34,32 @@ interface ErrorBoundaryState {
  * 3. 第三方组件的运行时异常
  */
 export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  state: ErrorBoundaryState = { error: null };
+  state: ErrorBoundaryState = { error: null, componentStack: null, autoRetried: false };
 
-  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+  static getDerivedStateFromError(error: Error): Partial<ErrorBoundaryState> {
     return { error };
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     // 打印到 console，方便在 DevTools / 监控里排查
     console.error("[ErrorBoundary] Caught render error:", error, info);
+    this.setState({ componentStack: info.componentStack ?? null });
+
+    // 对于 Chrome 翻译 / DOM race 等瞬态错误，静默自愈一次
+    if (!this.state.autoRetried && isTransientDomError(error)) {
+      this.setState({ autoRetried: true });
+      queueMicrotask(() => {
+        this.setState({ error: null, componentStack: null });
+      });
+    }
   }
 
   reset = () => {
-    this.setState({ error: null });
+    this.setState({ error: null, componentStack: null, autoRetried: false });
   };
 
   render() {
-    const { error } = this.state;
+    const { error, componentStack } = this.state;
     if (!error) return this.props.children;
 
     if (this.props.fallback) {
@@ -100,6 +124,8 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
               }}
             >
               {error.name}: {error.message}
+              {error.stack ? `\n\n${error.stack}` : ""}
+              {componentStack ? `\n\n组件栈：${componentStack}` : ""}
             </pre>
           </details>
           <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
