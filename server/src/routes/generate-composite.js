@@ -86,19 +86,20 @@ function orientationFromAspect(ratio) {
 async function normalizeCutout(pngBuffer) {
   try {
     const img = sharp(pngBuffer);
-    const meta = await img.metadata();
     // trim() strips edge pixels matching the top-left corner (transparent for our PNG)
     const trimmed = await img.trim({ threshold: 10 }).png().toBuffer();
     const trimmedMeta = await sharp(trimmed).metadata();
     const maxDim = Math.max(trimmedMeta.width || 0, trimmedMeta.height || 0);
-    // Ensure product is at least 1024px on longest edge for better detail
-    if (maxDim > 0 && maxDim < 1024) {
-      const scale = 1024 / maxDim;
+    // Ensure product is at least 2048px on longest edge so Gemini sees fine detail
+    // (logo strokes, button edges, pattern textures). Cap at 2048 to avoid oversized payloads.
+    const targetDim = 2048;
+    if (maxDim > 0 && maxDim < targetDim) {
+      const scale = targetDim / maxDim;
       return await sharp(trimmed)
         .resize(
           Math.round((trimmedMeta.width || 0) * scale),
           Math.round((trimmedMeta.height || 0) * scale),
-          { fit: "inside" },
+          { fit: "inside", kernel: "lanczos3" },
         )
         .png()
         .toBuffer();
@@ -117,27 +118,40 @@ function buildCompositePrompt(userPrompt, aspectRatio, textLanguage) {
 
   return [
     "=== CUTOUT COMPOSITE TASK ===",
-    "You are given TWO product images:",
-    "  - Reference 1: the ORIGINAL product photo (for texture, color, and detail reference)",
-    "  - Reference 2: the SAME product with its background removed (transparent PNG, shows exact silhouette)",
+    "PRIMARY RULE: Product fidelity outweighs scene aesthetics. If a trade-off is needed, always choose fidelity.",
     "",
-    "Your job: place this exact product into a new scene, fully integrated.",
+    "You are given TWO references:",
+    "  - Reference 1 (PRIMARY, MUST COPY PIXEL-FOR-PIXEL): the product with background removed — transparent PNG.",
+    "    Treat this as the source of truth for silhouette, proportions, logos, text, patterns, and every surface detail.",
+    "  - Reference 2 (SECONDARY, color calibration only): the original product photo — use ONLY to recover colors/materials",
+    "    where the cutout looks washed out. Do NOT copy background or composition from Reference 2.",
     "",
-    "=== ABSOLUTE PRODUCT PRESERVATION ===",
-    "- Copy the product's exact silhouette from Reference 2.",
-    "- Copy the product's exact colors, materials, and textures from Reference 1.",
-    "- Preserve EVERY logo, printed text, label, icon, and graphic EXACTLY — do not redraw or restyle.",
-    "- Do NOT alter the product's shape, proportions, or structure.",
-    "- Do NOT add decorative elements ON the product.",
+    "Your job: place Reference 1 into a new scene described below, with natural light integration.",
     "",
-    "=== NATURAL SCENE INTEGRATION ===",
-    "Do NOT paste the product flat onto the scene. Render the full composite as one coherent photograph:",
-    "- Light the product consistently with the scene (direction, color temperature, intensity).",
-    "- Add a realistic CONTACT shadow directly beneath/behind the product (soft, diffuse, matching the scene's dominant light direction).",
+    "=== FORBIDDEN OPERATIONS (violating any of these is a failure) ===",
+    "- Do NOT re-render, redraw, or restyle ANY logo, brand mark, serial number, or printed text on the product.",
+    "- Do NOT alter the camera module shape, lens layout, button positions, ports, seams, or edge curvature.",
+    "- Do NOT repaint, regenerate, or 'improve' patterns, prints, or decorative graphics on the product —",
+    "  copy them from Reference 1 pixel-for-pixel, including imperfections.",
+    "- Do NOT change the product's surface finish (glossy → matte, brushed → polished, etc.).",
+    "- Do NOT add, remove, or modify any element ON the product (stickers, accessories, reflections baked into it, etc.).",
+    "- Do NOT change product proportions, aspect ratio, or shape silhouette.",
+    "- Do NOT replace the product with a 'similar looking' one — use THIS exact product, not a stylized rendition.",
+    "",
+    "=== REQUIRED PRODUCT PRESERVATION ===",
+    "- Match Reference 1's silhouette exactly, to sub-pixel accuracy.",
+    "- Match every logo, text, icon, and graphic character-for-character, in the same position, size, and font.",
+    "- Match the pattern/texture/print on the product pixel-for-pixel (same motif, same colors, same placement).",
+    "- Match the color temperature of the product body to Reference 2 (use it to correct any cutout artifacts).",
+    "",
+    "=== NATURAL SCENE INTEGRATION (only way to modify the product) ===",
+    "The ONLY legitimate modifications are global lighting adjustments applied uniformly — not repainting.",
+    "- Add a realistic CONTACT shadow directly beneath/behind the product (soft, diffuse, matching scene light direction).",
     "- Add ambient-occlusion darkening where the product meets surfaces.",
-    "- If the scene has a glossy surface (table, floor, water), add a subtle, realistic reflection.",
-    "- Match global color grading (white balance, saturation) so the product belongs in the scene.",
-    "- Respect perspective: if the scene has a tilted/angled surface, the product's base should sit naturally on it.",
+    "- If the scene has a glossy surface, add a subtle realistic reflection of the product.",
+    "- Apply the scene's global color grading (white balance, exposure) uniformly — do NOT spot-edit the product.",
+    "- Respect perspective: the product's base should sit naturally on any tilted/angled surface.",
+    "- Do NOT 'paste' the product flat — integrate light, but keep the product pixels intact.",
     "",
     "=== COMPOSITION ===",
     `- Canvas: ${aspectRatio} (${orientation}).`,
@@ -217,15 +231,17 @@ router.post("/", requireAuth, async (req, res) => {
     console.info("generate-composite: step 2 - Gemini composite");
     const compositePrompt = buildCompositePrompt(userPrompt, normalizedAspectRatio, normalizedTextLanguage);
 
+    // NOTE: Gemini weights the LAST image highest, so put the primary (pixel-exact cutout) last.
+    // Reference 1 = cutout (authoritative), Reference 2 = original (color calibration only).
     const parts = [{ text: compositePrompt }];
     if (originalRef) {
       parts.push(
-        { text: "REFERENCE 1 — ORIGINAL product photo (use for exact colors, materials, text, logos):" },
+        { text: "REFERENCE 2 — ORIGINAL product photo. Use ONLY for color/material calibration. Do NOT copy its background or composition." },
         { inlineData: { mimeType: originalRef.mimeType, data: originalRef.base64 } },
       );
     }
     parts.push(
-      { text: "REFERENCE 2 — product with background removed (use for exact silhouette and outline):" },
+      { text: "REFERENCE 1 (PRIMARY, PIXEL-EXACT SOURCE) — product with background removed. Copy this pixel-for-pixel: silhouette, logos, text, patterns, proportions." },
       { inlineData: { mimeType: "image/png", data: cutoutBase64 } },
     );
 

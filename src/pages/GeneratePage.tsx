@@ -433,10 +433,15 @@ const GeneratePage = () => {
   const handleFidelityModeChange = (value: string) => {
     const nextMode = value as FidelityMode;
     setFidelityMode(nextMode);
-    if (nextMode === "strict" || nextMode === "composite") {
+    if (nextMode === "strict") {
       setSelectedModel("gemini-3.1-flash-image-preview");
       setSelectedResolution("1k");
-      if (nextMode === "composite" && modelMode === "with_model") {
+    }
+    if (nextMode === "composite") {
+      // Composite defaults to Banana 2 (1k), but user can switch to Pro for better fidelity.
+      setSelectedModel("gemini-3.1-flash-image-preview");
+      setSelectedResolution("1k");
+      if (modelMode === "with_model") {
         setModelMode("none");
         setModelImage("");
       }
@@ -451,13 +456,17 @@ const GeneratePage = () => {
   };
 
   useEffect(() => {
-    if (fidelityMode !== "strict" && fidelityMode !== "composite") return;
-    if (selectedModel !== "gemini-3.1-flash-image-preview") {
-      setSelectedModel("gemini-3.1-flash-image-preview");
+    // Strict mode: hard lock on Banana 2 + 1k (unchanged).
+    if (fidelityMode === "strict") {
+      if (selectedModel !== "gemini-3.1-flash-image-preview") {
+        setSelectedModel("gemini-3.1-flash-image-preview");
+      }
+      if (selectedResolution !== "1k") {
+        setSelectedResolution("1k");
+      }
+      return;
     }
-    if (selectedResolution !== "1k") {
-      setSelectedResolution("1k");
-    }
+    // Composite mode: no longer force Banana 2 — user may select Pro for higher fidelity.
   }, [fidelityMode, selectedModel, selectedResolution]);
 
   // Nano Banana only supports English text — force language when selected
@@ -863,6 +872,34 @@ const GeneratePage = () => {
     });
   };
 
+  const handleRegenerateIndividual = async (index: number) => {
+    if (!ctxRegenerateSingle || !activeJob || !lastParams) {
+      setErrorMessage("系统初始化中，请刷新页面后重试");
+      return;
+    }
+
+    const singleModel = lastParams.model || selectedModel;
+    const singleRes = lastParams.resolution || selectedResolution;
+    const cost = getGenerateImageUnitCost(singleModel, singleRes);
+    const modelLabel =
+      modelOptions.find((o) => o.value === singleModel)?.label || singleModel;
+
+    setErrorMessage(null);
+
+    const deductResult = await deductCredits(
+      cost,
+      "generate_image",
+      `AI 主图单图重新生成（${modelLabel} ${singleRes}，${cost} 积分）`,
+    );
+    if (!deductResult.success) {
+      setErrorMessage(deductResult.error || "积分不足，请先充值");
+      return;
+    }
+    refreshBalance();
+
+    await ctxRegenerateSingle(activeJob.id, index, lastParams);
+  };
+
   const buildCuratedSeed = (src: string) => ({
     image_url: src,
     prompt: [productBrief.trim(), textPrompt.trim()].filter(Boolean).join("\n"),
@@ -1034,9 +1071,16 @@ const GeneratePage = () => {
             </div>
           )}
           {fidelityMode === "composite" && (
-            <p className="rounded-xl bg-amber-50 px-3 py-2 text-[11px] leading-5 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">
-              商品将被自动抠图后贴到 AI 生成的场景上，商品本身像素级不变。建议上传背景干净的商品图以获得最佳抠图效果。
-            </p>
+            <div className="space-y-1.5 rounded-xl bg-amber-50 px-3 py-2 text-[11px] leading-5 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">
+              <p>
+                商品将被自动抠图后融入 AI 生成的新场景，Gemini 会尽量保持商品细节一致。建议上传背景干净的商品图以获得最佳抠图效果。
+              </p>
+              {selectedModel !== "nano-banana-pro-preview" && (
+                <p className="text-amber-800 dark:text-amber-300">
+                  💡 追求更高保真度可切换到 <span className="font-semibold">Nano Banana Pro</span>，对 logo、文字、图案细节的还原明显更准（扣费会相应增加）。
+                </p>
+              )}
+            </div>
           )}
         </div>
 
@@ -1715,11 +1759,7 @@ const GeneratePage = () => {
                     )}
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                       <button
-                        onClick={() => {
-                          if (ctxRegenerateSingle && activeJob && lastParams) {
-                            ctxRegenerateSingle(activeJob.id, index, lastParams);
-                          }
-                        }}
+                        onClick={() => handleRegenerateIndividual(index)}
                         disabled={isGenerating || regeneratingIndex !== null}
                         className="rounded-xl border border-primary/30 bg-primary/5 px-3 py-2 text-xs font-medium text-primary transition hover:bg-primary/10 disabled:opacity-50"
                       >

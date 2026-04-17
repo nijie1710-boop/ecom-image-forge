@@ -1093,10 +1093,16 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         ? "\n[IMAGE TYPE: Detail/lifestyle image - show the product in a real usage scenario with contextual props. NOT a hero product shot.]"
         : "";
 
-      const result = await generateImage({
+      const isComposite = params.fidelityMode === "composite";
+      const generateFn = isComposite ? generateCompositeImage : generateImage;
+      const result = await generateFn({
         ...params,
         prompt: params.prompt + variationSuffix + negativeText + imageTypeHint,
         n: 1,
+        referenceGallery: isComposite ? [] : params.referenceGallery,
+        styleReferenceImage: isComposite ? undefined : params.styleReferenceImage,
+        modelImage: isComposite ? undefined : params.modelImage,
+        modelMode: isComposite ? "none" : params.modelMode,
       });
 
       if (result.images[0]) {
