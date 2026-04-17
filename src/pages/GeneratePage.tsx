@@ -1,7 +1,7 @@
 ﻿import { useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
@@ -28,6 +28,8 @@ import {
   X,
   ZoomIn,
   Edit3,
+  Crop,
+  BarChart3,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -60,9 +62,34 @@ import {
   getGenerateImageTotalCost,
   getUserBalance,
 } from "@/lib/detail-credits";
+import { MultiPlatformCropDialog } from "@/components/MultiPlatformCropDialog";
+import { evaluateImage, type ImageEvaluation } from "@/lib/evaluate-image";
 
 const ADMIN_GENERATE_RETRY_DRAFT_KEY = "admin-generate-retry-draft";
 const imageTypes = ["主图", "详情图"];
+
+const platformPresets = [
+  { value: "", label: "不限平台（自选尺寸）", ratio: "" },
+  { value: "taobao", label: "淘宝/天猫", ratio: "1:1" },
+  { value: "jd", label: "京东", ratio: "1:1" },
+  { value: "pdd", label: "拼多多", ratio: "1:1" },
+  { value: "xiaohongshu", label: "小红书", ratio: "3:4" },
+  { value: "douyin", label: "抖音电商", ratio: "3:4" },
+  { value: "1688", label: "1688", ratio: "1:1" },
+  { value: "amazon", label: "Amazon", ratio: "1:1" },
+  { value: "shopify", label: "Shopify", ratio: "1:1" },
+  { value: "tiktok", label: "TikTok Shop", ratio: "9:16" },
+  { value: "ebay", label: "eBay", ratio: "1:1" },
+  { value: "aliexpress", label: "AliExpress (速卖通)", ratio: "1:1" },
+  { value: "wish", label: "Wish", ratio: "1:1" },
+  { value: "lazada", label: "Lazada", ratio: "1:1" },
+  { value: "shopee", label: "Shopee (虾皮)", ratio: "1:1" },
+  { value: "mercadolibre", label: "Mercado Libre", ratio: "1:1" },
+  { value: "etsy", label: "Etsy", ratio: "4:3" },
+  { value: "walmart", label: "Walmart", ratio: "1:1" },
+  { value: "temu", label: "Temu", ratio: "1:1" },
+  { value: "ozon", label: "Ozon (俄罗斯)", ratio: "3:4" },
+];
 
 const ratioOptions = [
   { value: "1:1", label: "1:1 正方形" },
@@ -279,6 +306,8 @@ const GeneratePage = () => {
   const generationCtx = useContext(GenerationContext);
   const startImageGeneration = generationCtx?.startImageGeneration;
   const activeJob = generationCtx?.activeJob ?? null;
+  const ctxRegenerateSingle = generationCtx?.regenerateSingle;
+  const regeneratingIndex = generationCtx?.regeneratingIndex ?? null;
 
   const [searchParams] = useSearchParams();
   const templatePrompt = searchParams.get("prompt");
@@ -289,10 +318,12 @@ const GeneratePage = () => {
   const [textPrompt, setTextPrompt] = useState("");
   const [styleReferenceImage, setStyleReferenceImage] = useState("");
   const [styleReferenceText, setStyleReferenceText] = useState("");
+  const [negativePrompt, setNegativePrompt] = useState("");
   const [modelMode, setModelMode] = useState<ModelMode>("none");
   const [modelImage, setModelImage] = useState("");
   const [fidelityMode, setFidelityMode] = useState<FidelityMode>("normal");
   const [imageType, setImageType] = useState(imageTypes[0]);
+  const [selectedPlatform, setSelectedPlatform] = useState("");
   const [selectedRatio, setSelectedRatio] = useState("3:4");
   const [textLanguage, setTextLanguage] = useState("zh");
   const [selectedModel, setSelectedModel] =
@@ -324,6 +355,10 @@ const GeneratePage = () => {
   const [favoriteUrls, setFavoriteUrls] = useState<string[]>([]);
   const [bestImageUrl, setBestImageUrl] = useState<string | null>(null);
   const [userBalance, setUserBalance] = useState<number | null>(null);
+  const [cropDialogOpen, setCropDialogOpen] = useState(false);
+  const [cropDialogImage, setCropDialogImage] = useState("");
+  const [evaluations, setEvaluations] = useState<Record<number, ImageEvaluation>>({});
+  const [evaluatingIndex, setEvaluatingIndex] = useState<number | null>(null);
   const errorHint = errorMessage ? errorHintFromMessage(errorMessage) : null;
   const suggestionHint = suggestionError ? errorHintFromMessage(suggestionError) : null;
 
@@ -395,10 +430,15 @@ const GeneratePage = () => {
     }
   }, [selectedModel, selectedResolution]);
 
-  const handleFidelityModeChange = (checked: boolean) => {
-    const nextMode: FidelityMode = checked ? "strict" : "normal";
+  const handleFidelityModeChange = (value: string) => {
+    const nextMode = value as FidelityMode;
     setFidelityMode(nextMode);
-    if (checked) {
+    if (nextMode === "strict") {
+      setSelectedModel("gemini-3.1-flash-image-preview");
+      setSelectedResolution("1k");
+    }
+    if (nextMode === "composite") {
+      // Composite defaults to Banana 2 (1k), but user can switch to Pro for better fidelity.
       setSelectedModel("gemini-3.1-flash-image-preview");
       setSelectedResolution("1k");
       if (modelMode === "with_model") {
@@ -406,17 +446,36 @@ const GeneratePage = () => {
         setModelImage("");
       }
     }
+    // Auto-enable multi-reference when strict, auto-disable for composite (only needs 1 image)
+    if (nextMode === "strict" && !isBatchMode) {
+      setIsBatchMode(true);
+    }
+    if (nextMode === "composite" && isBatchMode) {
+      setIsBatchMode(false);
+    }
   };
 
   useEffect(() => {
-    if (fidelityMode !== "strict") return;
-    if (selectedModel !== "gemini-3.1-flash-image-preview") {
-      setSelectedModel("gemini-3.1-flash-image-preview");
+    // Strict mode: hard lock on Banana 2 + 1k (unchanged).
+    if (fidelityMode === "strict") {
+      if (selectedModel !== "gemini-3.1-flash-image-preview") {
+        setSelectedModel("gemini-3.1-flash-image-preview");
+      }
+      if (selectedResolution !== "1k") {
+        setSelectedResolution("1k");
+      }
+      return;
     }
-    if (selectedResolution !== "1k") {
-      setSelectedResolution("1k");
-    }
+    // Composite mode: no longer force Banana 2 — user may select Pro for higher fidelity.
   }, [fidelityMode, selectedModel, selectedResolution]);
+
+  // Nano Banana only supports English text — force language when selected
+  const isNanoBanana = selectedModel === "gemini-2.5-flash-image";
+  useEffect(() => {
+    if (isNanoBanana && textLanguage !== "en" && textLanguage !== "pure") {
+      setTextLanguage("en");
+    }
+  }, [isNanoBanana, textLanguage]);
 
   useEffect(() => {
     if (templateId && !appliedTemplate) {
@@ -707,7 +766,8 @@ const GeneratePage = () => {
       modelMode,
       modelImage: modelImage || undefined,
       fidelityMode,
-      fidelityContext: fidelityMode === "strict" ? strictFidelityContext : undefined,
+      fidelityContext: fidelityMode !== "normal" ? strictFidelityContext : undefined,
+      negativePrompt: negativePrompt.trim() || undefined,
       userId: user?.id,
       onComplete: (images: string[]) => {
         setResults(images);
@@ -812,6 +872,34 @@ const GeneratePage = () => {
     });
   };
 
+  const handleRegenerateIndividual = async (index: number) => {
+    if (!ctxRegenerateSingle || !activeJob || !lastParams) {
+      setErrorMessage("系统初始化中，请刷新页面后重试");
+      return;
+    }
+
+    const singleModel = lastParams.model || selectedModel;
+    const singleRes = lastParams.resolution || selectedResolution;
+    const cost = getGenerateImageUnitCost(singleModel, singleRes);
+    const modelLabel =
+      modelOptions.find((o) => o.value === singleModel)?.label || singleModel;
+
+    setErrorMessage(null);
+
+    const deductResult = await deductCredits(
+      cost,
+      "generate_image",
+      `AI 主图单图重新生成（${modelLabel} ${singleRes}，${cost} 积分）`,
+    );
+    if (!deductResult.success) {
+      setErrorMessage(deductResult.error || "积分不足，请先充值");
+      return;
+    }
+    refreshBalance();
+
+    await ctxRegenerateSingle(activeJob.id, index, lastParams);
+  };
+
   const buildCuratedSeed = (src: string) => ({
     image_url: src,
     prompt: [productBrief.trim(), textPrompt.trim()].filter(Boolean).join("\n"),
@@ -849,6 +937,24 @@ const GeneratePage = () => {
     selectedResolution;
   const selectedLanguageLabel =
     languageOptions.find((option) => option.value === textLanguage)?.label || textLanguage;
+
+  const openCropDialog = (src: string) => {
+    setCropDialogImage(src);
+    setCropDialogOpen(true);
+  };
+
+  const handleEvaluate = async (src: string, index: number) => {
+    if (evaluatingIndex !== null) return;
+    setEvaluatingIndex(index);
+    try {
+      const result = await evaluateImage(src, imageType, selectedRatio);
+      setEvaluations((prev) => ({ ...prev, [index]: result }));
+    } catch (err) {
+      console.error("evaluate error:", err);
+    } finally {
+      setEvaluatingIndex(null);
+    }
+  };
 
   const isMobile = () =>
     /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
@@ -912,6 +1018,70 @@ const GeneratePage = () => {
           <div className="space-y-4 rounded-3xl border border-border bg-card p-3 pb-24 shadow-sm sm:space-y-5 sm:p-4 md:p-5 lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto lg:pb-6">
         <div className="rounded-2xl border border-primary/15 bg-primary/5 p-3 text-xs leading-5 text-muted-foreground">
           适合单张或多张独立图片生成，不负责整套详情页结构策划。
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            还原模式
+          </label>
+          <RadioGroup
+            value={fidelityMode}
+            onValueChange={handleFidelityModeChange}
+            className="grid grid-cols-3 gap-2"
+          >
+            {([
+              { value: "normal", label: "自由创意", desc: "AI 自由发挥，效果最丰富" },
+              { value: "strict", label: "AI 保真", desc: "AI 尽力保留商品结构" },
+              { value: "composite", label: "抠图合成", desc: "商品像素不变，只换背景" },
+            ] as const).map((opt) => (
+              <label
+                key={opt.value}
+                className={`relative flex cursor-pointer flex-col items-center gap-1 rounded-xl border p-2 text-center transition-all ${
+                  fidelityMode === opt.value
+                    ? "border-primary bg-primary/10 shadow-sm"
+                    : "border-border bg-background hover:border-primary/30"
+                }`}
+              >
+                <RadioGroupItem value={opt.value} className="sr-only" />
+                <span className={`text-xs font-semibold ${fidelityMode === opt.value ? "text-primary" : "text-foreground"}`}>
+                  {opt.label}
+                </span>
+                <span className="text-[10px] leading-tight text-muted-foreground">
+                  {opt.desc}
+                </span>
+              </label>
+            ))}
+          </RadioGroup>
+          {fidelityMode === "strict" && (
+            <div className="space-y-1.5">
+              <p className="rounded-xl bg-primary/5 px-3 py-2 text-[11px] leading-5 text-primary">
+                {strictModeDescription}
+              </p>
+              <p className="px-1 text-[10px] leading-4 text-muted-foreground">
+                建议开启"多参考图"并上传多个角度：
+                {strictCategoryHint === "phone-case"
+                  ? "正面、背面、侧边、镜头孔特写（最多 6 张）"
+                  : strictCategoryHint === "printed-product"
+                  ? "正面、背面、图案特写（最多 5 张）"
+                  : strictCategoryHint === "packaging"
+                  ? "正面、背面、侧面、标签特写（最多 5 张）"
+                  : "正面、侧面、细节特写（最多 4 张）"}
+                。角度越多，还原度越高。
+              </p>
+            </div>
+          )}
+          {fidelityMode === "composite" && (
+            <div className="space-y-1.5 rounded-xl bg-amber-50 px-3 py-2 text-[11px] leading-5 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">
+              <p>
+                商品将被自动抠图后融入 AI 生成的新场景，Gemini 会尽量保持商品细节一致。建议上传背景干净的商品图以获得最佳抠图效果。
+              </p>
+              {selectedModel !== "nano-banana-pro-preview" && (
+                <p className="text-amber-800 dark:text-amber-300">
+                  💡 追求更高保真度可切换到 <span className="font-semibold">Nano Banana Pro</span>，对 logo、文字、图案细节的还原明显更准（扣费会相应增加）。
+                </p>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="space-y-2">
@@ -1115,6 +1285,17 @@ const GeneratePage = () => {
           />
         </div>
 
+        <SelectField
+          label="目标平台"
+          options={platformPresets}
+          value={selectedPlatform}
+          onChange={(value) => {
+            setSelectedPlatform(value);
+            const preset = platformPresets.find((p) => p.value === value);
+            if (preset?.ratio) setSelectedRatio(preset.ratio);
+          }}
+        />
+
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <SelectField
             label="图片类型"
@@ -1137,12 +1318,19 @@ const GeneratePage = () => {
             value={selectedCount}
             onChange={setSelectedCount}
           />
-          <SelectField
-            label="文字语言"
-            options={languageOptions}
-            value={textLanguage}
-            onChange={setTextLanguage}
-          />
+          <div className="space-y-1">
+            <SelectField
+              label="文字语言"
+              options={isNanoBanana ? languageOptions.filter((o) => o.value === "en" || o.value === "pure") : languageOptions}
+              value={textLanguage}
+              onChange={setTextLanguage}
+            />
+            {isNanoBanana && (
+              <div className="text-[10px] text-amber-600">
+                Nano Banana 仅支持英文文字，其他语言会出现乱码
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -1163,27 +1351,6 @@ const GeneratePage = () => {
             value={selectedResolution}
             onChange={(value) => setSelectedResolution(value as OutputResolution)}
           />
-        </div>
-
-        <div className="rounded-2xl border border-primary/20 bg-primary/5 p-3">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className="text-sm font-semibold text-foreground">严格保真模式</div>
-              <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                适合手机壳、印花商品、包装类等对外形和图案一致性要求高的商品。开启后会优先锁定商品结构和图案，减少形变。
-              </p>
-            </div>
-            <Switch
-              checked={fidelityMode === "strict"}
-              onCheckedChange={handleFidelityModeChange}
-              aria-label="严格保真模式"
-            />
-          </div>
-          {fidelityMode === "strict" && (
-            <p className="mt-3 rounded-xl bg-background/80 px-3 py-2 text-xs leading-5 text-primary">
-              {strictModeDescription}
-            </p>
-          )}
         </div>
 
         {sceneSuggestions.length > 0 && sceneSuggestions[selectedSuggestionIndex] && (
@@ -1271,9 +1438,11 @@ const GeneratePage = () => {
                     </button>
                   </div>
                 </div>
-                {fidelityMode === "strict" && (
+                {(fidelityMode === "strict" || fidelityMode === "composite") && (
                   <p className="text-[11px] leading-5 text-muted-foreground">
-                    严格保真模式下会默认减少人物和手持遮挡，因此暂不启用模特图。
+                    {fidelityMode === "composite"
+                      ? "抠图合成模式下不支持模特图，商品会直接贴到场景上。"
+                      : "AI 保真模式下会默认减少人物和手持遮挡，因此暂不启用模特图。"}
                   </p>
                 )}
 
@@ -1352,6 +1521,15 @@ const GeneratePage = () => {
                   placeholder="例如：暖色轻奢、极简留白、日落通透感。"
                   className="min-h-20 rounded-xl"
                 />
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-foreground">避免出现</label>
+                  <Textarea
+                    value={negativePrompt}
+                    onChange={(e) => setNegativePrompt(e.target.value)}
+                    placeholder="例如：文字、人物、水印、过多装饰"
+                    className="min-h-[60px] resize-none text-sm"
+                  />
+                </div>
               </div>
             </div>
           )}
@@ -1465,7 +1643,7 @@ const GeneratePage = () => {
                   { label: "模型", value: selectedModelLabel },
                   { label: "规格", value: `${selectedResolutionLabel} / ${selectedRatio}` },
                   { label: "文字语言", value: selectedLanguageLabel },
-                  { label: "保真模式", value: fidelityMode === "strict" ? "严格保真" : "标准" },
+                  { label: "还原模式", value: fidelityMode === "composite" ? "抠图合成" : fidelityMode === "strict" ? "AI 保真" : "自由创意" },
                 ]}
               />
             </WorkspaceSection>
@@ -1497,24 +1675,105 @@ const GeneratePage = () => {
                         预览
                       </button>
                     </div>
-                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                       <button
                         onClick={() => setPreviewImage(src)}
                         className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-medium text-foreground transition hover:border-primary/40 hover:text-primary"
                       >
+                        <ZoomIn className="mr-1 inline h-3 w-3" />
                         查看
                       </button>
                       <button
                         onClick={() => navigate(`/dashboard/edit?url=${encodeURIComponent(src)}`)}
                         className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-medium text-foreground transition hover:border-primary/40 hover:text-primary"
                       >
+                        <Edit3 className="mr-1 inline h-3 w-3" />
                         编辑图片
                       </button>
                       <button
                         onClick={() => downloadImage(src, `picspark-${Date.now()}-${index + 1}.jpg`)}
                         className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-medium text-foreground transition hover:border-primary/40 hover:text-primary"
                       >
+                        <Download className="mr-1 inline h-3 w-3" />
                         下载图片
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        onClick={() => openCropDialog(src)}
+                        className="rounded-xl border border-primary/30 bg-primary/5 px-3 py-2 text-xs font-medium text-primary transition hover:bg-primary/10"
+                      >
+                        <Crop className="mr-1 inline h-3 w-3" />
+                        适配多平台
+                      </button>
+                      <button
+                        onClick={() => handleEvaluate(src, index)}
+                        disabled={evaluatingIndex !== null}
+                        className={`rounded-xl border px-3 py-2 text-xs font-medium transition ${
+                          evaluations[index]
+                            ? "border-accent/30 bg-accent/5 text-accent-foreground"
+                            : "border-orange-500/30 bg-orange-500/5 text-orange-600 hover:bg-orange-500/10"
+                        } disabled:opacity-50`}
+                      >
+                        {evaluatingIndex === index ? (
+                          <>
+                            <Loader2 className="mr-1 inline h-3 w-3 animate-spin" />
+                            评估中...
+                          </>
+                        ) : evaluations[index] ? (
+                          <>
+                            <BarChart3 className="mr-1 inline h-3 w-3" />
+                            {evaluations[index].score}分 · {evaluations[index].rating}
+                          </>
+                        ) : (
+                          <>
+                            <BarChart3 className="mr-1 inline h-3 w-3" />
+                            AI 评分
+                          </>
+                        )}
+                      </button>
+                    </div>
+                    {evaluations[index] && (
+                      <div className="rounded-xl border border-border bg-muted/30 p-3 text-xs leading-5">
+                        <div className="mb-2 flex items-center gap-2">
+                          <span className="rounded-full bg-primary/10 px-2 py-0.5 font-semibold text-primary">
+                            {evaluations[index].score} / 10
+                          </span>
+                          <span className="font-medium text-foreground">
+                            {evaluations[index].usageSuggestion}
+                          </span>
+                        </div>
+                        {evaluations[index].strengths.length > 0 && (
+                          <div className="mb-1.5">
+                            <span className="font-medium text-green-600">优点：</span>
+                            <span className="text-muted-foreground">{evaluations[index].strengths.join("、")}</span>
+                          </div>
+                        )}
+                        {evaluations[index].improvements.length > 0 && (
+                          <div>
+                            <span className="font-medium text-orange-500">建议：</span>
+                            <span className="text-muted-foreground">{evaluations[index].improvements.join("、")}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                      <button
+                        onClick={() => handleRegenerateIndividual(index)}
+                        disabled={isGenerating || regeneratingIndex !== null}
+                        className="rounded-xl border border-primary/30 bg-primary/5 px-3 py-2 text-xs font-medium text-primary transition hover:bg-primary/10 disabled:opacity-50"
+                      >
+                        {regeneratingIndex === index ? (
+                          <>
+                            <Loader2 className="mr-1 inline h-3 w-3 animate-spin" />
+                            重新生成中...
+                          </>
+                        ) : (
+                          <>
+                            <RefreshCw className="mr-1 inline h-3 w-3" />
+                            重新生成
+                          </>
+                        )}
                       </button>
                       <button
                         onClick={handleRegenerateSingle}
@@ -1524,8 +1783,6 @@ const GeneratePage = () => {
                         <RefreshCw className="mr-1 inline h-3 w-3" />
                         基于此图再生成
                       </button>
-                    </div>
-                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                       <button
                         onClick={() => handleSaveToLibrary(src)}
                         className={`rounded-xl border px-3 py-2 text-xs font-medium transition ${
@@ -1682,6 +1939,12 @@ const GeneratePage = () => {
           {previewImage && <img src={previewImage} alt="Preview" className="w-full rounded-lg" />}
         </DialogContent>
       </Dialog>
+
+      <MultiPlatformCropDialog
+        open={cropDialogOpen}
+        onOpenChange={setCropDialogOpen}
+        imageUrl={cropDialogImage}
+      />
     </div>
   );
 };

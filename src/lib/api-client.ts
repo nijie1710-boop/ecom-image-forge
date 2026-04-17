@@ -38,12 +38,17 @@ export function clearStoredToken() {
 
 /**
  * Build the full URL for an API endpoint.
- * Self-hosted:  VITE_API_URL/api/generate-image
+ * Self-hosted:  /api/generate-image (same-origin; Vercel rewrites proxy to HK backend)
  * Supabase:     SUPABASE_URL/functions/v1/generate-image
+ *
+ * Using same-origin relative paths avoids SSL/CORS issues with api-staging.picspark.cn
+ * and leverages Vercel's existing rewrites:
+ *   - prod:    /api/* -> 101.32.186.47/api/*
+ *   - staging: /api/* -> 101.32.186.47/staging-api/*
  */
 export function buildApiUrl(functionName: string): string {
   if (SELF_HOSTED_API_URL) {
-    return `${SELF_HOSTED_API_URL}/api/${functionName}`;
+    return `/api/${functionName}`;
   }
   // Supabase fallback
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "";
@@ -160,7 +165,7 @@ export interface AuthResult {
 }
 
 export async function selfHostedLogin(email: string, password: string): Promise<AuthResult> {
-  const res = await fetch(`${SELF_HOSTED_API_URL}/api/auth/login`, {
+  const res = await fetch(buildApiUrl("auth/login"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password }),
@@ -176,7 +181,7 @@ export async function selfHostedRegister(
   password: string,
   displayName?: string,
 ): Promise<AuthResult> {
-  const res = await fetch(`${SELF_HOSTED_API_URL}/api/auth/register`, {
+  const res = await fetch(buildApiUrl("auth/register"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password, displayName }),
@@ -192,7 +197,7 @@ export async function selfHostedGetMe(): Promise<SelfHostedUser | null> {
   if (!token) return null;
 
   try {
-    const res = await fetch(`${SELF_HOSTED_API_URL}/api/auth/me`, {
+    const res = await fetch(buildApiUrl("auth/me"), {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) {
@@ -215,7 +220,7 @@ export async function selfHostedSignOut() {
 }
 
 export async function selfHostedResetRequest(email: string): Promise<{ success: boolean; message: string }> {
-  const res = await fetch(`${SELF_HOSTED_API_URL}/api/auth/reset-request`, {
+  const res = await fetch(buildApiUrl("auth/reset-request"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email }),
@@ -230,7 +235,7 @@ export async function selfHostedResetPassword(
   code: string,
   password: string,
 ): Promise<{ success: boolean; message: string }> {
-  const res = await fetch(`${SELF_HOSTED_API_URL}/api/auth/reset-password`, {
+  const res = await fetch(buildApiUrl("auth/reset-password"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, code, password }),
@@ -264,14 +269,12 @@ export async function uploadImageToServer(
   }
 
   const data = await res.json();
-  // Return the full URL with server origin
-  // Staging uses a separate uploads dir exposed via www.picspark.cn/uploads-staging/
+  // Return relative /uploads/* path. Vercel rewrites handle routing:
+  //   - prod:    /uploads/* -> 101.32.186.47/uploads/*
+  //   - staging: /uploads/* -> 101.32.186.47/staging-uploads/*
+  // Same-origin requests avoid SSL/CORS issues with api-staging.picspark.cn.
   if (data.url.startsWith("/uploads/")) {
-    const isStaging = SELF_HOSTED_API_URL.includes("staging");
-    if (isStaging) {
-      return `https://www.picspark.cn/uploads-staging/${data.url.replace("/uploads/", "")}`;
-    }
-    return `${SELF_HOSTED_API_URL}${data.url}`;
+    return data.url;
   }
   if (data.url.startsWith("/")) {
     return `${SELF_HOSTED_API_URL}${data.url}`;

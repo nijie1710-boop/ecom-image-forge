@@ -17,10 +17,14 @@ import manageBalanceRoutes from "./routes/manage-balance.js";
 import alipayOrderRoutes from "./routes/alipay-order.js";
 import adminUsersRoutes from "./routes/admin-users.js";
 import alipayNotifyRoutes from "./routes/alipay-notify.js";
+import generateCompositeRoutes from "./routes/generate-composite.js";
 import uploadImageRoutes from "./routes/upload-image.js";
 import userImagesRoutes from "./routes/user-images.js";
+import evaluateImageRoutes from "./routes/evaluate-image.js";
 
 const app = express();
+// Trust proxies: Vercel rewrite → nginx → Express (2 hops)
+app.set("trust proxy", 2);
 const PORT = parseInt(process.env.PORT || "3000", 10);
 
 // Ensure upload directory exists
@@ -57,8 +61,10 @@ app.use("/api/manage-balance", manageBalanceRoutes);
 app.use("/api/alipay-order", alipayOrderRoutes);
 app.use("/api/alipay-notify", alipayNotifyLimiter, alipayNotifyRoutes);
 app.use("/api/admin-users", adminUsersRoutes);
+app.use("/api/generate-composite", generateCompositeRoutes);
 app.use("/api/upload-image", uploadImageRoutes);
 app.use("/api/user-images", userImagesRoutes);
+app.use("/api/evaluate-image", evaluateImageRoutes);
 
 // 404 handler
 app.use((_req, res) => {

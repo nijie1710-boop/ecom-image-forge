@@ -22,7 +22,7 @@ import {
   ZoomIn,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Dialog,
   DialogContent,
@@ -60,7 +60,27 @@ import {
   WorkspaceStatGrid,
 } from "@/components/workspace/WorkspaceBlocks";
 
-const platformOptions = ["淘宝/天猫", "京东", "拼多多", "小红书", "抖音", "亚马逊"];
+const platformOptions = [
+  { value: "淘宝/天猫", label: "淘宝/天猫", ratio: "3:4" },
+  { value: "京东", label: "京东", ratio: "3:4" },
+  { value: "拼多多", label: "拼多多", ratio: "3:4" },
+  { value: "小红书", label: "小红书", ratio: "3:4" },
+  { value: "抖音", label: "抖音", ratio: "3:4" },
+  { value: "1688", label: "1688", ratio: "3:4" },
+  { value: "亚马逊", label: "Amazon", ratio: "3:4" },
+  { value: "Shopify", label: "Shopify", ratio: "3:4" },
+  { value: "TikTok Shop", label: "TikTok Shop", ratio: "9:16" },
+  { value: "eBay", label: "eBay", ratio: "3:4" },
+  { value: "AliExpress", label: "AliExpress (速卖通)", ratio: "3:4" },
+  { value: "Wish", label: "Wish", ratio: "3:4" },
+  { value: "Lazada", label: "Lazada", ratio: "3:4" },
+  { value: "Shopee", label: "Shopee (虾皮)", ratio: "3:4" },
+  { value: "Mercado Libre", label: "Mercado Libre", ratio: "3:4" },
+  { value: "Etsy", label: "Etsy", ratio: "3:4" },
+  { value: "Walmart", label: "Walmart", ratio: "3:4" },
+  { value: "Temu", label: "Temu", ratio: "3:4" },
+  { value: "Ozon", label: "Ozon (俄罗斯)", ratio: "3:4" },
+];
 
 const planningLanguageOptions = [
   { value: "zh", label: "中文" },
@@ -621,7 +641,7 @@ const DetailDesignPage = () => {
   const [styleReferenceImage, setStyleReferenceImage] = useState<string>("");
   const [styleReferenceText, setStyleReferenceText] = useState("");
   const [productInfo, setProductInfo] = useState("");
-  const [targetPlatform, setTargetPlatform] = useState(platformOptions[0]);
+  const [targetPlatform, setTargetPlatform] = useState(platformOptions[0].value);
   const [targetLanguage, setTargetLanguage] = useState("zh");
   const [screenCount, setScreenCount] = useState("4");
   const [useScreenIdeas, setUseScreenIdeas] = useState(false);
@@ -755,7 +775,7 @@ const DetailDesignPage = () => {
       setGenerationLanguage(draft.generationLanguage || "zh");
       setFidelityMode(draft.fidelityMode || "normal");
       setSelectedModel(draft.selectedModel || "gemini-3.1-flash-image-preview");
-      setTargetPlatform(draft.targetPlatform || platformOptions[0]);
+      setTargetPlatform(draft.targetPlatform || platformOptions[0].value);
       setTargetLanguage(draft.targetLanguage || "zh");
       setScreenCount(draft.screenCount || "4");
       setUseScreenIdeas(Boolean(draft.useScreenIdeas));
@@ -982,6 +1002,8 @@ const DetailDesignPage = () => {
 
   const handleTargetPlatformChange = (value: string) => {
     setTargetPlatform(value);
+    const preset = platformOptions.find((p) => p.value === value);
+    if (preset?.ratio) setSelectedRatio(preset.ratio);
     resetPlan();
   };
 
@@ -1031,7 +1053,21 @@ const DetailDesignPage = () => {
   };
 
   const removeImage = (index: number) => {
-    setProductImages((current) => current.filter((_, currentIndex) => currentIndex !== index));
+    setProductImages((current) => {
+      const next = current.filter((_, currentIndex) => currentIndex !== index);
+      // When user removes the LAST product image, wipe product-specific content so
+      // the next upload starts fresh. User-level preferences (platform/language/
+      // model/ratio/resolution/fidelity) are preserved on purpose.
+      if (next.length === 0) {
+        setProductInfo("");
+        setStyleReferenceImage("");
+        setStyleReferenceText("");
+        setScreenIdeas([]);
+        setUseScreenIdeas(false);
+        setShowScreenIdeas(false);
+      }
+      return next;
+    });
     resetPlan();
   };
 
@@ -1104,6 +1140,7 @@ const DetailDesignPage = () => {
         targetLanguage,
         screenCount: Number(screenCount),
         screenIdeas: useScreenIdeas ? screenIdeas : [],
+        styleReferenceImage: styleReferenceImage || undefined,
       });
 
       setProductSummary(result.productSummary);
@@ -1292,7 +1329,7 @@ const DetailDesignPage = () => {
         targetPlatform,
         targetLanguage: generationLanguage,
         fidelityMode,
-        fidelityContext: fidelityMode === "strict" ? strictFidelityContext : undefined,
+        fidelityContext: fidelityMode !== "normal" ? strictFidelityContext : undefined,
         screenIdea: useScreenIdeas ? screenIdeas[screen.screen - 1] : "",
       });
       const existingPrompt = current?.prompt?.trim() || "";
@@ -1359,7 +1396,7 @@ const DetailDesignPage = () => {
       model: selectedModel,
       resolution: selectedResolution,
       fidelityMode,
-      fidelityContext: fidelityMode === "strict" ? strictFidelityContext : undefined,
+      fidelityContext: fidelityMode !== "normal" ? strictFidelityContext : undefined,
       productImages,
       styleReferenceImage: styleReferenceImage || undefined,
       styleReferenceText: styleReferenceText.trim() || undefined,
@@ -1453,7 +1490,7 @@ const DetailDesignPage = () => {
       targetPlatform,
       targetLanguage: generationLanguage,
       fidelityMode,
-      fidelityContext: fidelityMode === "strict" ? strictFidelityContext : undefined,
+      fidelityContext: fidelityMode !== "normal" ? strictFidelityContext : undefined,
       screenIdea: useScreenIdeas ? screenIdeas[screen.screen - 1] : "",
     });
     updateGeneratedScreen(screen.screen, (current) => ({
@@ -1489,17 +1526,17 @@ const DetailDesignPage = () => {
     }
   }, [selectedModel, selectedResolution]);
 
-  const handleFidelityModeChange = (checked: boolean) => {
-    const nextMode: FidelityMode = checked ? "strict" : "normal";
+  const handleFidelityModeChange = (value: string) => {
+    const nextMode = value as FidelityMode;
     setFidelityMode(nextMode);
-    if (checked) {
+    if (nextMode === "strict" || nextMode === "composite") {
       setSelectedModel("gemini-3.1-flash-image-preview");
       setSelectedResolution("1k");
     }
   };
 
   useEffect(() => {
-    if (fidelityMode !== "strict") return;
+    if (fidelityMode !== "strict" && fidelityMode !== "composite") return;
     if (selectedModel !== "gemini-3.1-flash-image-preview") {
       setSelectedModel("gemini-3.1-flash-image-preview");
     }
@@ -1575,6 +1612,51 @@ const DetailDesignPage = () => {
       <WorkspaceShell
         sidebar={
         <div className="space-y-5 rounded-3xl border border-border bg-card p-3 pb-24 shadow-sm sm:p-4 md:p-5 lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto lg:pb-6">
+          <section className="rounded-2xl border border-border bg-background/70 p-4">
+            <div className="mb-2">
+              <h2 className="text-base font-semibold text-foreground">还原模式</h2>
+              <p className="text-xs text-muted-foreground">决定 AI 保留商品细节的程度</p>
+            </div>
+            <RadioGroup
+              value={fidelityMode}
+              onValueChange={handleFidelityModeChange}
+              className="grid grid-cols-3 gap-2"
+            >
+              {([
+                { value: "normal", label: "自由创意", desc: "AI 自由发挥，效果最丰富" },
+                { value: "strict", label: "AI 保真", desc: "AI 尽力保留商品结构" },
+                { value: "composite", label: "抠图合成", desc: "商品像素不变，只换背景" },
+              ] as const).map((opt) => (
+                <label
+                  key={opt.value}
+                  className={`relative flex cursor-pointer flex-col items-center gap-1 rounded-xl border p-2 text-center transition-all ${
+                    fidelityMode === opt.value
+                      ? "border-primary bg-primary/10 shadow-sm"
+                      : "border-border bg-background hover:border-primary/30"
+                  }`}
+                >
+                  <RadioGroupItem value={opt.value} className="sr-only" />
+                  <span className={`text-xs font-semibold ${fidelityMode === opt.value ? "text-primary" : "text-foreground"}`}>
+                    {opt.label}
+                  </span>
+                  <span className="text-[10px] leading-tight text-muted-foreground">
+                    {opt.desc}
+                  </span>
+                </label>
+              ))}
+            </RadioGroup>
+            {fidelityMode === "strict" && (
+              <p className="mt-2 rounded-xl bg-primary/5 px-3 py-2 text-[11px] leading-5 text-primary">
+                {strictModeDescription} 已优先使用 Nano Banana 2 和 1K 标准生成。
+              </p>
+            )}
+            {fidelityMode === "composite" && (
+              <p className="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-[11px] leading-5 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">
+                每屏详情图都会自动抠图合成，商品像素级不变。建议上传背景干净的商品图。
+              </p>
+            )}
+          </section>
+
           <section className="rounded-2xl border border-border bg-background/70 p-4">
             <div className="mb-4 flex items-center justify-between">
               <div>
@@ -1753,108 +1835,30 @@ const DetailDesignPage = () => {
               </div>
             </div>
           </section>
-          <section className="rounded-2xl border border-border bg-background/70 p-4">
-            <div className="mb-4">
-              <h2 className="text-base font-semibold text-foreground">策划参数</h2>
-              <p className="text-xs text-muted-foreground">AI 会先根据商品信息生成整套详情页方案，再按屏生成完整内容。</p>
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-1">
-              <SelectField
-                label="目标平台"
-                value={targetPlatform}
-                onChange={handleTargetPlatformChange}
-                options={platformOptions}
-              />
-              <SelectField
-                label="策划语言"
-                value={targetLanguage}
-                onChange={handleTargetLanguageChange}
-                options={planningLanguageOptions}
-              />
-              <SelectField
-                label="详情页屏数"
-                value={screenCount}
-                onChange={handleScreenCountChange}
-                options={screenCountOptions.map((count) => ({
-                  value: String(count),
-                  label: `${count} 屏`,
-                }))}
-              />
-            </div>
-
-            <div className="mt-4 rounded-2xl border border-primary/20 bg-primary/5 p-3">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-sm font-semibold text-foreground">严格保真模式</div>
-                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                    适合手机壳、印花商品、包装类等对外形和图案一致性要求高的商品。开启后会优先锁定商品结构和图案，减少形变。
-                  </p>
-                </div>
-                <Switch
-                  checked={fidelityMode === "strict"}
-                  onCheckedChange={handleFidelityModeChange}
-                  aria-label="严格保真模式"
-                />
-              </div>
-              {fidelityMode === "strict" && (
-                <p className="mt-3 rounded-xl bg-background/80 px-3 py-2 text-xs leading-5 text-primary">
-                  {strictModeDescription} 已优先使用 Nano Banana 2 和 1K 标准生成。
-                </p>
-              )}
-            </div>
-
-            {error && (
-              <div className="mt-4 rounded-2xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-                <div>{error}</div>
-                {planningErrorHint && (
-                  <div className="mt-1 text-xs text-muted-foreground">{planningErrorHint}</div>
-                )}
-              </div>
-            )}
-
-            <Button
-              type="button"
-              onClick={handleGeneratePlan}
-              disabled={isLoading || planInsufficient}
-              className="mt-5 h-12 w-full rounded-2xl text-sm font-semibold"
-            >
-              {isLoading ? (
-                <span className="inline-flex items-center">
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  <span>正在生成详情页方案</span>
-                </span>
-              ) : (
-                <span className="inline-flex items-center">
-                  <Sparkles className="mr-2 h-4 w-4" />
-                  <span>生成详情页方案</span>
-                </span>
-              )}
-            </Button>
-            <div className="mt-2 text-center text-xs text-muted-foreground">
-              方案策划固定消耗 <span className="font-semibold text-foreground">{planCost} 积分</span>
-              {planInsufficient && (
-                <span className="ml-2 text-destructive">（余额不足，请先充值）</span>
-              )}
-            </div>
-          </section>
-
-          <section className="rounded-2xl border border-border bg-background/70 p-4">
+          <section className="rounded-2xl border border-primary/20 bg-primary/[0.03] p-4">
             <button
               type="button"
               onClick={() => setShowScreenIdeas((current) => !current)}
               className="flex w-full items-start justify-between gap-3 text-left"
             >
-              <div>
-                <h2 className="text-base font-semibold text-foreground">分屏构思</h2>
-                <p className="text-xs text-muted-foreground">
-                  可选项。有明确想法时再展开填写，没有也可以直接继续。
-                </p>
+              <div className="flex items-start gap-2.5">
+                <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <Edit3 className="h-3.5 w-3.5" />
+                </span>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-base font-semibold text-foreground">分屏构思</h2>
+                    <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">推荐填写</span>
+                  </div>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    填写后 AI 会按你的想法策划每一屏，效果更精准。
+                  </p>
+                </div>
               </div>
               {showScreenIdeas ? (
                 <ChevronUp className="mt-1 h-4 w-4 text-muted-foreground" />
               ) : (
-                <ChevronDown className="mt-1 h-4 w-4 text-muted-foreground" />
+                <ChevronDown className="mt-1 h-4 w-4 text-primary/60" />
               )}
             </button>
 
@@ -1900,6 +1904,71 @@ const DetailDesignPage = () => {
                 </div>
               </div>
             )}
+          </section>
+
+          <section className="rounded-2xl border border-border bg-background/70 p-4">
+            <div className="mb-4">
+              <h2 className="text-base font-semibold text-foreground">策划参数</h2>
+              <p className="text-xs text-muted-foreground">AI 会先根据商品信息生成整套详情页方案，再按屏生成完整内容。</p>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-1">
+              <SelectField
+                label="目标平台"
+                value={targetPlatform}
+                onChange={handleTargetPlatformChange}
+                options={platformOptions}
+              />
+              <SelectField
+                label="策划语言"
+                value={targetLanguage}
+                onChange={handleTargetLanguageChange}
+                options={planningLanguageOptions}
+              />
+              <SelectField
+                label="详情页屏数"
+                value={screenCount}
+                onChange={handleScreenCountChange}
+                options={screenCountOptions.map((count) => ({
+                  value: String(count),
+                  label: `${count} 屏`,
+                }))}
+              />
+            </div>
+
+            {error && (
+              <div className="mt-4 rounded-2xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+                <div>{error}</div>
+                {planningErrorHint && (
+                  <div className="mt-1 text-xs text-muted-foreground">{planningErrorHint}</div>
+                )}
+              </div>
+            )}
+
+            <Button
+              type="button"
+              onClick={handleGeneratePlan}
+              disabled={isLoading || planInsufficient}
+              className="mt-5 h-12 w-full rounded-2xl text-sm font-semibold"
+            >
+              {isLoading ? (
+                <span className="inline-flex items-center">
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  <span>正在生成详情页方案</span>
+                </span>
+              ) : (
+                <span className="inline-flex items-center">
+                  <Sparkles className="mr-2 h-4 w-4" />
+                  <span>生成详情页方案</span>
+                </span>
+              )}
+            </Button>
+            <div className="mt-2 text-center text-xs text-muted-foreground">
+              方案策划固定消耗 <span className="font-semibold text-foreground">{planCost} 积分</span>
+              {planInsufficient && (
+                <span className="ml-2 text-destructive">（余额不足，请先充值）</span>
+              )}
+            </div>
           </section>
 
           {activePlan && (

@@ -6,7 +6,7 @@ export type { GenerationModel } from "@/lib/gemini-models";
 
 export type OutputResolution = "0.5k" | "1k" | "2k" | "4k";
 export type ModelMode = "none" | "with_model";
-export type FidelityMode = "normal" | "strict";
+export type FidelityMode = "normal" | "strict" | "composite";
 export type FidelityCategory = "phone-case" | "printed-product" | "packaging" | "general";
 
 export interface FidelityContext {
@@ -530,6 +530,62 @@ export async function generateImage(params: GenerateImageParams): Promise<Genera
     return {
       images: [],
       error: normalizeUserErrorMessage(error, "生成服务异常，请稍后重试。"),
+    };
+  }
+}
+
+/**
+ * Composite generation: removes product background, generates scene, composites.
+ * Calls the /api/generate-composite endpoint.
+ */
+export async function generateCompositeImage(
+  params: GenerateImageParams,
+): Promise<GenerateImageResult> {
+  try {
+    ensureNotAborted(params.signal);
+    const headers = await getInvokeHeaders();
+
+    const response = await fetch(buildApiUrl("generate-composite"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...headers },
+      body: JSON.stringify({
+        prompt: params.prompt,
+        imageBase64: params.imageBase64 || undefined,
+        aspectRatio: params.aspectRatio || "1:1",
+        textLanguage: params.textLanguage || "zh",
+        model: normalizeModelLabel(params.model),
+      }),
+      signal: params.signal,
+    });
+
+    ensureNotAborted(params.signal);
+
+    const rawText = await response.text();
+    let payload: Record<string, unknown> | null = null;
+    try {
+      payload = rawText ? (JSON.parse(rawText) as Record<string, unknown>) : null;
+    } catch {
+      payload = null;
+    }
+
+    if (!response.ok) {
+      const errorMsg = normalizeHttpError(response.status, payload, rawText);
+      return { images: [], error: errorMsg };
+    }
+
+    const images = (payload?.images as string[]) || [];
+    if (!images.length) {
+      return { images: [], error: "抠图合成未返回有效图片，请重试。" };
+    }
+
+    return { images, meta: payload?.meta ? [payload.meta as GenerateImageMeta] : [] };
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      return { images: [], error: "任务已取消" };
+    }
+    return {
+      images: [],
+      error: normalizeUserErrorMessage(error, "抠图合成服务异常，请稍后重试。"),
     };
   }
 }

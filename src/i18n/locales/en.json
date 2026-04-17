@@ -1,68 +1,118 @@
 {
   "nav": {
     "features": "Features",
+    "howItWorks": "How It Works",
     "gallery": "Gallery",
     "pricing": "Pricing",
-    "openStudio": "Open Studio"
+    "openStudio": "Get Started Free"
   },
   "brand": {
-    "name": "Picspark AI"
+    "name": "PicSpark AI"
   },
   "hero": {
-    "badge": "AI-Powered E-commerce Photography",
-    "title1": "Generate Product Images",
-    "title2": "in Seconds with AI",
-    "subtitle": "Upload one product image and generate unlimited professional photos, buyer reviews, and lifestyle scenes for Taobao, Tmall, JD, Pinduoduo & Xiaohongshu.",
-    "cta": "Start Generating",
+    "badge": "AI Visual Assistant for E-commerce Sellers",
+    "title1": "Stop Overpaying for Design",
+    "title2": "AI Generates E-commerce Images in 3 Minutes",
+    "subtitle": "Upload a product photo, and AI auto-generates hero images, full detail pages, and multi-language image translations. Covers 20+ platforms including Taobao, Amazon, and Shopify — from concept to listing in one stop.",
+    "cta": "Try Free",
     "viewGallery": "View Gallery"
   },
+  "platforms": {
+    "title": "Covers 20+ Major E-commerce Platforms",
+    "list": ["Taobao/Tmall", "JD.com", "Pinduoduo", "Xiaohongshu", "Douyin", "Amazon", "Shopify", "TikTok Shop", "eBay", "AliExpress", "Shopee", "Lazada", "Temu", "Etsy", "Walmart", "Ozon"]
+  },
   "features": {
-    "sectionTitle": "Everything You Need for E-commerce Images",
-    "sectionSubtitle": "From background removal to realistic buyer photos — one platform does it all.",
+    "sectionTitle": "3 Core Features for Every E-commerce Scenario",
+    "sectionSubtitle": "Not a generic AI image tool — a complete visual workflow built for e-commerce.",
     "items": [
-      { "title": "One-Click Upload", "desc": "Upload a single product image — JPG, PNG, or WEBP." },
-      { "title": "AI Background Removal", "desc": "Automatically removes backgrounds for clean product cutouts." },
-      { "title": "Smart Crop", "desc": "Auto-adapt to Taobao, Douyin, Xiaohongshu sizes." },
-      { "title": "Multi-Scene Generation", "desc": "Generate 10+ popular scenes: living room, kitchen, outdoor & more." },
-      { "title": "Batch Generation", "desc": "Upload 10 images at once for mass production." },
-      { "title": "AI Copywriting", "desc": "Auto-generate product titles, descriptions & tags." },
-      { "title": "HD Downloads", "desc": "Download all images in HD resolution (1024–2048px)." },
-      { "title": "Membership Benefits", "desc": "Free: 5/day, Pro: unlimited generation." }
+      {
+        "title": "AI Hero Image Generation",
+        "desc": "Upload one product photo, generate multiple hero images in different styles at once. Supports scene shots, white background, model shots, and one-click style replication.",
+        "highlights": ["Multi-style batch generation", "Style reference replication", "20+ platform size presets"]
+      },
+      {
+        "title": "AI Detail Page Generation",
+        "desc": "AI plans an entire detail page layout first, then generates high-quality images screen by screen. No more scattered outputs — get a complete detail page in one go.",
+        "highlights": ["AI auto-plans layout", "Screen-by-screen generation", "Guided screen composition"]
+      },
+      {
+        "title": "AI Image Translation",
+        "desc": "Translate text on product images into 13 languages with one click, keeping the original image style intact. Essential for cross-border e-commerce, saving redesign costs.",
+        "highlights": ["13 languages supported", "Preserves original style", "Cross-border essential"]
+      }
+    ]
+  },
+  "howItWorks": {
+    "sectionTitle": "3 Steps, Incredibly Simple",
+    "sectionSubtitle": "No design skills needed — just upload a product photo to start.",
+    "steps": [
+      { "title": "Upload Product Photo", "desc": "Take a product photo and upload it. Supports JPG/PNG/WebP. Multi-angle shots yield better results." },
+      { "title": "Choose Platform & Style", "desc": "Select your target e-commerce platform, AI auto-adapts dimensions. Upload a style reference for more precise results." },
+      { "title": "AI Generates, Download & List", "desc": "AI generates HD e-commerce images in seconds. Download directly and list on your store. Supports 1K–4K resolutions." }
+    ]
+  },
+  "stats": {
+    "items": [
+      { "value": "20+", "label": "Platforms Covered" },
+      { "value": "13", "label": "Languages Supported" },
+      { "value": "4K", "label": "Max Resolution" },
+      { "value": "3min", "label": "Full Detail Page" }
     ]
   },
   "gallery": {
-    "sectionTitle": "One Upload, Multiple Styles",
-    "sectionSubtitle": "See how AI transforms a single product photo into diverse e-commerce images.",
-    "labels": ["White Background", "Lifestyle Scene", "Buyer Review", "Premium Brand", "Office Scene"]
+    "sectionTitle": "AI-Generated Results",
+    "sectionSubtitle": "Real product image AI generation examples, multiple styles and scenes.",
+    "labels": ["White Background", "Lifestyle Scene", "Buyer Show", "Premium Brand", "Office Scene"]
   },
   "pricing": {
-    "sectionTitle": "Simple, Transparent Pricing",
-    "sectionSubtitle": "Start free. Upgrade when you need more.",
-    "mostPopular": "Most Popular",
+    "sectionTitle": "Pay As You Go",
+    "sectionSubtitle": "Free credits on signup. No monthly fees, no hidden charges.",
+    "creditUnit": "credits",
     "plans": [
       {
-        "name": "Free",
-        "price": "¥0",
-        "features": ["5 images per day", "Basic styles", "Standard resolution", "Watermark"],
-        "cta": "Get Started"
+        "name": "Starter Pack",
+        "price": "¥19.9",
+        "credits": "200",
+        "features": ["~28 hero images", "~22 detail screens", "All features included", "HD resolution"],
+        "cta": "Top Up Now",
+        "badge": ""
       },
       {
-        "name": "Pro",
+        "name": "Regular Pack",
+        "price": "¥49.9",
+        "credits": "520",
+        "features": ["~74 hero images", "~57 detail screens", "All features included", "4K ultra-HD resolution"],
+        "cta": "Top Up Now",
+        "badge": "Recommended"
+      },
+      {
+        "name": "Advanced Pack",
         "price": "¥99",
-        "features": ["200 images per month", "All styles & scenes", "HD resolution", "No watermark", "Buyer show photos", "Priority generation"],
-        "cta": "Start Pro Trial"
+        "credits": "1080",
+        "features": ["~154 hero images", "~120 detail screens", "All features included", "Best unit price"],
+        "cta": "Top Up Now",
+        "badge": "Best Value"
       },
       {
-        "name": "Business",
-        "price": "¥299",
-        "features": ["Unlimited generation", "All Pro features", "Batch generation", "API access", "Custom templates", "Priority support"],
-        "cta": "Contact Sales"
+        "name": "Business Pack",
+        "price": "¥199",
+        "credits": "2280",
+        "features": ["~325 hero images", "~253 detail screens", "All features included", "Ideal for bulk creation"],
+        "cta": "Top Up Now",
+        "badge": "High Volume"
       }
-    ],
-    "period": "/month"
+    ]
+  },
+  "cta": {
+    "title": "Ready to Level Up Your E-commerce Visuals?",
+    "subtitle": "Sign up for a free trial. No credit card required.",
+    "button": "Get Started Free"
   },
   "footer": {
-    "rights": "© 2026 AI Image Studio. All rights reserved."
+    "rights": "© 2026 PicSpark AI. All rights reserved.",
+    "slogan": "AI Sparks Product Image Creativity",
+    "terms": "Terms of Service",
+    "privacy": "Privacy Policy"
   },
   "sidebar": {
     "dashboard": "Dashboard",
@@ -158,7 +208,7 @@
     "password": "Password",
     "displayName": "Display Name",
     "displayNamePlaceholder": "Enter your name",
-    "loginSubtitle": "Log in to your Picspark AI account",
+    "loginSubtitle": "Log in to your PicSpark AI account",
     "signupSubtitle": "Create an account to start generating AI e-commerce images",
     "signupSuccess": "Sign Up Successful",
     "checkEmail": "Please check your email to verify your account.",
