@@ -21,6 +21,14 @@ const DETAIL_SCREEN_COST_TABLE: Record<string, Record<string, number>> = {
     "2k": 16,
     "4k": 30,
   },
+  // GPT Image 2 — 预估价格，待 API 开放实测后调整
+  // 官方 pricing: $8/$30 per 1M tokens (input/output); 单张图估 $0.10-0.25
+  "gpt-image-2": {
+    "0.5k": 20,
+    "1k": 22,
+    "2k": 28,
+    "4k": 42,
+  },
 };
 
 const DETAIL_PLAN_COST = 1;
@@ -43,6 +51,14 @@ const GENERATE_IMAGE_COST_TABLE: Record<string, Record<string, number>> = {
     "1k": 12,
     "2k": 14,
     "4k": 24,
+  },
+  // GPT Image 2 — 预估价格，待 API 开放实测后调整
+  // 官方 pricing: $8/$30 per 1M tokens (input/output); 单张图估 $0.10-0.25
+  "gpt-image-2": {
+    "0.5k": 14,
+    "1k": 18,
+    "2k": 22,
+    "4k": 36,
   },
 };
 

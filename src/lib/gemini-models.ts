@@ -3,13 +3,17 @@ export const IMAGE_MODEL_LABELS = {
   "gemini-3.1-flash-image-preview": "Nano Banana 2",
   "nano-banana-pro-preview": "Nano Banana Pro",
   "gemini-3-pro-image-preview": "Nano Banana Pro",
+  // GPT Image 2 — 官方 2026-04-21 发布，API 预计 2026-05 初对开发者开放
+  // 预留类型位，UI 未暴露（不在 IMAGE_MODEL_OPTIONS 中），API 开放后再启用
+  "gpt-image-2": "GPT Image 2",
 } as const;
 
 export type GenerationModel =
   | "gemini-2.5-flash-image"
   | "gemini-3.1-flash-image-preview"
   | "nano-banana-pro-preview"
-  | "gemini-3-pro-image-preview";
+  | "gemini-3-pro-image-preview"
+  | "gpt-image-2";
 
 export const IMAGE_MODEL_OPTIONS: Array<{ value: GenerationModel; label: string }> = [
   { value: "gemini-3.1-flash-image-preview", label: "Nano Banana 2" },
