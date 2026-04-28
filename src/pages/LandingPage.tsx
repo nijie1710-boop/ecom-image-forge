@@ -386,6 +386,16 @@ const LandingPage = () => {
             </Link>
           </div>
           <p className="text-sm text-hero-foreground/40">{t("footer.rights")}</p>
+          <p className="mt-2 text-xs text-hero-foreground/40">
+            <a
+              href="https://beian.miit.gov.cn/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="transition-colors hover:text-hero-foreground/70"
+            >
+              闽ICP备2026009301号-3
+            </a>
+          </p>
         </div>
       </footer>
     </div>
