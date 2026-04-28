@@ -566,73 +566,6 @@ async function loadImageElement(src: string): Promise<HTMLImageElement> {
   });
 }
 
-function isNearNeutralPixel(
-  r: number,
-  g: number,
-  b: number,
-  a: number,
-) {
-  if (a < 24) return true;
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
-  const isVeryLight = r > 236 && g > 232 && b > 224;
-  const isLowSaturation = max - min < 18 && max > 214;
-  return isVeryLight || isLowSaturation;
-}
-
-function detectVerticalTrim(image: HTMLImageElement) {
-  const width = image.naturalWidth || image.width;
-  const height = image.naturalHeight || image.height;
-  const sampleCanvas = document.createElement("canvas");
-  sampleCanvas.width = width;
-  sampleCanvas.height = height;
-  const sampleCtx = sampleCanvas.getContext("2d", { willReadFrequently: true });
-  if (!sampleCtx) {
-    return { top: 0, height };
-  }
-
-  sampleCtx.drawImage(image, 0, 0, width, height);
-  const data = sampleCtx.getImageData(0, 0, width, height).data;
-  const maxTrim = Math.floor(height * 0.18);
-  const blankThreshold = 0.985;
-
-  const isBlankRow = (row: number) => {
-    let neutralCount = 0;
-    const start = row * width * 4;
-    for (let x = 0; x < width; x += 1) {
-      const offset = start + x * 4;
-      if (
-        isNearNeutralPixel(
-          data[offset],
-          data[offset + 1],
-          data[offset + 2],
-          data[offset + 3],
-        )
-      ) {
-        neutralCount += 1;
-      }
-    }
-    return neutralCount / width >= blankThreshold;
-  };
-
-  let top = 0;
-  while (top < Math.min(maxTrim, height - 1) && isBlankRow(top)) {
-    top += 1;
-  }
-
-  let bottom = height - 1;
-  let trimmedBottom = 0;
-  while (trimmedBottom < maxTrim && bottom > top && isBlankRow(bottom)) {
-    bottom -= 1;
-    trimmedBottom += 1;
-  }
-
-  return {
-    top,
-    height: Math.max(1, bottom - top + 1),
-  };
-}
-
 const DetailDesignPage = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -1242,19 +1175,16 @@ const DetailDesignPage = () => {
       composedEntries.map(async (item) => ({
         screen: item.screen,
         image: await loadImageElement(item.url),
-        trim: undefined as { top: number; height: number } | undefined,
       })),
     );
 
-    loaded.forEach((entry) => {
-      entry.trim = detectVerticalTrim(entry.image);
-    });
-
-    const gap = 0;
+    // 纯拼接,不做任何上下裁剪。之前 detectVerticalTrim 会把每张图上下各 18%
+    // 的"近空白"行剪掉,导致浅色背景设计被吃边。用户反馈宁可多留白也不要丢内容。
     const width = Math.max(...loaded.map((item) => item.image.naturalWidth || item.image.width));
-    const height =
-      loaded.reduce((sum, item) => sum + (item.trim?.height || item.image.naturalHeight || item.image.height), 0) +
-      gap * Math.max(0, loaded.length - 1);
+    const height = loaded.reduce(
+      (sum, item) => sum + (item.image.naturalHeight || item.image.height),
+      0,
+    );
 
     const canvas = document.createElement("canvas");
     canvas.width = width;
@@ -1268,13 +1198,12 @@ const DetailDesignPage = () => {
     ctx.fillRect(0, 0, width, height);
 
     let offsetY = 0;
-    loaded.forEach(({ image, trim }) => {
+    loaded.forEach(({ image }) => {
       const imageWidth = image.naturalWidth || image.width;
-      const imageHeight = trim?.height || image.naturalHeight || image.height;
-      const sourceTop = trim?.top || 0;
+      const imageHeight = image.naturalHeight || image.height;
       const drawX = Math.round((width - imageWidth) / 2);
-      ctx.drawImage(image, 0, sourceTop, imageWidth, imageHeight, drawX, offsetY, imageWidth, imageHeight);
-      offsetY += imageHeight + gap;
+      ctx.drawImage(image, drawX, offsetY, imageWidth, imageHeight);
+      offsetY += imageHeight;
     });
 
     return canvas.toDataURL("image/png");
