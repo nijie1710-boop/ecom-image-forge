@@ -60,9 +60,9 @@
     ]
   },
   "gallery": {
-    "sectionTitle": "AI 生成效果展示",
-    "sectionSubtitle": "真实商品图 AI 生成案例，多风格多场景。",
-    "labels": ["白底主图", "生活场景", "买家秀", "品牌质感", "办公场景"]
+    "sectionTitle": "详情页案例",
+    "sectionSubtitle": "所有案例为用户真实生成案例，无任何后期处理。",
+    "hoverHint": "鼠标悬停查看全图"
   },
   "pricing": {
     "sectionTitle": "按需充值，用多少算多少",

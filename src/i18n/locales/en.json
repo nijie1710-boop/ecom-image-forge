@@ -60,9 +60,9 @@
     ]
   },
   "gallery": {
-    "sectionTitle": "AI-Generated Results",
-    "sectionSubtitle": "Real product image AI generation examples, multiple styles and scenes.",
-    "labels": ["White Background", "Lifestyle Scene", "Buyer Show", "Premium Brand", "Office Scene"]
+    "sectionTitle": "Detail Page Cases",
+    "sectionSubtitle": "All cases are real user-generated outputs with no post-processing.",
+    "hoverHint": "Hover to view full image"
   },
   "pricing": {
     "sectionTitle": "Pay As You Go",
