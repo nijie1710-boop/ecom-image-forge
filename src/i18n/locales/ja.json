@@ -60,9 +60,9 @@
     ]
   },
   "gallery": {
-    "sectionTitle": "AI生成結果ギャラリー",
-    "sectionSubtitle": "実際の商品写真からAI生成した事例。多彩なスタイルとシーン。",
-    "labels": ["白背景", "ライフスタイル", "購入者レビュー", "プレミアムブランド", "オフィスシーン"]
+    "sectionTitle": "詳細ページ事例",
+    "sectionSubtitle": "すべてユーザーが実際に生成した事例で、後処理は一切行っていません。",
+    "hoverHint": "マウスオーバーで全体を表示"
   },
   "pricing": {
     "sectionTitle": "使った分だけお支払い",

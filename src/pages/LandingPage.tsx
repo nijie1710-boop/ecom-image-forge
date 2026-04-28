@@ -17,14 +17,15 @@ import {
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { useState } from "react";
 import heroShowcase from "@/assets/hero-showcase.jpg";
-import demoProduct from "@/assets/demo-product-1.jpg";
-import demoLifestyle from "@/assets/demo-lifestyle-1.jpg";
-import demoBuyer from "@/assets/demo-buyer-1.jpg";
-import demoPremium from "@/assets/demo-premium-1.jpg";
-import demoOffice from "@/assets/demo-office-1.jpg";
+import caseVorse from "@/assets/cases/vorse-supplement.jpg";
+import caseUkulele from "@/assets/cases/andrew-ukulele.jpg";
+import caseTowel from "@/assets/cases/kids-bath-towel.jpg";
+import caseChair from "@/assets/cases/camping-chair.jpg";
+import casePajamas from "@/assets/cases/harry-pajamas.jpg";
+import caseMouse from "@/assets/cases/g304-mouse.jpg";
 import logo from "@/assets/logo.png";
 
-const galleryImages = [demoProduct, demoLifestyle, demoBuyer, demoPremium, demoOffice];
+const galleryImages = [caseVorse, caseUkulele, caseTowel, caseChair, casePajamas, caseMouse];
 
 const featureIconMap = [
   { icon: Sparkles, color: "bg-primary/10 text-primary" },
@@ -44,7 +45,6 @@ const LandingPage = () => {
     desc: string;
     highlights: string[];
   }>;
-  const galleryLabels = t("gallery.labels", { returnObjects: true }) as string[];
   const plans = t("pricing.plans", { returnObjects: true }) as Array<{
     name: string;
     price: string;
@@ -279,17 +279,24 @@ const LandingPage = () => {
               {t("gallery.sectionSubtitle")}
             </p>
           </div>
-          <div className="mx-auto grid max-w-5xl grid-cols-2 gap-3 md:grid-cols-3 md:gap-4 lg:grid-cols-5">
+          <div className="mx-auto grid max-w-7xl grid-cols-2 gap-3 sm:grid-cols-3 md:gap-4 lg:grid-cols-6">
             {galleryImages.map((src, i) => (
-              <div key={i} className="group relative overflow-hidden rounded-xl">
+              <div
+                key={i}
+                tabIndex={0}
+                className="group relative h-[420px] overflow-hidden rounded-xl bg-background shadow-sm outline-none focus-within:ring-2 focus-within:ring-primary md:h-[480px]"
+              >
                 <img
                   src={src}
-                  alt={galleryLabels[i]}
-                  className="aspect-square w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                  alt=""
                   loading="lazy"
+                  style={{ transitionDuration: "8s", transitionProperty: "transform", transitionTimingFunction: "linear" }}
+                  className="block w-full group-hover:-translate-y-[calc(100%-420px)] group-focus-within:-translate-y-[calc(100%-420px)] md:group-hover:-translate-y-[calc(100%-480px)] md:group-focus-within:-translate-y-[calc(100%-480px)]"
                 />
-                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-2.5 md:p-3">
-                  <span className="text-xs font-medium text-white">{galleryLabels[i]}</span>
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent px-3 pt-10 pb-3 text-center">
+                  <span className="text-xs font-medium tracking-wide text-white/90">
+                    {t("gallery.hoverHint")}
+                  </span>
                 </div>
               </div>
             ))}
