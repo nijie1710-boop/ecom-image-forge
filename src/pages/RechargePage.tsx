@@ -165,6 +165,35 @@ function getOrderStatusVariant(status: string): "default" | "secondary" | "destr
   return "outline";
 }
 
+const PRICING_CACHE_KEY = "picspark_pricing_cache_v1";
+const PRICING_CACHE_TTL_MS = 30 * 60 * 1000;
+
+function readCachedPricing(): { packages: RechargePackage[]; creditRules: CreditRules } | null {
+  try {
+    const raw = localStorage.getItem(PRICING_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as {
+      ts: number;
+      packages: RechargePackage[];
+      creditRules: CreditRules;
+    };
+    if (!parsed.ts || Date.now() - parsed.ts > PRICING_CACHE_TTL_MS) return null;
+    if (!Array.isArray(parsed.packages) || parsed.packages.length === 0) return null;
+    return { packages: parsed.packages, creditRules: parsed.creditRules };
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedPricing(packages: RechargePackage[], creditRules: CreditRules) {
+  try {
+    localStorage.setItem(
+      PRICING_CACHE_KEY,
+      JSON.stringify({ ts: Date.now(), packages, creditRules }),
+    );
+  } catch { /* ignore quota errors */ }
+}
+
 async function loadBalanceFallback(userId: string): Promise<BalanceInfo> {
   if (isSelfHosted) {
     // In self-hosted mode, the manage-balance API is the primary path, fallback is meaningless
@@ -322,38 +351,61 @@ export default function RechargePage() {
     setIsLoading(true);
     setLoadError(null);
 
-    try {
-      const [pricingResponse, balanceResponse, historyResponse] = await Promise.all([
-        invokeManageBalance({ action: "get_pricing" }).catch(() => loadPricingFallback()),
-        invokeManageBalance({ action: "get" })
-          .then((response) => (response.balance || null) as BalanceInfo | null)
-          .catch(() => loadBalanceFallback(user.id)),
-        invokeManageBalance({ action: "history" }).catch(() => loadHistoryFallback(user.id)),
-      ]);
-
-      // get_pricing returns { settings: { recharge_packages, credit_rules } } or fallback { packages, creditRules }
-      const resolvedPackages =
-        pricingResponse.settings?.recharge_packages ||
-        pricingResponse.packages ||
-        DEFAULT_PACKAGES;
-      const resolvedRules =
-        pricingResponse.settings?.credit_rules ||
-        pricingResponse.creditRules ||
-        DEFAULT_RULES;
-
-      setPackages(resolvedPackages as RechargePackage[]);
-      setCreditRules(resolvedRules as CreditRules);
-      setBalance(balanceResponse || null);
-      setRechargeHistory((historyResponse.recharges || []) as RechargeRecord[]);
-      setConsumptionHistory((historyResponse.consumptions || []) as ConsumptionRecord[]);
+    // Hydrate packages from cache first so card layout stops showing defaults stale
+    const cached = readCachedPricing();
+    if (cached) {
+      setPackages(cached.packages);
+      setCreditRules(cached.creditRules);
       setSelectedPackageId((current) => {
         if (current) return current;
-        const pkgs = resolvedPackages as RechargePackage[];
-        const highlighted = pkgs.find((item: RechargePackage) => item.highlight);
-        return highlighted?.id || pkgs[0]?.id || DEFAULT_PACKAGES[0].id;
+        const highlighted = cached.packages.find((item) => item.highlight);
+        return highlighted?.id || cached.packages[0]?.id || DEFAULT_PACKAGES[0].id;
+      });
+    }
+
+    // Fire all four requests in parallel; each updates its own slice as it returns,
+    // so the balance card stops showing "-" the moment `get` resolves — no waiting
+    // for the slowest call. Errors are isolated per-slice.
+    const pricingPromise = invokeManageBalance({ action: "get_pricing" })
+      .catch(() => loadPricingFallback())
+      .then((pricingResponse) => {
+        const resolvedPackages =
+          pricingResponse.settings?.recharge_packages ||
+          pricingResponse.packages ||
+          DEFAULT_PACKAGES;
+        const resolvedRules =
+          pricingResponse.settings?.credit_rules ||
+          pricingResponse.creditRules ||
+          DEFAULT_RULES;
+        setPackages(resolvedPackages as RechargePackage[]);
+        setCreditRules(resolvedRules as CreditRules);
+        setSelectedPackageId((current) => {
+          if (current) return current;
+          const pkgs = resolvedPackages as RechargePackage[];
+          const highlighted = pkgs.find((item: RechargePackage) => item.highlight);
+          return highlighted?.id || pkgs[0]?.id || DEFAULT_PACKAGES[0].id;
+        });
+        writeCachedPricing(resolvedPackages as RechargePackage[], resolvedRules as CreditRules);
       });
 
-      await loadOrders();
+    const balancePromise = invokeManageBalance({ action: "get" })
+      .then((response) => (response.balance || null) as BalanceInfo | null)
+      .catch(() => loadBalanceFallback(user.id))
+      .then((balanceResponse) => {
+        setBalance(balanceResponse || null);
+      });
+
+    const historyPromise = invokeManageBalance({ action: "history" })
+      .catch(() => loadHistoryFallback(user.id))
+      .then((historyResponse) => {
+        setRechargeHistory((historyResponse.recharges || []) as RechargeRecord[]);
+        setConsumptionHistory((historyResponse.consumptions || []) as ConsumptionRecord[]);
+      });
+
+    const ordersPromise = loadOrders();
+
+    try {
+      await Promise.all([pricingPromise, balancePromise, historyPromise, ordersPromise]);
     } catch (error) {
       console.error("load recharge center failed:", error);
       const message = normalizeUserErrorMessage(error, "充值中心加载失败，请稍后再试");
