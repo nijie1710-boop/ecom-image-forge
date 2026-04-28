@@ -2,35 +2,56 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
-function requireClientEnv(name: string, value: string | undefined): string {
+// 在自托管模式 (VITE_API_URL 已设置) 下,supabase 仅作为 fallback 路径,
+// 缺失这两个 env 不应阻止应用启动。早前的 throw 会导致依赖此模块的
+// AuthContext 等静态 import 失败,整个 React tree 拒绝挂载,出现白屏。
+function readClientEnv(name: string, value: string | undefined): string {
   const resolved = value?.trim();
   if (!resolved) {
-    throw new Error(`[env] Missing ${name}. Configure it in the current Vercel environment.`);
+    if (typeof window !== "undefined") {
+      console.warn(`[env] Missing ${name} - supabase fallback path will be unavailable.`);
+    }
+    return "";
   }
   return resolved;
 }
 
-export const SUPABASE_URL = requireClientEnv("VITE_SUPABASE_URL", import.meta.env.VITE_SUPABASE_URL);
-export const SUPABASE_PUBLISHABLE_KEY = requireClientEnv(
+export const SUPABASE_URL = readClientEnv("VITE_SUPABASE_URL", import.meta.env.VITE_SUPABASE_URL);
+export const SUPABASE_PUBLISHABLE_KEY = readClientEnv(
   "VITE_SUPABASE_PUBLISHABLE_KEY",
   import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
 );
 
 if (typeof window !== "undefined") {
-  try {
-    console.info("[env] Supabase host:", new URL(SUPABASE_URL).host);
-  } catch {
-    console.warn("[env] VITE_SUPABASE_URL is not a valid URL.");
+  if (SUPABASE_URL) {
+    try {
+      console.info("[env] Supabase host:", new URL(SUPABASE_URL).host);
+    } catch {
+      console.warn("[env] VITE_SUPABASE_URL is not a valid URL.");
+    }
   }
 }
 
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
 
-export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
-  auth: {
-    storage: typeof window !== "undefined" ? window.localStorage : undefined,
-    persistSession: true,
-    autoRefreshToken: true,
-  }
-});
+// 仅当 URL+KEY 都齐全时创建真实 client,否则给出 stub —— 避免空 URL 让
+// createClient 抛错导致整个模块导入失败 (自托管模式下根本不需要 supabase)。
+function createSupabaseStub(): ReturnType<typeof createClient<Database>> {
+  const reject = () =>
+    Promise.reject(new Error("[supabase] not configured - self-hosted mode only"));
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return new Proxy({} as any, {
+    get: () => new Proxy(() => reject(), { get: () => reject }),
+  });
+}
+
+export const supabase = (SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY)
+  ? createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+      auth: {
+        storage: typeof window !== "undefined" ? window.localStorage : undefined,
+        persistSession: true,
+        autoRefreshToken: true,
+      },
+    })
+  : createSupabaseStub();
