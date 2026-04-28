@@ -146,7 +146,7 @@ const LandingPage = () => {
                 <Button
                   variant="outline"
                   size="lg"
-                  className="w-full border-hero-foreground/20 text-base text-hero-foreground hover:bg-hero-foreground/10 sm:w-auto"
+                  className="w-full border-hero-foreground/30 bg-transparent text-base text-hero-foreground hover:bg-hero-foreground/10 hover:text-hero-foreground sm:w-auto"
                 >
                   {t("hero.viewGallery")}
                 </Button>
