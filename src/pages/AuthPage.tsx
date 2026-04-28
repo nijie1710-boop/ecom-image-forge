@@ -19,7 +19,9 @@ type AuthMode = "login" | "signup" | "reset";
 const FEATURE_TAGS = ["AI 智能识别", "多模板排版", "一键生成", "批量导出"];
 const OTP_LENGTH = 8;
 const OTP_COOLDOWN_SECONDS = 90;
-const AUTH_REQUEST_TIMEOUT_MS = 15_000;
+// 30s 上限是为了覆盖 HK Express 冷启动 — 实测冷启动首请求 ~24s，
+// 之后稳定在 2-3s。15s 太紧会让用户在 HK 空闲后第一个登录请求误报超时。
+const AUTH_REQUEST_TIMEOUT_MS = 30_000;
 
 async function withAuthTimeout<T>(operation: Promise<T>, label = "AUTH_REQUEST_TIMEOUT"): Promise<T> {
   let timeoutId: ReturnType<typeof window.setTimeout> | undefined;
@@ -51,11 +53,11 @@ function normalizeAuthError(raw: unknown) {
   const lower = rawText.toLowerCase();
 
   if (lower.includes("auth_request_timeout")) {
-    return "登录服务响应超时，请稍后再试；如果只在测试版出现，请检查 staging Supabase Auth 状态";
+    return "登录服务响应超时（首次唤醒可能需要 30 秒），请稍等片刻后再点一次登录";
   }
 
   if (lower.includes("failed to fetch") || lower.includes("networkerror")) {
-    return "无法连接登录服务，请检查网络或 Supabase Auth 是否可用";
+    return "无法连接登录服务，请检查网络后重试";
   }
 
   if (lower.includes("over_email_send_rate_limit") || lower.includes("email rate limit exceeded")) {
