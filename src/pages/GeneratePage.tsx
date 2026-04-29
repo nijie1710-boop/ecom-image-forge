@@ -104,6 +104,22 @@ const ratioOptions = [
   { value: "21:9", label: "21:9 超宽屏" },
 ];
 
+/**
+ * gpt-image-2 (Apiyi 逆向通道) 仅接受 1024×1024 / 1024×1536 / 1536×1024 三种尺寸,
+ * 对应到用户视角的纯比例就是 1:1 / 2:3 / 3:2。其它比例会让出图与用户期望不一致,
+ * 因此在 UI 上直接把可选比例砍到这三种, 避免歧义。
+ */
+const GPT_IMAGE_2_RATIOS = new Set(["1:1", "2:3", "3:2"]);
+function isGptImage2Model(model: GenerationModel | undefined) {
+  return model === "gpt-image-2" || model === "gpt-image-2-all";
+}
+function getRatioOptionsForModel(model: GenerationModel) {
+  if (isGptImage2Model(model)) {
+    return ratioOptions.filter((option) => GPT_IMAGE_2_RATIOS.has(option.value));
+  }
+  return ratioOptions;
+}
+
 const languageOptions = [
   { value: "zh", label: "CN 中文" },
   { value: "en", label: "US English" },
@@ -377,6 +393,17 @@ const GeneratePage = () => {
     () => getGenResolutionOptions(selectedModel),
     [selectedModel],
   );
+  const currentRatioOptions = useMemo(
+    () => getRatioOptionsForModel(selectedModel),
+    [selectedModel],
+  );
+
+  // 切换到 gpt-image-2 时，若当前比例不在支持范围内，自动落到 1:1
+  useEffect(() => {
+    if (isGptImage2Model(selectedModel) && !GPT_IMAGE_2_RATIOS.has(selectedRatio)) {
+      setSelectedRatio("1:1");
+    }
+  }, [selectedModel, selectedRatio]);
   const strictCategoryHint = useMemo(
     () =>
       detectFidelityCategory([
@@ -1313,7 +1340,7 @@ const GeneratePage = () => {
           />
           <SelectField
             label="尺寸"
-            options={ratioOptions}
+            options={currentRatioOptions}
             value={selectedRatio}
             onChange={setSelectedRatio}
           />

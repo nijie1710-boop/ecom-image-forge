@@ -121,6 +121,18 @@ const ratioOptions = [
   { value: "21:9", label: "21:9 超宽屏" },
 ];
 
+/** gpt-image-2（Apiyi 逆向）只接受 1024² / 1024×1536 / 1536×1024 三种尺寸 */
+const GPT_IMAGE_2_RATIOS = new Set(["1:1", "2:3", "3:2"]);
+function isGptImage2Model(model: GenerationModel | undefined) {
+  return model === "gpt-image-2" || model === "gpt-image-2-all";
+}
+function getRatioOptionsForModel(model: GenerationModel) {
+  if (isGptImage2Model(model)) {
+    return ratioOptions.filter((option) => GPT_IMAGE_2_RATIOS.has(option.value));
+  }
+  return ratioOptions;
+}
+
 const modelOptions: { value: GenerationModel; label: string; hint: string }[] = [
   {
     value: "gemini-3.1-flash-image-preview",
@@ -620,6 +632,13 @@ const DetailDesignPage = () => {
   const planningErrorHint = error ? errorHintFromMessage(error) : null;
   const generationErrorHint = generationError ? errorHintFromMessage(generationError) : null;
   const previewAspectRatio = useMemo(() => toCssAspectRatio(selectedRatio), [selectedRatio]);
+
+  // 切换到 gpt-image-2 时，若当前比例不在支持范围内，自动落到 2:3（详情屏默认竖版）
+  useEffect(() => {
+    if (isGptImage2Model(selectedModel) && !GPT_IMAGE_2_RATIOS.has(selectedRatio)) {
+      setSelectedRatio("2:3");
+    }
+  }, [selectedModel, selectedRatio]);
   const strictCategoryHint = useMemo(
     () =>
       detectFidelityCategory([
@@ -1982,7 +2001,7 @@ const DetailDesignPage = () => {
                     label="画面比例"
                     value={selectedRatio}
                     onChange={setSelectedRatio}
-                    options={ratioOptions}
+                    options={getRatioOptionsForModel(selectedModel)}
                   />
                   <SelectField
                     label="清晰度"
