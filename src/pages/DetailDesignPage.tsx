@@ -1519,20 +1519,22 @@ const DetailDesignPage = () => {
     const nextMode = value as FidelityMode;
     setFidelityMode(nextMode);
     if (nextMode === "strict" || nextMode === "composite") {
-      setSelectedModel("gemini-3.1-flash-image-preview");
-      setSelectedResolution("1k");
+      // 防降级：当前若在 Banana 基础档，回到 Banana 2 起步；
+      // 已经在 Banana 2 / Pro / GPT 的用户保留其选择，允许升级。
+      if (selectedModel === "gemini-2.5-flash-image") {
+        setSelectedModel("gemini-3.1-flash-image-preview");
+        setSelectedResolution("1k");
+      }
     }
   };
 
+  // 守护：只在用户被锁在 Banana 时上拉到 Banana 2，保留 Pro / GPT 升级。
   useEffect(() => {
     if (fidelityMode !== "strict" && fidelityMode !== "composite") return;
-    if (selectedModel !== "gemini-3.1-flash-image-preview") {
+    if (selectedModel === "gemini-2.5-flash-image") {
       setSelectedModel("gemini-3.1-flash-image-preview");
     }
-    if (selectedResolution !== "1k") {
-      setSelectedResolution("1k");
-    }
-  }, [fidelityMode, selectedModel, selectedResolution]);
+  }, [fidelityMode, selectedModel]);
 
   // ---- 积分相关计算 ----
   const planCost = getDetailPlanCost();
@@ -1991,10 +1993,18 @@ const DetailDesignPage = () => {
                         setSelectedResolution(allowed[0]);
                       }
                     }}
-                    options={modelOptions.map((option) => ({
-                      value: option.value,
-                      label: option.label,
-                    }))}
+                    options={modelOptions
+                      // 严格保真 / 抠图合成模式下隐藏 Banana 基础档（仅允许向上升级）
+                      .filter((option) => {
+                        if ((fidelityMode === "strict" || fidelityMode === "composite") && option.value === "gemini-2.5-flash-image") {
+                          return false;
+                        }
+                        return true;
+                      })
+                      .map((option) => ({
+                        value: option.value,
+                        label: option.label,
+                      }))}
                   />
                   <div className="-mt-2 text-xs text-muted-foreground">{currentModelHint}</div>
                   <SelectField

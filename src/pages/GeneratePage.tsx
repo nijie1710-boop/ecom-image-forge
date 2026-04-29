@@ -465,14 +465,15 @@ const GeneratePage = () => {
   const handleFidelityModeChange = (value: string) => {
     const nextMode = value as FidelityMode;
     setFidelityMode(nextMode);
-    if (nextMode === "strict") {
-      setSelectedModel("gemini-3.1-flash-image-preview");
-      setSelectedResolution("1k");
+    if (nextMode === "strict" || nextMode === "composite") {
+      // 防降级：当前若在 Banana（基础档），切回 Banana 2 默认起步；
+      // 已经在 Banana 2 / Pro / GPT 的用户保留其选择，允许向上升级。
+      if (selectedModel === "gemini-2.5-flash-image") {
+        setSelectedModel("gemini-3.1-flash-image-preview");
+        setSelectedResolution("1k");
+      }
     }
     if (nextMode === "composite") {
-      // Composite defaults to Banana 2 (1k), but user can switch to Pro for better fidelity.
-      setSelectedModel("gemini-3.1-flash-image-preview");
-      setSelectedResolution("1k");
       if (modelMode === "with_model") {
         setModelMode("none");
         setModelImage("");
@@ -487,19 +488,14 @@ const GeneratePage = () => {
     }
   };
 
+  // 防降级守护：保真/合成模式下若用户切到了 Banana（基础档），自动拉回 Banana 2。
+  // 不再硬锁特定模型/分辨率——用户可以自由选择 Banana 2 / Pro / GPT Image 2 的任意配置。
   useEffect(() => {
-    // Strict mode: hard lock on Banana 2 + 1k (unchanged).
-    if (fidelityMode === "strict") {
-      if (selectedModel !== "gemini-3.1-flash-image-preview") {
-        setSelectedModel("gemini-3.1-flash-image-preview");
-      }
-      if (selectedResolution !== "1k") {
-        setSelectedResolution("1k");
-      }
-      return;
+    if (fidelityMode !== "strict" && fidelityMode !== "composite") return;
+    if (selectedModel === "gemini-2.5-flash-image") {
+      setSelectedModel("gemini-3.1-flash-image-preview");
     }
-    // Composite mode: no longer force Banana 2 — user may select Pro for higher fidelity.
-  }, [fidelityMode, selectedModel, selectedResolution]);
+  }, [fidelityMode, selectedModel]);
 
   // Nano Banana only supports English text — force language when selected
   const isNanoBanana = selectedModel === "gemini-2.5-flash-image";
@@ -1372,7 +1368,15 @@ const GeneratePage = () => {
           <div className="space-y-1">
             <SelectField
               label="模型"
-              options={modelOptions.map((o) => ({ value: o.value, label: o.label }))}
+              options={modelOptions
+                // 严格保真 / 抠图合成模式下隐藏 Banana 基础档（仅允许向上升级）
+                .filter((o) => {
+                  if ((fidelityMode === "strict" || fidelityMode === "composite") && o.value === "gemini-2.5-flash-image") {
+                    return false;
+                  }
+                  return true;
+                })
+                .map((o) => ({ value: o.value, label: o.label }))}
               value={selectedModel}
               onChange={(value) => setSelectedModel(value as GenerationModel)}
             />
