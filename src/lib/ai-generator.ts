@@ -36,6 +36,12 @@ export interface GenerateImageParams {
   modelImage?: string;
   fidelityMode?: FidelityMode;
   fidelityContext?: FidelityContext;
+  /**
+   * Per-call prepaid credits cost. The backend uses this to auto-refund when
+   * generation fails. Frontend should pass the credit cost it deducted upfront
+   * for THIS single call. Optional — falsy values disable auto-refund.
+   */
+  prepaidAmount?: number;
   debugContext?: {
     source?: "main" | "detail" | "copy";
     screenNumber?: number;
@@ -331,6 +337,8 @@ async function generateSingleImageRaw(
       modelImage: params.modelImage || undefined,
       fidelityMode: params.fidelityMode || "normal",
       fidelityContext: params.fidelityContext || undefined,
+      // Tells the backend how much to auto-refund if this call fails.
+      prepaidAmount: typeof params.prepaidAmount === "number" && params.prepaidAmount > 0 ? params.prepaidAmount : undefined,
       debugContext: {
         ...params.debugContext,
         promptLength: params.prompt.length,

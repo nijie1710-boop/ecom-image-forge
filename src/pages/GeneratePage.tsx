@@ -125,6 +125,7 @@ const modelOptions: { value: GenerationModel; label: string; hint: string }[] = 
   { value: "gemini-3.1-flash-image-preview", label: "Nano Banana 2", hint: "性价比高，新手推荐" },
   { value: "nano-banana-pro-preview", label: "Nano Banana Pro", hint: "画面质量更高，适合精品图" },
   { value: "gemini-2.5-flash-image", label: "Nano Banana", hint: "最快速度，适合快速试方案" },
+  { value: "gpt-image-2-all", label: "GPT Image 2 ✨", hint: "汉字渲染最强 · 输出尺寸固定 · 速度较慢（30-90s）" },
 ];
 
 const allResolutionOptions: { value: OutputResolution; label: string }[] = [
@@ -139,6 +140,10 @@ const genModelResolutionMap: Record<GenerationModel, OutputResolution[]> = {
   "gemini-2.5-flash-image": ["1k"],
   "gemini-3.1-flash-image-preview": ["0.5k", "1k", "2k", "4k"],
   "nano-banana-pro-preview": ["1k", "2k", "4k"],
+  // GPT Image 2 实际输出固定 1024×1024 / 1024×1536，档位仅控制精细度
+  "gemini-3-pro-image-preview": ["1k", "2k", "4k"],
+  "gpt-image-2": ["1k", "2k"],
+  "gpt-image-2-all": ["1k", "2k"],
 };
 
 function getGenResolutionOptions(model: GenerationModel) {
@@ -768,6 +773,7 @@ const GeneratePage = () => {
       fidelityMode,
       fidelityContext: fidelityMode !== "normal" ? strictFidelityContext : undefined,
       negativePrompt: negativePrompt.trim() || undefined,
+      unitCost,
       userId: user?.id,
       onComplete: (images: string[]) => {
         setResults(images);
@@ -820,6 +826,7 @@ const GeneratePage = () => {
     startImageGeneration({
       ...lastParams,
       _groupId: batchId,
+      unitCost: getGenerateImageUnitCost(regenModel, regenRes),
       onComplete: (images: string[]) => {
         setResults(images);
         setIsGenerating(false);
@@ -862,6 +869,7 @@ const GeneratePage = () => {
       ...lastParams,
       n: 1,
       _groupId: batchId,
+      unitCost: cost,
       onComplete: (images: string[]) => {
         if (images.length > 0) {
           setResults((prev) => [...prev, ...images]);
@@ -897,7 +905,7 @@ const GeneratePage = () => {
     }
     refreshBalance();
 
-    await ctxRegenerateSingle(activeJob.id, index, lastParams);
+    await ctxRegenerateSingle(activeJob.id, index, { ...lastParams, unitCost: cost });
   };
 
   const buildCuratedSeed = (src: string) => ({

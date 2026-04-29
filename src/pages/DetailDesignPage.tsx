@@ -137,6 +137,11 @@ const modelOptions: { value: GenerationModel; label: string; hint: string }[] = 
     label: "Nano Banana",
     hint: "速度更快，适合快速试方案",
   },
+  {
+    value: "gpt-image-2-all",
+    label: "GPT Image 2 ✨",
+    hint: "汉字渲染最强 · 输出尺寸固定 · 速度较慢（30-90s）",
+  },
 ];
 
 const allResolutionOptions: { value: OutputResolution; label: string }[] = [
@@ -241,6 +246,10 @@ const modelResolutionMap: Record<GenerationModel, OutputResolution[]> = {
   "gemini-2.5-flash-image": ["1k"],
   "gemini-3.1-flash-image-preview": ["0.5k", "1k", "2k", "4k"],
   "nano-banana-pro-preview": ["1k", "2k", "4k"],
+  // GPT Image 2 实际输出固定 1024×1024 / 1024×1536，档位仅控制精细度
+  "gemini-3-pro-image-preview": ["1k", "2k", "4k"],
+  "gpt-image-2": ["1k", "2k"],
+  "gpt-image-2-all": ["1k", "2k"],
 };
 
 function getResolutionOptions(model: GenerationModel) {

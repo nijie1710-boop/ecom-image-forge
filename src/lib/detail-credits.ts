@@ -21,13 +21,18 @@ const DETAIL_SCREEN_COST_TABLE: Record<string, Record<string, number>> = {
     "2k": 16,
     "4k": 30,
   },
-  // GPT Image 2 — 预估价格，待 API 开放实测后调整
-  // 官方 pricing: $8/$30 per 1M tokens (input/output); 单张图估 $0.10-0.25
+  // GPT Image 2 (官转占位) — 待 image2Enterprise 分组开通后启用
   "gpt-image-2": {
     "0.5k": 20,
     "1k": 22,
     "2k": 28,
     "4k": 42,
+  },
+  // GPT Image 2 (Apiyi 逆向 gpt-image-2-all) — 实际成本 flat $0.03/张 ≈ 11 积分
+  // 主图、详情屏共用同档价格；仅 1k / 2k 两档对外开放
+  "gpt-image-2-all": {
+    "1k": 16,
+    "2k": 20,
   },
 };
 
@@ -52,13 +57,17 @@ const GENERATE_IMAGE_COST_TABLE: Record<string, Record<string, number>> = {
     "2k": 14,
     "4k": 24,
   },
-  // GPT Image 2 — 预估价格，待 API 开放实测后调整
-  // 官方 pricing: $8/$30 per 1M tokens (input/output); 单张图估 $0.10-0.25
+  // GPT Image 2 (官转占位)
   "gpt-image-2": {
     "0.5k": 14,
     "1k": 18,
     "2k": 22,
     "4k": 36,
+  },
+  // GPT Image 2 (Apiyi 逆向) — 主图与详情屏同价
+  "gpt-image-2-all": {
+    "1k": 16,
+    "2k": 20,
   },
 };
 
