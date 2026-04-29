@@ -152,7 +152,7 @@ const modelOptions: { value: GenerationModel; label: string; hint: string }[] = 
   {
     value: "gpt-image-2-all",
     label: "GPT Image 2 ✨",
-    hint: "汉字渲染最强 · 输出尺寸固定 · 速度较慢（30-90s）",
+    hint: "🔥 新品限时优惠 · 汉字渲染最强 · 输出尺寸固定 · 速度较慢（30-90s）",
   },
 ];
 

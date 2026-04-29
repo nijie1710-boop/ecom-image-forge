@@ -141,7 +141,7 @@ const modelOptions: { value: GenerationModel; label: string; hint: string }[] = 
   { value: "gemini-3.1-flash-image-preview", label: "Nano Banana 2", hint: "性价比高，新手推荐" },
   { value: "nano-banana-pro-preview", label: "Nano Banana Pro", hint: "画面质量更高，适合精品图" },
   { value: "gemini-2.5-flash-image", label: "Nano Banana", hint: "最快速度，适合快速试方案" },
-  { value: "gpt-image-2-all", label: "GPT Image 2 ✨", hint: "汉字渲染最强 · 输出尺寸固定 · 速度较慢（30-90s）" },
+  { value: "gpt-image-2-all", label: "GPT Image 2 ✨", hint: "🔥 新品限时优惠 · 汉字渲染最强 · 输出尺寸固定 · 速度较慢（30-90s）" },
 ];
 
 const allResolutionOptions: { value: OutputResolution; label: string }[] = [

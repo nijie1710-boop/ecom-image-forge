@@ -30,9 +30,10 @@ const DETAIL_SCREEN_COST_TABLE: Record<string, Record<string, number>> = {
   },
   // GPT Image 2 (Apiyi 逆向 gpt-image-2-all) — 实际成本 flat $0.03/张 ≈ 11 积分
   // 主图、详情屏共用同档价格；仅 1k / 2k 两档对外开放
+  // 🔥 新品限时优惠定价（同 Banana Pro 1k 价位），日后调整请同步主图与详情屏
   "gpt-image-2-all": {
-    "1k": 16,
-    "2k": 20,
+    "1k": 12,
+    "2k": 16,
   },
 };
 
@@ -65,9 +66,10 @@ const GENERATE_IMAGE_COST_TABLE: Record<string, Record<string, number>> = {
     "4k": 36,
   },
   // GPT Image 2 (Apiyi 逆向) — 主图与详情屏同价
+  // 🔥 新品限时优惠定价
   "gpt-image-2-all": {
-    "1k": 16,
-    "2k": 20,
+    "1k": 12,
+    "2k": 16,
   },
 };
 
