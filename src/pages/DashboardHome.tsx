@@ -7,15 +7,75 @@ import {
   Sparkles,
   Upload,
   Wand2,
+  X,
   Zap,
 } from "lucide-react";
 import { Link } from "react-router-dom";
-import demoLifestyle from "@/assets/demo-lifestyle-1.jpg";
-import demoBuyer from "@/assets/demo-buyer-1.jpg";
-import demoPremium from "@/assets/demo-premium-1.jpg";
-import demoOffice from "@/assets/demo-office-1.jpg";
+import { useState } from "react";
+import caseVorse from "@/assets/cases/vorse-supplement.jpg";
+import caseUkulele from "@/assets/cases/andrew-ukulele.jpg";
+import caseTowel from "@/assets/cases/kids-bath-towel.jpg";
+import caseChair from "@/assets/cases/camping-chair.jpg";
+import casePajamas from "@/assets/cases/harry-pajamas.jpg";
+import caseMouse from "@/assets/cases/g304-mouse.jpg";
 import { WorkspaceHeader } from "@/components/workspace/WorkspaceShell";
 import { WorkspaceSection } from "@/components/workspace/WorkspaceBlocks";
+
+const GPT_BANNER_DISMISS_KEY = "picspark.banner.gpt-image-2-launch.dismissed";
+// Banner auto-hides after this date even without dismissal (避免无限期挂着的"新功能"提示).
+const GPT_BANNER_HIDE_AFTER = "2026-05-31";
+
+const GPTLaunchBanner = () => {
+  const [visible, setVisible] = useState(() => {
+    if (typeof window === "undefined") return false;
+    if (window.localStorage?.getItem(GPT_BANNER_DISMISS_KEY)) return false;
+    if (new Date() > new Date(GPT_BANNER_HIDE_AFTER)) return false;
+    return true;
+  });
+
+  if (!visible) return null;
+
+  const dismiss = () => {
+    try {
+      window.localStorage?.setItem(GPT_BANNER_DISMISS_KEY, String(Date.now()));
+    } catch {
+      // ignore storage errors
+    }
+    setVisible(false);
+  };
+
+  return (
+    <div className="relative overflow-hidden rounded-2xl border border-primary/15 bg-gradient-to-r from-violet-50 via-fuchsia-50 to-purple-50 dark:from-violet-950/40 dark:via-fuchsia-950/30 dark:to-purple-950/40">
+      <div className="flex flex-wrap items-center gap-3 px-3 py-2.5 pr-10 sm:flex-nowrap sm:gap-4 sm:px-5 sm:py-3">
+        <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-white/90 text-primary shadow-sm dark:bg-white/10">
+          <Sparkles className="h-4 w-4" />
+        </span>
+        <div className="min-w-0 flex-1 text-sm leading-snug text-foreground">
+          🆕 <span className="font-semibold text-primary">GPT Image 2</span> 已上线
+          <span className="mx-1.5 text-muted-foreground">·</span>
+          🔥 限时优惠 <span className="font-semibold text-primary">12 积分</span> 起
+          <span className="mx-1.5 text-muted-foreground">·</span>
+          <span className="hidden text-xs text-muted-foreground sm:inline">汉字渲染最强 · 失败自动退积分</span>
+        </div>
+        <Link
+          to="/dashboard/generate"
+          className="inline-flex flex-shrink-0 items-center gap-1 rounded-xl bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90 sm:text-sm"
+        >
+          立即体验
+          <ArrowRight className="h-3.5 w-3.5" />
+        </Link>
+      </div>
+      <button
+        type="button"
+        onClick={dismiss}
+        aria-label="关闭公告"
+        className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-white/60 hover:text-foreground dark:hover:bg-white/10"
+      >
+        <X className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+};
 
 const steps = [
   {
@@ -43,7 +103,7 @@ const quickActions = [
     desc: "上传商品图后，快速生成多张电商图片结果，适合高频出图、快速试风格和挑图。",
     cta: "立即进入",
     path: "/dashboard/generate",
-    color: "from-primary to-purple-500",
+    color: "from-primary to-violet-600",
   },
   {
     icon: LayoutPanelTop,
@@ -52,7 +112,7 @@ const quickActions = [
     desc: "先生成多套详情页方案，再按屏输出完整详情图，适合制作统一风格的商品详情长图。",
     cta: "开始制作",
     path: "/dashboard/detail-design",
-    color: "from-fuchsia-500 to-rose-500",
+    color: "from-violet-500 to-fuchsia-500",
   },
   {
     icon: Image,
@@ -61,7 +121,7 @@ const quickActions = [
     desc: "识别图片文字并生成多语言版本，适合出海和跨境素材。",
     cta: "立即进入",
     path: "/dashboard/translate",
-    color: "from-cyan-500 to-sky-500",
+    color: "from-indigo-500 to-violet-500",
   },
   {
     icon: FolderOpen,
@@ -70,16 +130,11 @@ const quickActions = [
     desc: "查看、收藏、下载和管理已经生成过的图片结果。",
     cta: "查看图片库",
     path: "/dashboard/images",
-    color: "from-amber-500 to-orange-500",
+    color: "from-purple-500 to-indigo-600",
   },
 ];
 
-const galleryItems = [
-  { src: demoLifestyle, label: "生活场景" },
-  { src: demoBuyer, label: "买家秀" },
-  { src: demoPremium, label: "品牌质感" },
-  { src: demoOffice, label: "办公场景" },
-];
+const galleryImages = [caseVorse, caseUkulele, caseTowel, caseChair, casePajamas, caseMouse];
 
 const DashboardHome = () => {
   return (
@@ -91,6 +146,8 @@ const DashboardHome = () => {
         description="从 AI 主图、AI 详情图、图文翻译和图片库快速进入，把商品图生成、整版详情策划和结果管理放在一个工作台里完成。"
         steps={["上传素材", "生成方案", "下载或继续编辑"]}
       />
+
+      <GPTLaunchBanner />
 
       <section className="grid gap-4 lg:gap-5 xl:grid-cols-[1.25fr_0.95fr] xl:gap-6">
         <Link to="/dashboard/generate" className="block">
@@ -181,20 +238,27 @@ const DashboardHome = () => {
       </WorkspaceSection>
 
       <WorkspaceSection
-        title="示例展示"
-        description="快速看看工作台当前更适合生成的常见风格和应用场景。"
+        title="详情页案例"
+        description="所有案例为用户真实生成案例，无任何后期处理。鼠标悬停查看全图。"
       >
-        <div className="grid grid-cols-2 gap-2.5 sm:gap-3 md:grid-cols-4">
-          {galleryItems.map((item) => (
-            <div key={item.label} className="group relative overflow-hidden rounded-[24px]">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:gap-4 xl:grid-cols-6">
+          {galleryImages.map((src, i) => (
+            <div
+              key={i}
+              tabIndex={0}
+              className="group relative h-[380px] overflow-hidden rounded-xl bg-background shadow-sm outline-none focus-within:ring-2 focus-within:ring-primary md:h-[420px]"
+            >
               <img
-                src={item.src}
-                alt={item.label}
-                className="aspect-square w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                src={src}
+                alt=""
                 loading="lazy"
+                style={{ transitionDuration: "8s", transitionProperty: "transform", transitionTimingFunction: "linear" }}
+                className="block w-full group-hover:-translate-y-[calc(100%-380px)] group-focus-within:-translate-y-[calc(100%-380px)] md:group-hover:-translate-y-[calc(100%-420px)] md:group-focus-within:-translate-y-[calc(100%-420px)]"
               />
-              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent p-3">
-                <span className="text-sm font-medium text-white">{item.label}</span>
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent px-3 pt-10 pb-3 text-center">
+                <span className="text-xs font-medium tracking-wide text-white/90">
+                  鼠标悬停查看全图
+                </span>
               </div>
             </div>
           ))}
