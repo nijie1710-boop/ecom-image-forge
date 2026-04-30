@@ -104,6 +104,22 @@ const ratioOptions = [
   { value: "21:9", label: "21:9 超宽屏" },
 ];
 
+/**
+ * gpt-image-2 (Apiyi 逆向通道) 仅接受 1024×1024 / 1024×1536 / 1536×1024 三种尺寸,
+ * 对应到用户视角的纯比例就是 1:1 / 2:3 / 3:2。其它比例会让出图与用户期望不一致,
+ * 因此在 UI 上直接把可选比例砍到这三种, 避免歧义。
+ */
+const GPT_IMAGE_2_RATIOS = new Set(["1:1", "2:3", "3:2"]);
+function isGptImage2Model(model: GenerationModel | undefined) {
+  return model === "gpt-image-2" || model === "gpt-image-2-all";
+}
+function getRatioOptionsForModel(model: GenerationModel) {
+  if (isGptImage2Model(model)) {
+    return ratioOptions.filter((option) => GPT_IMAGE_2_RATIOS.has(option.value));
+  }
+  return ratioOptions;
+}
+
 const languageOptions = [
   { value: "zh", label: "CN 中文" },
   { value: "en", label: "US English" },
@@ -125,6 +141,7 @@ const modelOptions: { value: GenerationModel; label: string; hint: string }[] = 
   { value: "gemini-3.1-flash-image-preview", label: "Nano Banana 2", hint: "性价比高，新手推荐" },
   { value: "nano-banana-pro-preview", label: "Nano Banana Pro", hint: "画面质量更高，适合精品图" },
   { value: "gemini-2.5-flash-image", label: "Nano Banana", hint: "最快速度，适合快速试方案" },
+  { value: "gpt-image-2-all", label: "GPT Image 2 ✨", hint: "🔥 新品限时优惠 · 汉字渲染最强 · 输出尺寸固定 · 速度较慢（30-90s）" },
 ];
 
 const allResolutionOptions: { value: OutputResolution; label: string }[] = [
@@ -139,6 +156,10 @@ const genModelResolutionMap: Record<GenerationModel, OutputResolution[]> = {
   "gemini-2.5-flash-image": ["1k"],
   "gemini-3.1-flash-image-preview": ["0.5k", "1k", "2k", "4k"],
   "nano-banana-pro-preview": ["1k", "2k", "4k"],
+  // GPT Image 2 实际输出固定 1024×1024 / 1024×1536，档位仅控制精细度
+  "gemini-3-pro-image-preview": ["1k", "2k", "4k"],
+  "gpt-image-2": ["1k", "2k"],
+  "gpt-image-2-all": ["1k", "2k"],
 };
 
 function getGenResolutionOptions(model: GenerationModel) {
@@ -372,6 +393,17 @@ const GeneratePage = () => {
     () => getGenResolutionOptions(selectedModel),
     [selectedModel],
   );
+  const currentRatioOptions = useMemo(
+    () => getRatioOptionsForModel(selectedModel),
+    [selectedModel],
+  );
+
+  // 切换到 gpt-image-2 时，若当前比例不在支持范围内，自动落到 1:1
+  useEffect(() => {
+    if (isGptImage2Model(selectedModel) && !GPT_IMAGE_2_RATIOS.has(selectedRatio)) {
+      setSelectedRatio("1:1");
+    }
+  }, [selectedModel, selectedRatio]);
   const strictCategoryHint = useMemo(
     () =>
       detectFidelityCategory([
@@ -433,14 +465,15 @@ const GeneratePage = () => {
   const handleFidelityModeChange = (value: string) => {
     const nextMode = value as FidelityMode;
     setFidelityMode(nextMode);
-    if (nextMode === "strict") {
-      setSelectedModel("gemini-3.1-flash-image-preview");
-      setSelectedResolution("1k");
+    if (nextMode === "strict" || nextMode === "composite") {
+      // 防降级：当前若在 Banana（基础档），切回 Banana 2 默认起步；
+      // 已经在 Banana 2 / Pro / GPT 的用户保留其选择，允许向上升级。
+      if (selectedModel === "gemini-2.5-flash-image") {
+        setSelectedModel("gemini-3.1-flash-image-preview");
+        setSelectedResolution("1k");
+      }
     }
     if (nextMode === "composite") {
-      // Composite defaults to Banana 2 (1k), but user can switch to Pro for better fidelity.
-      setSelectedModel("gemini-3.1-flash-image-preview");
-      setSelectedResolution("1k");
       if (modelMode === "with_model") {
         setModelMode("none");
         setModelImage("");
@@ -455,19 +488,14 @@ const GeneratePage = () => {
     }
   };
 
+  // 防降级守护：保真/合成模式下若用户切到了 Banana（基础档），自动拉回 Banana 2。
+  // 不再硬锁特定模型/分辨率——用户可以自由选择 Banana 2 / Pro / GPT Image 2 的任意配置。
   useEffect(() => {
-    // Strict mode: hard lock on Banana 2 + 1k (unchanged).
-    if (fidelityMode === "strict") {
-      if (selectedModel !== "gemini-3.1-flash-image-preview") {
-        setSelectedModel("gemini-3.1-flash-image-preview");
-      }
-      if (selectedResolution !== "1k") {
-        setSelectedResolution("1k");
-      }
-      return;
+    if (fidelityMode !== "strict" && fidelityMode !== "composite") return;
+    if (selectedModel === "gemini-2.5-flash-image") {
+      setSelectedModel("gemini-3.1-flash-image-preview");
     }
-    // Composite mode: no longer force Banana 2 — user may select Pro for higher fidelity.
-  }, [fidelityMode, selectedModel, selectedResolution]);
+  }, [fidelityMode, selectedModel]);
 
   // Nano Banana only supports English text — force language when selected
   const isNanoBanana = selectedModel === "gemini-2.5-flash-image";
@@ -768,6 +796,7 @@ const GeneratePage = () => {
       fidelityMode,
       fidelityContext: fidelityMode !== "normal" ? strictFidelityContext : undefined,
       negativePrompt: negativePrompt.trim() || undefined,
+      unitCost,
       userId: user?.id,
       onComplete: (images: string[]) => {
         setResults(images);
@@ -820,6 +849,7 @@ const GeneratePage = () => {
     startImageGeneration({
       ...lastParams,
       _groupId: batchId,
+      unitCost: getGenerateImageUnitCost(regenModel, regenRes),
       onComplete: (images: string[]) => {
         setResults(images);
         setIsGenerating(false);
@@ -862,6 +892,7 @@ const GeneratePage = () => {
       ...lastParams,
       n: 1,
       _groupId: batchId,
+      unitCost: cost,
       onComplete: (images: string[]) => {
         if (images.length > 0) {
           setResults((prev) => [...prev, ...images]);
@@ -897,7 +928,7 @@ const GeneratePage = () => {
     }
     refreshBalance();
 
-    await ctxRegenerateSingle(activeJob.id, index, lastParams);
+    await ctxRegenerateSingle(activeJob.id, index, { ...lastParams, unitCost: cost });
   };
 
   const buildCuratedSeed = (src: string) => ({
@@ -1305,7 +1336,7 @@ const GeneratePage = () => {
           />
           <SelectField
             label="尺寸"
-            options={ratioOptions}
+            options={currentRatioOptions}
             value={selectedRatio}
             onChange={setSelectedRatio}
           />
@@ -1337,7 +1368,15 @@ const GeneratePage = () => {
           <div className="space-y-1">
             <SelectField
               label="模型"
-              options={modelOptions.map((o) => ({ value: o.value, label: o.label }))}
+              options={modelOptions
+                // 严格保真 / 抠图合成模式下隐藏 Banana 基础档（仅允许向上升级）
+                .filter((o) => {
+                  if ((fidelityMode === "strict" || fidelityMode === "composite") && o.value === "gemini-2.5-flash-image") {
+                    return false;
+                  }
+                  return true;
+                })
+                .map((o) => ({ value: o.value, label: o.label }))}
               value={selectedModel}
               onChange={(value) => setSelectedModel(value as GenerationModel)}
             />

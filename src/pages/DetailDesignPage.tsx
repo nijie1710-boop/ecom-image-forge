@@ -121,6 +121,18 @@ const ratioOptions = [
   { value: "21:9", label: "21:9 超宽屏" },
 ];
 
+/** gpt-image-2（Apiyi 逆向）只接受 1024² / 1024×1536 / 1536×1024 三种尺寸 */
+const GPT_IMAGE_2_RATIOS = new Set(["1:1", "2:3", "3:2"]);
+function isGptImage2Model(model: GenerationModel | undefined) {
+  return model === "gpt-image-2" || model === "gpt-image-2-all";
+}
+function getRatioOptionsForModel(model: GenerationModel) {
+  if (isGptImage2Model(model)) {
+    return ratioOptions.filter((option) => GPT_IMAGE_2_RATIOS.has(option.value));
+  }
+  return ratioOptions;
+}
+
 const modelOptions: { value: GenerationModel; label: string; hint: string }[] = [
   {
     value: "gemini-3.1-flash-image-preview",
@@ -136,6 +148,11 @@ const modelOptions: { value: GenerationModel; label: string; hint: string }[] = 
     value: "gemini-2.5-flash-image",
     label: "Nano Banana",
     hint: "速度更快，适合快速试方案",
+  },
+  {
+    value: "gpt-image-2-all",
+    label: "GPT Image 2 ✨",
+    hint: "🔥 新品限时优惠 · 汉字渲染最强 · 输出尺寸固定 · 速度较慢（30-90s）",
   },
 ];
 
@@ -241,6 +258,10 @@ const modelResolutionMap: Record<GenerationModel, OutputResolution[]> = {
   "gemini-2.5-flash-image": ["1k"],
   "gemini-3.1-flash-image-preview": ["0.5k", "1k", "2k", "4k"],
   "nano-banana-pro-preview": ["1k", "2k", "4k"],
+  // GPT Image 2 实际输出固定 1024×1024 / 1024×1536，档位仅控制精细度
+  "gemini-3-pro-image-preview": ["1k", "2k", "4k"],
+  "gpt-image-2": ["1k", "2k"],
+  "gpt-image-2-all": ["1k", "2k"],
 };
 
 function getResolutionOptions(model: GenerationModel) {
@@ -611,6 +632,13 @@ const DetailDesignPage = () => {
   const planningErrorHint = error ? errorHintFromMessage(error) : null;
   const generationErrorHint = generationError ? errorHintFromMessage(generationError) : null;
   const previewAspectRatio = useMemo(() => toCssAspectRatio(selectedRatio), [selectedRatio]);
+
+  // 切换到 gpt-image-2 时，若当前比例不在支持范围内，自动落到 2:3（详情屏默认竖版）
+  useEffect(() => {
+    if (isGptImage2Model(selectedModel) && !GPT_IMAGE_2_RATIOS.has(selectedRatio)) {
+      setSelectedRatio("2:3");
+    }
+  }, [selectedModel, selectedRatio]);
   const strictCategoryHint = useMemo(
     () =>
       detectFidelityCategory([
@@ -1491,20 +1519,22 @@ const DetailDesignPage = () => {
     const nextMode = value as FidelityMode;
     setFidelityMode(nextMode);
     if (nextMode === "strict" || nextMode === "composite") {
-      setSelectedModel("gemini-3.1-flash-image-preview");
-      setSelectedResolution("1k");
+      // 防降级：当前若在 Banana 基础档，回到 Banana 2 起步；
+      // 已经在 Banana 2 / Pro / GPT 的用户保留其选择，允许升级。
+      if (selectedModel === "gemini-2.5-flash-image") {
+        setSelectedModel("gemini-3.1-flash-image-preview");
+        setSelectedResolution("1k");
+      }
     }
   };
 
+  // 守护：只在用户被锁在 Banana 时上拉到 Banana 2，保留 Pro / GPT 升级。
   useEffect(() => {
     if (fidelityMode !== "strict" && fidelityMode !== "composite") return;
-    if (selectedModel !== "gemini-3.1-flash-image-preview") {
+    if (selectedModel === "gemini-2.5-flash-image") {
       setSelectedModel("gemini-3.1-flash-image-preview");
     }
-    if (selectedResolution !== "1k") {
-      setSelectedResolution("1k");
-    }
-  }, [fidelityMode, selectedModel, selectedResolution]);
+  }, [fidelityMode, selectedModel]);
 
   // ---- 积分相关计算 ----
   const planCost = getDetailPlanCost();
@@ -1963,17 +1993,25 @@ const DetailDesignPage = () => {
                         setSelectedResolution(allowed[0]);
                       }
                     }}
-                    options={modelOptions.map((option) => ({
-                      value: option.value,
-                      label: option.label,
-                    }))}
+                    options={modelOptions
+                      // 严格保真 / 抠图合成模式下隐藏 Banana 基础档（仅允许向上升级）
+                      .filter((option) => {
+                        if ((fidelityMode === "strict" || fidelityMode === "composite") && option.value === "gemini-2.5-flash-image") {
+                          return false;
+                        }
+                        return true;
+                      })
+                      .map((option) => ({
+                        value: option.value,
+                        label: option.label,
+                      }))}
                   />
                   <div className="-mt-2 text-xs text-muted-foreground">{currentModelHint}</div>
                   <SelectField
                     label="画面比例"
                     value={selectedRatio}
                     onChange={setSelectedRatio}
-                    options={ratioOptions}
+                    options={getRatioOptionsForModel(selectedModel)}
                   />
                   <SelectField
                     label="清晰度"

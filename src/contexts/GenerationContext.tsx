@@ -96,6 +96,8 @@ export interface ImageGenParams {
   fidelityMode?: FidelityMode;
   fidelityContext?: FidelityContext;
   negativePrompt?: string;
+  /** Per-image prepaid credit cost; backend uses it to auto-refund failed calls. */
+  unitCost?: number;
   userId?: string;
   onComplete?: (images: string[]) => void;
 }
@@ -670,6 +672,7 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
               modelImage: isComposite ? undefined : modelImage,
               modelMode: isComposite ? "none" : params.modelMode,
               fidelityContext: params.fidelityContext,
+              prepaidAmount: params.unitCost,
               debugContext: {
                 source: "main",
               },
@@ -853,6 +856,7 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
               styleReferenceText: isDetailComposite ? undefined : params.styleReferenceText,
               fidelityMode: params.fidelityMode,
               fidelityContext: params.fidelityContext,
+              prepaidAmount: params.screenCost,
               debugContext: {
                 source: "detail",
                 screenNumber: screen.screen,
@@ -1103,6 +1107,7 @@ export const GenerationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         styleReferenceImage: isComposite ? undefined : params.styleReferenceImage,
         modelImage: isComposite ? undefined : params.modelImage,
         modelMode: isComposite ? "none" : params.modelMode,
+        prepaidAmount: params.unitCost,
       });
 
       if (result.images[0]) {
